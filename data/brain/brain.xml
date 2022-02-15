@@ -1,0 +1,111 @@
+<?xml version='1.0' encoding='utf-8'?>
+
+<scene version="0.6.0">
+    <integrator type="vrl">
+        <!-- Number of passes of the integrator. -->
+        <integer name="maxPasses" value="4000"/>
+
+        <!-- Short VRLs as opposed to infinitely long VRLs? (The latter are 
+             not fully tested) -->
+        <boolean name="shortVrls" value="true"/>
+        <!-- Target number of VRLs per pass -->
+        <integer name="vrlTargetNum" value="300"/>
+
+        <!-- Maximum depth of particles traced to generate the VRLs. -->
+        <integer name="maxParticleDepth" value="-1"/>
+        <!-- Depth at which a nonzero Russian Roulette stopping probability 
+             gets forced for specular chains. -->
+        <integer name="specularForcedRRdepth" value="300"/>
+        <!-- Initial specular throughput for Russian Roulette decisions -->
+        <float name="initialSpecularThroughput" value="100"/>
+
+        <!-- Number of samples for VRL volume to volume transport. -->
+        <integer name="volVolSamples" value="2"/>
+        <!-- Number of samples for VRL volume to surface transport.
+             Note: there is no volume to surface transport in this scene! -->
+        <integer name="volSurfSamples" value="0"/>
+
+        <!-- Perform an initial global clustering (that will be used as a 
+             starting point for later local refinement if requested)? -->
+        <boolean name="globalCluster" value="false"/>
+        <!-- VRL undersampling for initial global cluster before per-slice 
+             refinement (Positive number N for a '1 in N' undersampling, 1 
+             to disable an initial global clustering, -1 for adaptive 
+             refinement). -->
+        <float name="globalUndersampling" value="1"/>
+
+        <!-- Perform a local refinement/clustering of VRLs? -->
+        <boolean name="localRefinement" value="true"/>
+        <!-- VRL undersampling of local clusters. Positive number N for a 
+             fixed '1 in N' undersampling, -1 for adaptive splitting into 
+             the optimal number of clusters. -->
+        <float name="localUndersampling" value="-1"/>
+        <!-- VRL undersampling for VRLs that had zero-contributions during 
+             preprocessing (and thus had no information available). -->
+        <float name="fallBackUndersampling" value="5"/>
+        <!-- Target number of slices (each slice gets its own local VRL 
+             clustering if 'localRefinement' is active) -->
+        <integer name="targetNumSlices" value="100"/>
+        <!-- Target pixel undersampling when sampling within a slice. -->
+        <float name="targetPixelUndersampling" value="50"/>
+        <!-- How much geometric curvature to take into account when 
+             grouping pixels into slices. (For this scene, position is most 
+             important, not curvature) -->
+        <float name="sliceCurvatureFactor" value="0.0"/>
+
+        <!-- Use information of this many neighbouring slices when 
+             determining VRL clustering for the current slice. -->
+        <integer name="neighbourCount" value="0"/>
+        <!-- Weight of those neighbours -->
+        <float name="neighbourWeight" value="0"/>
+    </integrator>
+
+    <sensor type="perspective">
+        <float name="focusDistance" value="0.043834"/>
+        <float name="fov" value="8"/>
+        <string name="fovAxis" value="x"/>
+        <transform name="toWorld">
+            <lookat target="0.934736, 0.0965274, -0.171666"
+                origin="-0.0440243, -0.00180748, 0.0082175"
+                up="-0.11104, 0.991883, -0.0619543"/>
+        </transform>
+
+        <sampler type="independent">
+            <!-- Currently no AA with 1spp for determinism -->
+            <integer name="sampleCount" value="1"/>
+        </sampler>
+
+        <film type="hdrfilm">
+            <boolean name="banner" value="false"/>
+            <integer name="height" value="250"/>
+            <integer name="width" value="250"/>
+            <rfilter type="box"/>
+        </film>
+    </sensor>
+
+    <medium type="homogeneous" id="isotropicMarble">
+        <float name="scale" value="1000"/>
+        <rgb name="sigmaS" value="2.19 2.62 3.00"/>
+        <rgb name="sigmaA" value="0.0021 0.0041 0.0071"/>
+    </medium>
+
+    <shape type="obj">
+        <!-- original length: 1 unit -->
+        <string name="filename" value="brain.obj"/>
+        <transform name="toWorld">
+            <scale x="0.005" y="0.005" z="0.005"/>
+            <rotate y="1" angle="110"/>
+        </transform>
+
+        <bsdf type="dielectric">
+            <float name="intIOR" value="1.5"/>
+            <float name="extIOR" value="1.0"/>
+        </bsdf>
+
+        <ref name="interior" id="isotropicMarble"/>
+    </shape>
+
+    <emitter type="envmap">
+        <string name="filename" value="../envmap.exr"/>
+    </emitter>
+</scene>
