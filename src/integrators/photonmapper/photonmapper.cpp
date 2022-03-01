@@ -26,14 +26,19 @@ public:
 
     struct Photon : PointNode {
         Spectrum spectrum;        
-        char phi, theta;
+        Normal3f normal;
+        Vector3f direction;
 
         Photon(const Point3f &position, const Normal3f &normal, 
-            const Vector3f &direction, const Spectrum &spectrum, const int &depth) : PointNode() {
-            point[0] = position.x;
-            point[1] = position.y;
-            point[2] = position.z;
+            const Vector3f &direction, const Spectrum &spectrum,
+               const int &depth)
+            : PointNode() {
+            point[0] = position[0];
+            point[1] = position[1];
+            point[2] = position[2];
             this->spectrum = spectrum;
+            this->normal   = normal;
+            this->direction = direction;
         }
     };
 
