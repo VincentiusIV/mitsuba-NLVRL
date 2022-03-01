@@ -13,8 +13,9 @@
 #include <mitsuba/core/spectrum.h>
 #include <mitsuba/core/vector.h>
 
-NAMESPACE_BEGIN(mitsuba)
+#include "kdtree.h"
 
+NAMESPACE_BEGIN(mitsuba)
 
 template <typename Float, typename Spectrum>
 class PhotonMapper : public SamplingIntegrator<Float, Spectrum> {
@@ -23,35 +24,30 @@ public:
     MTS_IMPORT_BASE(SamplingIntegrator, m_hide_emitters)
     MTS_IMPORT_TYPES(Emitter)
 
-    struct Photon {
-        Point3f position;
-        Normal3f normal;
-        Vector3f direction;
-        Spectrum spectrum;
-        int depth;
+    struct Photon : PointNode {
+        Spectrum spectrum;        
+        char phi, theta;
 
-        Photon(const Point3f &p, const Normal3f &n, const Vector3f &d,
-               const Spectrum &P, const int _depth) {
-            position = p;
-            normal   = n;
-            direction = d;
-            spectrum  = P;
-            depth     = _depth;
+        Photon(const Point3f &position, const Normal3f &normal, 
+            const Vector3f &direction, const Spectrum &spectrum, const int &depth) : PointNode() {
+            point[0] = position.x;
+            point[1] = position.y;
+            point[2] = position.z;
+            this->spectrum = spectrum;
         }
     };
 
 
-    class PhotonMap {
+    class PhotonMap : PointKDTree<Photon> {
     public:
         PhotonMap() { 
             Log(LogLevel::Info, "Constructing PhotonMap...");
         }
 
-        inline void pushBack(const Photon &photon) {
-            
+        inline void insert(const Photon &photon) { 
+               
         }
     };
-
 
     PhotonMapper(const Properties &props) : Base(props) {
         m_photonMap = new PhotonMap();
@@ -75,7 +71,6 @@ public:
         // 1. Traverse KD-tree to find nearby photons.
 
         SurfaceInteraction3f si = scene->ray_intersect(ray, active);
-        
 
         return { 
             result, si.is_valid() 
@@ -87,7 +82,8 @@ public:
 
         const int n = 100000;
 
-        // 1. For each light...
+        // 1. For each light source in the scene we create a set of photons 
+        //    and divide the overall power of the light source amongst them.
         host_vector<ref<Emitter>, Float> emitters = scene->emitters();
         std::string log = "Scene emitters: " + std::to_string(emitters.size());
         Log(LogLevel::Info, log.c_str());  
@@ -112,7 +108,7 @@ public:
 
                 // 4. If absorbed, store photon in photonmap
                 Photon p(interactionPoint, normal, photonDirection, photonIntensity, depth);
-                m_photonMap->pushBack(p);
+                m_photonMap->insert(p);
             }
         }
     }
