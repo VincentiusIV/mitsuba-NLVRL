@@ -42,7 +42,6 @@ public:
         }
     };
 
-
     class PhotonMap : PointKDTree<Photon> {
     public:
         PhotonMap() { 
@@ -56,6 +55,23 @@ public:
 
     PhotonMapper(const Properties &props) : Base(props) {
         m_photonMap = new PhotonMap();
+        m_directSamples = props.int_("directSamples", 16);
+        m_glossySamples = props.int_("glossySamples", 32);
+        m_rrStartDepth  = props.int_("rrStartDepth", 5);
+        m_maxDepth      = props.int_("maxDepth", 128);
+        m_maxSpecularDepth = props.int_("maxSpecularDepth", 4);
+        m_granularity      = props.int_("granularity", 0);
+        m_globalPhotons    = props.int_("globalPhotons", 250000);
+        m_causticPhotons   = props.int_("causticPhotons", 250000);
+        m_volumePhotons    = props.int_("volumePhotons", 250000);
+        m_globalLookupRadiusRelative =
+            props.float_("globalLookupRadiusRelative", 0.05f);
+        m_causticLookupRadiusRelative = props.float_("causticLookupRadiusRelative", 0.0125f);
+        m_globalLookupSize = props.int_("globalLookupSize", 120);
+        m_causticLookupSize = props.int_("causticLookupSize", 120);
+        m_volumeLookupSize  = props.int_("volumeLookupSize", 120);
+        m_gatherLocally     = props.bool_("gatherLocally", true);
+        m_autoCancelGathering = props.bool_("autoCancelGathering", true);
     }
 
     std::pair<Spectrum, Mask> sample(const Scene *scene, Sampler *sampler,
@@ -86,6 +102,7 @@ public:
         Log(LogLevel::Info, "Pre Processing Photon Map...");
 
         const int n = 100000;
+
 
         // 1. For each light source in the scene we create a set of photons 
         //    and divide the overall power of the light source amongst them.
@@ -121,6 +138,17 @@ public:
     MTS_DECLARE_CLASS()
 private:
     PhotonMap* m_photonMap;
+
+    int m_directSamples, m_glossySamples, m_rrStartDepth, m_maxDepth,
+        m_maxSpecularDepth, m_granularity;
+    int m_globalPhotons, m_causticPhotons, m_volumePhotons;
+    float m_globalLookupRadiusRelative, m_causticLookupRadiusRelative;
+    int m_globalLookupSize, m_causticLookupSize, m_volumeLookupSize;
+    /* Should photon gathering steps exclusively run on the local machine? */
+    bool m_gatherLocally;
+    /* Indicates if the gathering steps should be canceled if not enough photons
+     * are generated. */
+    bool m_autoCancelGathering;    
 };
 
 MTS_IMPLEMENT_CLASS_VARIANT(PhotonMapper, SamplingIntegrator)
