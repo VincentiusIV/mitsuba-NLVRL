@@ -22,7 +22,8 @@ class PhotonMapper : public SamplingIntegrator<Float, Spectrum> {
 
 public:
     MTS_IMPORT_BASE(SamplingIntegrator, m_hide_emitters)
-    MTS_IMPORT_TYPES(Emitter)
+    MTS_IMPORT_TYPES()
+    MTS_IMPORT_OBJECT_TYPES()
 
     struct Photon : PointNode {
         Spectrum spectrum;        
@@ -54,7 +55,7 @@ public:
     };
 
     PhotonMapper(const Properties &props) : Base(props) {
-        m_photonMap = new PhotonMap();
+        m_globalPhotonMap = new PhotonMap();
         m_directSamples = props.int_("directSamples", 16);
         m_glossySamples = props.int_("glossySamples", 32);
         m_rrStartDepth  = props.int_("rrStartDepth", 5);
@@ -84,25 +85,30 @@ public:
         static bool m_isPreProcessed = false;
         if (!m_isPreProcessed) {
             m_isPreProcessed = true;
-            preProcess(scene);
+            preProcess(scene, sampler);
         }
 
-        Spectrum result(1.f);
+        Spectrum LiSurf(0.0f), LiMedium(0.0f), transmittance(1.0f);
 
-        // 1. Traverse KD-tree to find nearby photons.
-
-        SurfaceInteraction3f si = scene->ray_intersect(ray, active);
+        SurfaceInteraction3f si = zero<SurfaceInteraction3f>();
+        si.t                    = math::Infinity<Float>;
 
         return { 
-            result, si.is_valid() 
+            LiSurf * transmittance + LiMedium, si.is_valid() 
         };
     }
 
-    void preProcess(const Scene *scene) const {
+    void preProcess(const Scene *scene, Sampler *sampler) const {
         Log(LogLevel::Info, "Pre Processing Photon Map...");
 
         const int n = 100000;
 
+        SurfaceInteraction3f si = zero<SurfaceInteraction3f>();
+        si.t                    = math::Infinity<Float>;
+
+        Medium* medium       = nullptr;
+        MediumInteraction3f mi = zero<MediumInteraction3f>();
+        mi.t                   = math::Infinity<Float>;
 
         // 1. For each light source in the scene we create a set of photons 
         //    and divide the overall power of the light source amongst them.
@@ -130,17 +136,46 @@ public:
 
                 // 4. If absorbed, store photon in photonmap
                 Photon p(interactionPoint, normal, photonDirection, photonIntensity, depth);
-                m_photonMap->insert(p);
+                m_globalPhotonMap->insert(p);
             }
         }
     }
 
+    void handleSurfaceInteraction(int _depth, int nullInteractions, bool delta,
+        const SurfaceInteraction3f& si, const Medium* medium, const Spectrum& weight) {
+        BSDFContext ctx;
+        BSDFPtr bsdf = si.bsdf();
+        int depth    = _depth - nullInteractions;
+        uint32_t bsdfFlags = bsdf->flags();
+        if (!(bsdfFlags & BSDFFlags::DiffuseReflection) &&
+            !(bsdfFlags & BSDFFlags::GlossyReflection))
+            return;
+        if (depth < m_minDepth)
+            return;
+        m_globalPhotonMap->insert(
+            Photon(si.p, si.n, -si.to_world(si.wi), weight, depth));
+    }
+
+    void handleMediumInteraction(int _depth, int nullInteractions, bool delta,
+        const MediumInteraction3f& mi, const Medium* medium, const Vector3f& wi,
+                                 const Spectrum &weight) {
+        int depth = _depth - nullInteractions;
+        if (depth < m_minDepth) {
+            return;
+        }
+        m_volumePhotonMap->insert(
+            Photon(mi.p, Normal3f(0.0f, 0.0f, 0.0f), -wi, weight, depth));
+    }
+
     MTS_DECLARE_CLASS()
 private:
-    PhotonMap* m_photonMap;
+    PhotonMap* m_globalPhotonMap;
+    PhotonMap* m_causticPhotonMap;
+    PhotonMap* m_volumePhotonMap;
 
     int m_directSamples, m_glossySamples, m_rrStartDepth, m_maxDepth,
         m_maxSpecularDepth, m_granularity;
+    int m_minDepth = 1;
     int m_globalPhotons, m_causticPhotons, m_volumePhotons;
     float m_globalLookupRadiusRelative, m_causticLookupRadiusRelative;
     int m_globalLookupSize, m_causticLookupSize, m_volumeLookupSize;
