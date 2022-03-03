@@ -13,6 +13,28 @@ struct PointNode {
     short flag;
     PointNode *left;
     PointNode *right;
+}; 
+
+/// Result data type for k-nn queries
+struct SearchResult {
+    float distSquared;
+    int index;
+
+    inline SearchResult() {}
+
+    inline SearchResult(float distSquared, int index)
+        : distSquared(distSquared), index(index) {}
+
+    std::string toString() const {
+        std::ostringstream oss;
+        oss << "SearchResult[distance=" << std::sqrt(distSquared)
+            << ", index=" << index << "]";
+        return oss.str();
+    }
+
+    inline bool operator==(const SearchResult &r) const {
+        return distSquared == r.distSquared && index == r.index;
+    }
 };
 
 template<typename TNode>

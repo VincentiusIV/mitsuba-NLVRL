@@ -1,6 +1,8 @@
 #pragma once
 #include "kdtree.h"
 #include <enoki/stl.h>
+#include <enoki/fwd.h>
+#include <mitsuba/core/fwd.h>
 #include <mitsuba/core/math.h>
 #include <mitsuba/core/properties.h>
 #include <mitsuba/core/ray.h>
@@ -46,7 +48,49 @@ public:
     public:
         PhotonMap() { Log(LogLevel::Info, "Constructing PhotonMap..."); }
 
-        inline void insert(const Photon &photon) {}
+        inline void insert(const Photon &photon) {
+
+        }
+
+        Spectrum estimateIrradiance(const Point3f &p, const Normal3f &n,
+                                    Float searchRadius, int maxDepth,
+                                    size_t maxPhotons) const {            
+            SearchResult *results = static_cast<SearchResult *>(alloca((maxPhotons + 1) * sizeof(SearchResult)));
+            Float squaredRadius = searchRadius * searchRadius;
+            size_t resultCount =  nnSearch(p, squaredRadius, maxPhotons, results);
+            Float invSquaredRadius = 1.0f / squaredRadius;
+            /* Sum over all contributions */
+            Spectrum result(0.0f);
+            for (size_t i = 0; i < resultCount; i++) {
+                const SearchResult &searchResult = results[i];
+                const Photon &photon             = m_kdtree[searchResult.index];
+                if (photon.getDepth() > maxDepth)
+                    continue;
+
+                Vector wi           = -photon.getDirection();
+                Vector photonNormal = photon.getNormal();
+                Float wiDotGeoN = dot(photonNormal, wi), wiDotShN = dot(n, wi);
+
+                /* Only use photons from the top side of the surface */
+                if (dot(wi, n) > 0 && dot(photonNormal, n) > 1e-1f &&
+                    wiDotGeoN > 1e-2f) {
+                    /* Account for non-symmetry due to shading normals */
+                    Spectrum power =
+                        photon.getPower() * std::abs(wiDotShN / wiDotGeoN);
+
+                    /* Weight the samples using Simpson's kernel */
+                    Float sqrTerm =
+                        1.0f - searchResult.distSquared * invSquaredRadius;
+
+                    result += power * (sqrTerm * sqrTerm);
+                }
+            }
+            /* Based on the assumption that the surface is locally flat,
+               the estimate is divided by the area of a disc corresponding to
+               the projected spherical search region */
+            return result * (/*m_scale * */ 3 * math::InvPi<Float> * invSquaredRadius);
+        }
+
     };
 
     PhotonMapper(const Properties &props) : Base(props) {
@@ -82,20 +126,26 @@ public:
             m_isPreProcessed = true;
             preProcess(scene, sampler);
         }
+        Float sceneRadius    = norm(scene->bbox().center() - scene->bbox().max);
+        Float m_globalLookupRadius = m_globalLookupRadiusRelative * sceneRadius;
+        Float m_causticLookupRadius = m_causticLookupRadiusRelative * sceneRadius;
+
+        SurfaceInteraction3f si = scene->ray_intersect(ray);
 
         Spectrum LiSurf(0.0f), LiMedium(0.0f), transmittance(1.0f);
-
-        SurfaceInteraction3f si = zero<SurfaceInteraction3f>();
-        si.t                    = math::Infinity<Float>;
+        int maxDepth = m_maxDepth == -1 ? INT_MAX : (m_maxDepth); // - rRec.depth)
+        if (si.is_valid())
+            LiSurf += m_globalPhotonMap->estimateIrradiance(
+                si.p, si.n, m_globalLookupRadius, maxDepth, m_globalLookupSize);// * bsdf->getDiffuseReflectance(its) * math::InvPi;
 
         return { LiSurf, si.is_valid() };
     }
 
     void preProcess(const Scene *scene, Sampler *sampler) const {
         Log(LogLevel::Info, "Pre Processing Photon Map...");
-        const int n = 100000;
+        const int n = 100;
         // 1. For each light source in the scene we create a set of photons
-        //    and divide the overall power of the light source amongst them.
+        //    and divide the overall power of the light source amongst them.       
 
         for (int i = 0; i < n; i++) {
             MediumInteraction3f mRec;
@@ -310,7 +360,8 @@ private:
         m_maxSpecularDepth, m_granularity;
     int m_minDepth = 1;
     int m_globalPhotons, m_causticPhotons, m_volumePhotons;
-    float m_globalLookupRadiusRelative, m_causticLookupRadiusRelative;
+    float m_globalLookupRadiusRelative;
+    float m_causticLookupRadiusRelative;
     int m_globalLookupSize, m_causticLookupSize, m_volumeLookupSize;
     /* Should photon gathering steps exclusively run on the local machine? */
     bool m_gatherLocally;
