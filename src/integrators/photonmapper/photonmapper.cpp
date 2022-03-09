@@ -15,6 +15,7 @@
 #include <mitsuba/render/phase.h>
 #include <mitsuba/render/records.h>
 #include <random>
+#include "kdtree.h"
 
 #define INV_PI 0.31830988618379067154
 
@@ -104,12 +105,45 @@ public:
             Log(LogLevel::Info, normalStr.c_str());  
         }       
 
+        Spectrum estimateRadiance(const SurfaceInteraction3f& si,
+                                  float searchRadius, size_t maxPhotons) const {
+            float squaredRadius = searchRadius * searchRadius;
+            size_t resultCount = photons.size(); // nnSearch(p, squaredRadius,
+                                                 // maxPhotons, results);
+            float invSquaredRadius = 1.0f / squaredRadius;
+
+            /* Sum over all contributions */
+            Spectrum result(0.0f);
+            const BSDF *bsdf = si.bsdf();
+            for (size_t i = 0; i < resultCount; i++) {
+                Photon photon = photons[i];
+                Point3f photonP(photon.point[0], photon.point[1], photon.point[2]);
+                Vector3f between  = photonP - si.p;
+                float distSquared = between[0] * between[0] +
+                                    between[1] * between[1] +
+                                    between[2] * between[2];
+                float sqrTerm = 1.0f - distSquared * invSquaredRadius;
+                if (distSquared > squaredRadius)
+                    continue;
+
+                Vector3f wi = si.to_local(-photon.direction);
+
+                BSDFContext bRec(TransportMode::Importance);
+                result += photon.spectrum * bsdf->eval(bRec, si, si.wi) * (sqrTerm * sqrTerm);
+            }
+
+            /* Based on the assumption that the surface is locally flat,
+               the estimate is divided by the area of a disc corresponding to
+               the projected spherical search region */
+            return result * (m_scale * 3.0f * INV_PI * invSquaredRadius);
+        }
+
         Spectrum estimateIrradiance(const Point3f &p, const Normal3f &n,
                                     float searchRadius, int maxDepth,
                                     size_t maxPhotons) const {
             //SearchResult *results = static_cast<SearchResult *>(alloca((maxPhotons + 1) * sizeof(SearchResult)));
             float squaredRadius = searchRadius * searchRadius;
-            size_t resultCount  = photons.size(); // nnSearch(p, squaredRadius,
+            size_t resultCount  = min(maxPhotons, photons.size()); // nnSearch(p, squaredRadius,
                                                  // maxPhotons, results);
             float invSquaredRadius = 1.0f / squaredRadius;
             /* Sum over all contributions */
@@ -123,8 +157,9 @@ public:
 
                 Vector3f between   = photonP - p;
                 float distSquared =
-                    between[0] * between[0] + between[1] * between[1] +
-                                    between[2] * between[2];
+                    between[0] * between[0] + 
+                    between[1] * between[1] +
+                    between[2] * between[2];
                 float sqrTerm = 1.0f - distSquared * invSquaredRadius;
 
                 if (distSquared > squaredRadius)
@@ -221,6 +256,7 @@ public:
             auto [bs, bsdf_val] = bsdf->sample(bCtx, si, sampler->next_1d(active), sampler->next_2d(active), active);
             bsdf_val = si.to_world_mueller(bsdf_val, -bs.wo, si.wi);
 
+            LiSurf += m_globalPhotonMap->estimateRadiance(si, m_globalLookupRadius, m_globalLookupSize);
             LiSurf += m_globalPhotonMap->estimateIrradiance(si.p, si.sh_frame.n, m_globalLookupRadius, maxDepth, m_globalLookupSize) * bsdf_val;
 
             
@@ -234,7 +270,7 @@ public:
 
         sampler->seed(0);
 
-        const int numPhotons = 100;
+        const int numPhotons = 10000;
         std::string numPhotonsStr =
             "- Photon Count: " + std::to_string(numPhotons);
         Log(LogLevel::Info, numPhotonsStr.c_str());    
