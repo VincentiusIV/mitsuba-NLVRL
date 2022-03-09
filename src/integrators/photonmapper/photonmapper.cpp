@@ -79,7 +79,7 @@ public:
     public:
         PhotonMap() { 
             Log(LogLevel::Info, "Constructing PhotonMap...");
-            m_scale = 1.0f;
+            m_scale = 0.001f;
         }
 
         inline void insert(const Photon &photon) { 
@@ -121,15 +121,14 @@ public:
                     continue;
                 Point3f photonP(photon.point[0], photon.point[1], photon.point[2]);
 
-                Point3f between   = photonP - p;
+                Vector3f between   = photonP - p;
                 float distSquared =
-                    sqrt(between[0] * between[0] + between[1] * between[1] +
-                         between[2] * between[2]);
+                    between[0] * between[0] + between[1] * between[1] +
+                                    between[2] * between[2];
                 float sqrTerm = 1.0f - distSquared * invSquaredRadius;
-                if (distSquared < squaredRadius) {
-                    return Spectrum(sqrTerm);
-                }
 
+                if (distSquared > squaredRadius)
+                    continue;
 
                 Vector3f wi = -photon.direction;
                 float wiDotGeoN = dot(photon.normal, wi);
@@ -144,16 +143,13 @@ public:
                     float sqrTerm = 1.0f - distSquared * invSquaredRadius;
 
                     result += power * (sqrTerm * sqrTerm);
-
-                    
-
                 }
 
             }
             /* Based on the assumption that the surface is locally flat,
                the estimate is divided by the area of a disc corresponding to
                the projected spherical search region */
-            return result * (m_scale * 3 * INV_PI);
+            return result * (m_scale * 3.0f * INV_PI * invSquaredRadius);
         }
 
 
@@ -205,7 +201,7 @@ public:
         static Float m_globalLookupRadius = -1, m_causticLookupRadius = -1;
         if (m_globalLookupRadius == -1) {
             Float sceneRadius = norm(scene->bbox().center() - scene->bbox().max);
-            m_globalLookupRadius  = m_globalLookupRadiusRelative * sceneRadius;
+            m_globalLookupRadius = m_globalLookupRadiusRelative * sceneRadius;
             m_causticLookupRadius = m_causticLookupRadiusRelative * sceneRadius;
             std::string lookupString = "- Global Lookup Radius: " + std::to_string(m_globalLookupRadius);
             Log(LogLevel::Info, lookupString.c_str());   
@@ -222,10 +218,10 @@ public:
 
             const BSDF *bsdf = si.bsdf();
             BSDFContext bCtx(TransportMode::Radiance);
-            //auto [bs, bsdf_val] = bsdf->sample(bCtx, si, sampler->next_1d(active), sampler->next_2d(active), active);
-            //bsdf_val = si.to_world_mueller(bsdf_val, -bs.wo, si.wi);
+            auto [bs, bsdf_val] = bsdf->sample(bCtx, si, sampler->next_1d(active), sampler->next_2d(active), active);
+            bsdf_val = si.to_world_mueller(bsdf_val, -bs.wo, si.wi);
 
-            LiSurf += m_globalPhotonMap->estimateIrradiance(si.p, si.sh_frame.n, m_globalLookupRadius, maxDepth, m_globalLookupSize);
+            LiSurf += m_globalPhotonMap->estimateIrradiance(si.p, si.sh_frame.n, m_globalLookupRadius, maxDepth, m_globalLookupSize) * bsdf_val;
 
             
         }
@@ -238,7 +234,7 @@ public:
 
         sampler->seed(0);
 
-        const int numPhotons = 1000;
+        const int numPhotons = 100;
         std::string numPhotonsStr =
             "- Photon Count: " + std::to_string(numPhotons);
         Log(LogLevel::Info, numPhotonsStr.c_str());    
