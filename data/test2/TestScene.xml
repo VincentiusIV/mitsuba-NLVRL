@@ -16,19 +16,13 @@
 		</emitter>
 	</shape>
 
-	<emitter type="envmap">
-		<string name="filename" value="uffizi.exr"/>
-	</emitter>
+
 
 
 	<bsdf type="roughplastic" id="AurichalciteMaterial">
 		<string name="distribution" value="ggx"/>
 		<float name="alpha" value="0.05"/>
 		<float name="intIOR" value="1.46"/>
-
-		<texture type="bitmap" name="diffuseReflectance">
-			<string name="filename" value="Aurichalcite.png"/>
-		</texture>
 	</bsdf>
 
 	<shape type="serialized" id="Cylinder_mesh">

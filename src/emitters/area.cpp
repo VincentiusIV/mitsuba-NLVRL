@@ -104,13 +104,13 @@ public:
         Wavelength wavelength;
         Spectrum spec_weight;
 
-        if constexpr (is_spectral_v<Spectrum>) {
-            std::tie(wavelength, spec_weight) = m_radiance->sample_spectrum(
-                si, math::sample_shifted<Wavelength>(wavelength_sample), active);
-        } else {
+        //if constexpr (is_spectral_v<Spectrum>) {
+        //    std::tie(wavelength, spec_weight) = m_radiance->sample_spectrum(
+        //        si, math::sample_shifted<Wavelength>(wavelength_sample), active);
+        //} else {
             wavelength = zero<Wavelength>();
             spec_weight = m_radiance->eval(si, active);
-        }
+        //}
 
         return std::make_pair(
             Ray3f(si.p, si.to_world(local), time, wavelength),

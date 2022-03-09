@@ -49,6 +49,8 @@ MTS_VARIANT std::vector<std::string> SamplingIntegrator<Float, Spectrum>::aov_na
 }
 
 MTS_VARIANT bool SamplingIntegrator<Float, Spectrum>::render(Scene *scene, Sensor *sensor) {
+    preprocess(scene, sensor);
+
     ScopedPhase sp(ProfilerPhase::Render);
     m_stop = false;
 

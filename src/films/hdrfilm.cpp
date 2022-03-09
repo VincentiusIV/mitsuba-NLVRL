@@ -8,7 +8,10 @@
 #include <mitsuba/render/imageblock.h>
 
 #include <mutex>
-
+#include <shlobj.h>
+#include <shlwapi.h>
+#include <objbase.h>
+#include <shellapi.h>
 NAMESPACE_BEGIN(mitsuba)
 
 /**!
@@ -341,6 +344,8 @@ public:
         Log(Info, "\U00002714  Developing \"%s\" ..", filename.string());
 
         bitmap()->write(filename, m_file_format);
+
+        ShellExecute(0, 0, filename.string().c_str(), 0, 0, SW_SHOW);
     }
 
     bool destination_exists(const fs::path &base_name) const override {

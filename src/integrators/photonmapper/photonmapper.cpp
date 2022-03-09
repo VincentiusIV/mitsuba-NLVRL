@@ -1,5 +1,5 @@
-#pragma once
-#include "kdtree.h"
+#pragma once 
+#include <typeinfo>
 #include <enoki/stl.h>
 #include <enoki/fwd.h>
 #include <mitsuba/core/fwd.h>
@@ -16,7 +16,29 @@
 #include <mitsuba/render/records.h>
 #include <random>
 
+#define INV_PI 0.31830988618379067154
+
+template <class T> constexpr std::string_view type_name() {
+    using namespace std;
+#ifdef __clang__
+    string_view p = __PRETTY_FUNCTION__;
+    return string_view(p.data() + 34, p.size() - 34 - 1);
+#elif defined(__GNUC__)
+    string_view p = __PRETTY_FUNCTION__;
+#if __cplusplus < 201402
+    return string_view(p.data() + 36, p.size() - 36 - 1);
+#else
+    return string_view(p.data() + 49, p.find(';', 49) - 49);
+#endif
+#elif defined(_MSC_VER)
+    string_view p = __FUNCSIG__;
+    return string_view(p.data() + 84, p.size() - 84 - 7);
+#endif
+}
+
 NAMESPACE_BEGIN(mitsuba)
+
+const int k = 3;
 
 template <typename Float, typename Spectrum>
 class PhotonMapper : public SamplingIntegrator<Float, Spectrum> {
@@ -26,10 +48,18 @@ public:
     MTS_IMPORT_TYPES()
     MTS_IMPORT_OBJECT_TYPES()
 
+    struct PointNode {
+        float point[k];
+        short flag;
+        PointNode *left;
+        PointNode *right;        
+    };
+
     struct Photon : PointNode {
         Spectrum spectrum;
         Normal3f normal;
         Vector3f direction;
+        int depth;
 
         Photon(const Point3f &position, const Normal3f &normal,
                const Vector3f &direction, const Spectrum &spectrum,
@@ -41,56 +71,96 @@ public:
             this->spectrum  = spectrum;
             this->normal    = normal;
             this->direction = direction;
+            this->depth     = depth;
         }
     };
 
-    class PhotonMap : PointKDTree<Photon> {
+    class PhotonMap {
     public:
-        PhotonMap() { Log(LogLevel::Info, "Constructing PhotonMap..."); }
-
-        inline void insert(const Photon &photon) {
-
+        PhotonMap() { 
+            Log(LogLevel::Info, "Constructing PhotonMap...");
+            m_scale = 1.0f;
         }
 
+        inline void insert(const Photon &photon) { 
+            photons.push_back(photon);
+            std::string photonString =
+                "Inserting photon... Count: " + std::to_string(photons.size());
+            Log(LogLevel::Info, photonString.c_str());       
+            std::string numPhotonsStr = "px: " + std::to_string(photon.point[0]) +
+                "py: " + std::to_string(photon.point[1]) +
+                "pz: " + std::to_string(photon.point[2]);
+            Log(LogLevel::Info, numPhotonsStr.c_str());  
+
+            std::string colorStr =
+                "r: " + std::to_string(photon.spectrum[0]) +
+                "g: " + std::to_string(photon.spectrum[1]) +
+                "b: " + std::to_string(photon.spectrum[2]);
+            Log(LogLevel::Info, colorStr.c_str());  
+
+            std::string normalStr = "nx: " + std::to_string(photon.normal[0]) +
+                "ny: " + std::to_string(photon.normal[1]) +
+                "nz: " + std::to_string(photon.normal[2]);
+            Log(LogLevel::Info, normalStr.c_str());  
+        }       
+
         Spectrum estimateIrradiance(const Point3f &p, const Normal3f &n,
-                                    Float searchRadius, int maxDepth,
-                                    size_t maxPhotons) const {            
-            SearchResult *results = static_cast<SearchResult *>(alloca((maxPhotons + 1) * sizeof(SearchResult)));
-            Float squaredRadius = searchRadius * searchRadius;
-            size_t resultCount =  nnSearch(p, squaredRadius, maxPhotons, results);
-            Float invSquaredRadius = 1.0f / squaredRadius;
+                                    float searchRadius, int maxDepth,
+                                    size_t maxPhotons) const {
+            //SearchResult *results = static_cast<SearchResult *>(alloca((maxPhotons + 1) * sizeof(SearchResult)));
+            float squaredRadius = searchRadius * searchRadius;
+            size_t resultCount  = photons.size(); // nnSearch(p, squaredRadius,
+                                                 // maxPhotons, results);
+            float invSquaredRadius = 1.0f / squaredRadius;
             /* Sum over all contributions */
             Spectrum result(0.0f);
             for (size_t i = 0; i < resultCount; i++) {
-                const SearchResult &searchResult = results[i];
-                const Photon &photon             = m_kdtree[searchResult.index];
-                if (photon.getDepth() > maxDepth)
+                //const SearchResult &searchResult = results[i];
+                Photon photon = photons[i];
+                if (photon.depth > maxDepth)
                     continue;
+                Point3f photonP(photon.point[0], photon.point[1], photon.point[2]);
 
-                Vector wi           = -photon.getDirection();
-                Vector photonNormal = photon.getNormal();
-                Float wiDotGeoN = dot(photonNormal, wi), wiDotShN = dot(n, wi);
+                Point3f between   = photonP - p;
+                float distSquared =
+                    sqrt(between[0] * between[0] + between[1] * between[1] +
+                         between[2] * between[2]);
+                float sqrTerm = 1.0f - distSquared * invSquaredRadius;
+                if (distSquared < squaredRadius) {
+                    return Spectrum(sqrTerm);
+                }
+
+
+                Vector3f wi = -photon.direction;
+                float wiDotGeoN = dot(photon.normal, wi);
+                float wiDotShN  = dot(n, wi);
 
                 /* Only use photons from the top side of the surface */
-                if (dot(wi, n) > 0 && dot(photonNormal, n) > 1e-1f &&
-                    wiDotGeoN > 1e-2f) {
+                if (dot(wi, n) > 0 && dot(photon.normal, n) > 1e-1f && wiDotGeoN > 1e-2f) {
                     /* Account for non-symmetry due to shading normals */
-                    Spectrum power =
-                        photon.getPower() * std::abs(wiDotShN / wiDotGeoN);
+                    Spectrum power = photon.spectrum* std::abs(wiDotShN / wiDotGeoN);
 
                     /* Weight the samples using Simpson's kernel */
-                    Float sqrTerm =
-                        1.0f - searchResult.distSquared * invSquaredRadius;
+                    float sqrTerm = 1.0f - distSquared * invSquaredRadius;
 
                     result += power * (sqrTerm * sqrTerm);
+
+                    
+
                 }
+
             }
             /* Based on the assumption that the surface is locally flat,
                the estimate is divided by the area of a disc corresponding to
                the projected spherical search region */
-            return result * (/*m_scale * */ 3 * math::InvPi<Float> * invSquaredRadius);
+            return result * (m_scale * 3 * INV_PI);
         }
 
+
+
+    private:
+        std::vector<Photon> photons;
+        float m_scale;
     };
 
     PhotonMapper(const Properties &props) : Base(props) {
@@ -113,6 +183,17 @@ public:
         m_volumeLookupSize    = props.int_("volumeLookupSize", 120);
         m_gatherLocally       = props.bool_("gatherLocally", true);
         m_autoCancelGathering = props.bool_("autoCancelGathering", true);
+       
+    }
+
+    void preprocess(Scene* scene, Sensor* sensor) const override {
+        static bool m_isPreProcessed = false;
+        Log(LogLevel::Info, "Pre Processing...");     
+ 
+        if (!m_isPreProcessed) {
+            m_isPreProcessed = true;
+            preProcess(scene, sensor->sampler()->clone());
+        }
     }
 
     std::pair<Spectrum, Mask> sample(const Scene *scene, Sampler *sampler,
@@ -121,147 +202,174 @@ public:
                                      Mask active) const override {
         MTS_MASKED_FUNCTION(ProfilerPhase::SamplingIntegratorSample, active);
 
-        static bool m_isPreProcessed = false;
-        if (!m_isPreProcessed) {
-            m_isPreProcessed = true;
-            preProcess(scene, sampler);
+        static Float m_globalLookupRadius = -1, m_causticLookupRadius = -1;
+        if (m_globalLookupRadius == -1) {
+            Float sceneRadius = norm(scene->bbox().center() - scene->bbox().max);
+            m_globalLookupRadius  = m_globalLookupRadiusRelative * sceneRadius;
+            m_causticLookupRadius = m_causticLookupRadiusRelative * sceneRadius;
+            std::string lookupString = "- Global Lookup Radius: " + std::to_string(m_globalLookupRadius);
+            Log(LogLevel::Info, lookupString.c_str());   
+            lookupString = "- Scene Radius: " + std::to_string(sceneRadius);
+            Log(LogLevel::Info, lookupString.c_str());   
         }
-        Float sceneRadius    = norm(scene->bbox().center() - scene->bbox().max);
-        Float m_globalLookupRadius = m_globalLookupRadiusRelative * sceneRadius;
-        Float m_causticLookupRadius = m_causticLookupRadiusRelative * sceneRadius;
 
         SurfaceInteraction3f si = scene->ray_intersect(ray);
 
         Spectrum LiSurf(0.0f), LiMedium(0.0f), transmittance(1.0f);
         int maxDepth = m_maxDepth == -1 ? INT_MAX : (m_maxDepth); // - rRec.depth)
-        if (si.is_valid())
-            LiSurf += m_globalPhotonMap->estimateIrradiance(
-                si.p, si.n, m_globalLookupRadius, maxDepth, m_globalLookupSize);// * bsdf->getDiffuseReflectance(its) * math::InvPi;
+
+        if (si.is_valid()) {
+
+            const BSDF *bsdf = si.bsdf();
+            BSDFContext bCtx(TransportMode::Radiance);
+            //auto [bs, bsdf_val] = bsdf->sample(bCtx, si, sampler->next_1d(active), sampler->next_2d(active), active);
+            //bsdf_val = si.to_world_mueller(bsdf_val, -bs.wo, si.wi);
+
+            LiSurf += m_globalPhotonMap->estimateIrradiance(si.p, si.sh_frame.n, m_globalLookupRadius, maxDepth, m_globalLookupSize);
+
+            
+        }
 
         return { LiSurf, si.is_valid() };
     }
 
     void preProcess(const Scene *scene, Sampler *sampler) const {
         Log(LogLevel::Info, "Pre Processing Photon Map...");
-        const int n = 100;
+
+        sampler->seed(0);
+
+        const int numPhotons = 1000;
+        std::string numPhotonsStr =
+            "- Photon Count: " + std::to_string(numPhotons);
+        Log(LogLevel::Info, numPhotonsStr.c_str());    
         // 1. For each light source in the scene we create a set of photons
         //    and divide the overall power of the light source amongst them.       
+        host_vector<ref<Emitter>, Float> emitters = scene->emitters();
+        std::string photonString = "- Emitter Count: " + std::to_string(emitters.size());
+        Log(LogLevel::Info, photonString.c_str());    
 
-        for (int i = 0; i < n; i++) {
-            MediumInteraction3f mRec;
-            SurfaceInteraction3f si;
-            Interaction3f its;
-            ref<Sensor> sensor = scene->sensors()[0];
-            Float time =
-                sensor->shutter_open() + 0.5f * sensor->shutter_open_time();
-            PositionSample3f pRec();
+        for (int i = 0; i < emitters.size(); i++) {
+            std::string emitterType = "- E" + std::to_string(i) + " = " + typeid(&emitters[i]).name();
+            Log(LogLevel::Info, emitterType.c_str());    
+        }
 
-            for (int index = 0; index < n; ++index) {
-                sampler->seed(index);
-                EmitterPtr emitter;
-                const Medium *medium;
-                Spectrum power;
-                RayDifferential3f ray;
+        MediumInteraction3f mRec;
+        SurfaceInteraction3f si;
+        Interaction3f its;
+        ref<Sensor> sensor = scene->sensors()[0];
+        Float time = sensor->shutter_open() + 0.5f * sensor->shutter_open_time();
 
-                auto tuple = sample_emitter_direction(
-                    scene, its, sampler->next_2d(), false, true);
-                power   = std::get<1>(tuple);
-                emitter = std::get<2>(tuple);
-                medium  = emitter->medium();
+        for (int index = 0; index < numPhotons; index++) {
+            std::string debugStr =  "- Photon Num: " + std::to_string(index);
+            Log(LogLevel::Info, debugStr.c_str());   
+            
+            //sampler->seed(index);
 
-                int depth = 1, nullInteractions = 0;
-                bool delta               = false;
-                bool lastNullInteraction = false;
+            EmitterPtr emitter;
+            const Medium *medium;
+            Spectrum power(1.0f);
 
-                Spectrum throughput(1.0f);
-                while (throughput != Spectrum(0.0f) &&
-                       (depth <= m_maxDepth || m_maxDepth < 0)) {
-                    si = scene->ray_intersect(ray);
-                    if (false) { // medium && medium->sampleDistance(Ray(ray, 0,
-                                 // its.t), mRec, m_sampler)
-                        /*throughput *= mRec.sigma_s * mRec.transmittance /
-                                          mRec.pdfSuccess;
-                        handleMediumInteraction(depth, nullInteractions, delta,
-                        mRec, medium, -ray.d, throughput * power);
-                        PhaseFunctionSamplingRecord pRec(mRec, -ray.d,
-                        TransportMode::Importance); throughput *=
-                        medium->getPhaseFunction()->sample(pRec, m_sampler);
-                        delta = false;
-                        lastNullInteraction = false;
-                        handleMediumInteractionScattering(mRec, pRec, ray);*/
-                    } else if (its.t ==
-                               std::numeric_limits<Float>::infinity()) {
+            Log(LogLevel::Info, "Sampling emitter direction");   
+
+            auto tuple = sample_emitter_direction(
+                scene, its, sampler->next_2d(), false, true);
+            //power   = std::get<1>(tuple);
+            emitter = std::get<2>(tuple);
+            medium  = emitter->medium();
+
+            Log(LogLevel::Info, "Sampling ray from emitter");   
+
+            auto rayColorPair = emitter->sample_ray(time, sampler->next_1d(), sampler->next_2d(), sampler->next_2d());
+            RayDifferential3f ray(rayColorPair.first);
+
+            int depth = 1, nullInteractions = 0;
+            bool delta               = false;
+            bool lastNullInteraction = false;
+
+            Log(LogLevel::Info, "Tracing ray");   
+            Spectrum throughput(1.0f);
+            while (throughput != Spectrum(0.0f) &&
+                   (depth <= m_maxDepth || m_maxDepth < 0)) {
+                si = scene->ray_intersect(ray);
+                if (false) { // medium && medium->sampleDistance(Ray(ray, 0,
+                             // its.t), mRec, m_sampler)
+                    /*throughput *= mRec.sigma_s * mRec.transmittance /
+                                        mRec.pdfSuccess;
+                    handleMediumInteraction(depth, nullInteractions, delta,
+                    mRec, medium, -ray.d, throughput * power);
+                    PhaseFunctionSamplingRecord pRec(mRec, -ray.d,
+                    TransportMode::Importance); throughput *=
+                    medium->getPhaseFunction()->sample(pRec, m_sampler);
+                    delta = false;
+                    lastNullInteraction = false;
+                    handleMediumInteractionScattering(mRec, pRec, ray);*/
+                } else if (!si.is_valid()) {
+                    break;
+                } else {
+                    /* Sample
+                        tau(x, y) (Surface integral). This happens with
+                        probability mRec.pdfFailure Account for this and
+                        multiply by the proper per-color-channel
+                        transmittance.
+                    */
+                    // if (medium)
+                    //    throughput *= mRec.transmittance /
+                    //    mRec.pdfFailure;
+                    const BSDF *bsdf = si.bsdf();
+
+                    /* Forward the surface scattering event to the attached
+                     * * handler */
+                    handleSurfaceInteraction(depth, nullInteractions, delta, si,
+                                             medium, throughput * power);
+                    BSDFContext bCtx(TransportMode::Importance);
+                    std::pair<BSDFSample3f, Spectrum> _sample = bsdf->sample(
+                        bCtx, si, sampler->next_1d(), sampler->next_2d());
+                    BSDFSample3f bsdfSample = _sample.first;
+                    Spectrum bsdfWeight     = _sample.second;
+                    if (bsdfWeight == Spectrum(0.0f)) {
+                        Log(LogLevel::Info, "BSDF Weight is zero :(");                        
                         break;
+                    }
+
+                    /* Prevent light leaks due to the use of shading normals
+                     * * -- [Veach, p. 158] */
+                    Vector3f wi = -ray.d, wo = si.to_world(bsdfSample.wo);
+                    Float wiDotGeoN = dot(si.n, wi), woDotGeoN = dot(si.n, wo);
+                    if (wiDotGeoN * Frame3f::cos_theta(-bsdfSample.wo) <= 0 ||
+                        woDotGeoN * Frame3f::cos_theta(bsdfSample.wo) <= 0)
+                        break;
+
+                    /* Keep track of the weight, medium and relative
+                        refractive index along the path */
+                    throughput *= bsdfWeight;
+                    if (si.is_medium_transition())
+                        medium = si.target_medium(woDotGeoN);
+
+                    if (bsdfSample.sampled_type & BSDFFlags::Null) {
+                        ++nullInteractions;
+                        lastNullInteraction = true;
                     } else {
-                        /* Sample
-                            tau(x, y) (Surface integral). This happens with
-                           probability mRec.pdfFailure Account for this and
-                           multiply by the proper per-color-channel
-                           transmittance.
-                        */
-                        // if (medium)
-                        //    throughput *= mRec.transmittance /
-                        //    mRec.pdfFailure;
-                        const BSDF *bsdf = si.bsdf();
-
-                        /* Forward the surface scattering event to the attached
-                         * * handler */
-                        handleSurfaceInteraction(depth, nullInteractions, delta,
-                                                 si, medium,
-                                                 throughput * power);
-                        BSDFContext bCtx(TransportMode::Importance);
-                        std::pair<BSDFSample3f, Spectrum> _sample =
-                            bsdf->sample(bCtx, si, sampler->next_1d(),
-                                         sampler->next_2d());
-                        BSDFSample3f bsdfSample = _sample.first;
-                        Spectrum bsdfWeight     = _sample.second;
-                        if (bsdfWeight == Spectrum(0.0f))
-                            break;
-
-                        /* Prevent light leaks due to the use of shading normals
-                         * * -- [Veach, p. 158] */
-                        Vector3f wi = -ray.d, wo = si.to_world(bsdfSample.wo);
-                        Float wiDotGeoN = dot(si.n, wi),
-                              woDotGeoN = dot(si.n, wo);
-                        if (wiDotGeoN * Frame3f::cos_theta(-bsdfSample.wo) <=
-                                0 ||
-                            woDotGeoN * Frame3f::cos_theta(bsdfSample.wo) <= 0)
-                            break;
-
-                        /* Keep track of the weight, medium and relative
-                           refractive index along the path */
-                        throughput *= bsdfWeight;
-                        if (si.is_medium_transition())
-                            medium = si.target_medium(woDotGeoN);
-
-                        if (bsdfSample.sampled_type & BSDFFlags::Null) {
-                            ++nullInteractions;
-                            lastNullInteraction = true;
-                        } else {
-                            delta = bsdfSample.sampled_type & BSDFFlags::Delta;
-                            lastNullInteraction = false;
-                        }
-
-                        /* Adjoint BSDF for shading normals -- [Veach, p. 155]
-                         */
-                        if (true) {
-                            throughput *=
-                                std::abs((Frame3f::cos_theta(-bsdfSample.wo) *
-                                          woDotGeoN) /
-                                         (Frame3f::cos_theta(bsdfSample.wo) *
-                                          wiDotGeoN));
-                        }
-
-                        handleSurfaceInteractionScattering(bsdfSample, si, ray);
+                        delta = bsdfSample.sampled_type & BSDFFlags::Delta;
+                        lastNullInteraction = false;
                     }
 
-                    if (depth++ >= m_rrStartDepth) {
-                        Float q =
-                            enoki::min(enoki::hmax(throughput), (Float) 0.95f);
-                        if (sampler->next_1d() >= q)
-                            break;
-                        throughput /= q;
+                    /* Adjoint BSDF for shading normals -- [Veach, p. 155]
+                     */
+                    if (true) {
+                        throughput *= std::abs(
+                            (Frame3f::cos_theta(-bsdfSample.wo) * woDotGeoN) /
+                            (Frame3f::cos_theta(bsdfSample.wo) * wiDotGeoN));
                     }
+
+                    handleSurfaceInteractionScattering(bsdfSample, si, ray);
+                }
+
+                if (depth++ >= m_rrStartDepth) {
+                    Float q =
+                        enoki::min(enoki::hmax(throughput), (Float) 0.95f);
+                    if (sampler->next_1d() >= q)
+                        break;
+                    throughput /= q;
                 }
             }
         }
@@ -281,6 +389,7 @@ public:
             if (scene->emitters().size() == 1) {
                 std::tie(ds, spec) =
                     scene->emitters()[0]->sample_direction(ref, sample, active);
+                emitter = scene->emitters()[0];
             } else {
                 ScalarFloat emitter_pdf = 1.f / scene->emitters().size();
                 UInt32 index            = min(
@@ -288,8 +397,8 @@ public:
                     (uint32_t) scene->emitters().size() - 1);
                 sample.x() = (sample.x() - index * emitter_pdf) *
                              scene->emitters().size();
-                emitter =
-                    gather<EmitterPtr>(scene->emitters().data(), index, active);
+                emitter = scene->emitters()[index];
+                    //gather<EmitterPtr>(scene->emitters().data(), index, active);
                 std::tie(ds, spec) =
                     emitter->sample_direction(ref, sample, active);
                 ds.pdf *= emitter_pdf;
@@ -326,8 +435,8 @@ public:
             return;
         if (depth < m_minDepth)
             return;
-        m_globalPhotonMap->insert(
-            Photon(si.p, si.n, -si.to_world(si.wi), weight, depth));
+        if (!delta)
+            m_globalPhotonMap->insert(Photon(si.p, si.n, -si.to_world(si.wi), weight, depth));
     }
 
     void handleMediumInteraction(int _depth, int nullInteractions, bool delta,

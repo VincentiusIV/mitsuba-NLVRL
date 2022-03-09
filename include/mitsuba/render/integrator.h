@@ -132,6 +132,8 @@ public:
     bool render(Scene *scene, Sensor *sensor) override;
     void cancel() override;
 
+    virtual void preprocess(Scene *scene, Sensor *sensor) const {}
+
     /**
      * Indicates whether \ref cancel() or a timeout have occured. Should be
      * checked regularly in the integrator's main loop so that timeouts are
