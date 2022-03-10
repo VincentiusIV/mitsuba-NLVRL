@@ -15,9 +15,8 @@
 #include <mitsuba/render/phase.h>
 #include <mitsuba/render/records.h>
 #include <random>
-#include "kdtree.h"
+#include "photonmap.h"
 
-#define INV_PI 0.31830988618379067154
 
 template <class T> constexpr std::string_view type_name() {
     using namespace std;
@@ -39,7 +38,8 @@ template <class T> constexpr std::string_view type_name() {
 
 NAMESPACE_BEGIN(mitsuba)
 
-const int k = 3;
+const int k          = 3;
+const int numPhotons = 1000;
 
 template <typename Float, typename Spectrum>
 class PhotonMapper : public SamplingIntegrator<Float, Spectrum> {
@@ -49,153 +49,11 @@ public:
     MTS_IMPORT_TYPES()
     MTS_IMPORT_OBJECT_TYPES()
 
-    struct PointNode {
-        float point[k];
-        short flag;
-        PointNode *left;
-        PointNode *right;        
-    };
-
-    struct Photon : PointNode {
-        Spectrum spectrum;
-        Normal3f normal;
-        Vector3f direction;
-        int depth;
-
-        Photon(const Point3f &position, const Normal3f &normal,
-               const Vector3f &direction, const Spectrum &spectrum,
-               const int &depth)
-            : PointNode() {
-            point[0]        = position[0];
-            point[1]        = position[1];
-            point[2]        = position[2];
-            this->spectrum  = spectrum;
-            this->normal    = normal;
-            this->direction = direction;
-            this->depth     = depth;
-        }
-    };
-
-    class PhotonMap {
-    public:
-        PhotonMap() { 
-            Log(LogLevel::Info, "Constructing PhotonMap...");
-            m_scale = 0.001f;
-        }
-
-        inline void insert(const Photon &photon) { 
-            photons.push_back(photon);
-            std::string photonString =
-                "Inserting photon... Count: " + std::to_string(photons.size());
-            Log(LogLevel::Info, photonString.c_str());       
-            std::string numPhotonsStr = "px: " + std::to_string(photon.point[0]) +
-                "py: " + std::to_string(photon.point[1]) +
-                "pz: " + std::to_string(photon.point[2]);
-            Log(LogLevel::Info, numPhotonsStr.c_str());  
-
-            std::string colorStr =
-                "r: " + std::to_string(photon.spectrum[0]) +
-                "g: " + std::to_string(photon.spectrum[1]) +
-                "b: " + std::to_string(photon.spectrum[2]);
-            Log(LogLevel::Info, colorStr.c_str());  
-
-            std::string normalStr = "nx: " + std::to_string(photon.normal[0]) +
-                "ny: " + std::to_string(photon.normal[1]) +
-                "nz: " + std::to_string(photon.normal[2]);
-            Log(LogLevel::Info, normalStr.c_str());  
-        }       
-
-        Spectrum estimateRadiance(const SurfaceInteraction3f& si,
-                                  float searchRadius, size_t maxPhotons) const {
-            float squaredRadius = searchRadius * searchRadius;
-            size_t resultCount = photons.size(); // nnSearch(p, squaredRadius,
-                                                 // maxPhotons, results);
-            float invSquaredRadius = 1.0f / squaredRadius;
-
-            /* Sum over all contributions */
-            Spectrum result(0.0f);
-            const BSDF *bsdf = si.bsdf();
-            for (size_t i = 0; i < resultCount; i++) {
-                Photon photon = photons[i];
-                Point3f photonP(photon.point[0], photon.point[1], photon.point[2]);
-                Vector3f between  = photonP - si.p;
-                float distSquared = between[0] * between[0] +
-                                    between[1] * between[1] +
-                                    between[2] * between[2];
-                float sqrTerm = 1.0f - distSquared * invSquaredRadius;
-                if (distSquared > squaredRadius)
-                    continue;
-
-                Vector3f wi = si.to_local(-photon.direction);
-
-                BSDFContext bRec(TransportMode::Importance);
-                result += photon.spectrum * bsdf->eval(bRec, si, si.wi) * (sqrTerm * sqrTerm);
-            }
-
-            /* Based on the assumption that the surface is locally flat,
-               the estimate is divided by the area of a disc corresponding to
-               the projected spherical search region */
-            return result * (m_scale * 3.0f * INV_PI * invSquaredRadius);
-        }
-
-        Spectrum estimateIrradiance(const Point3f &p, const Normal3f &n,
-                                    float searchRadius, int maxDepth,
-                                    size_t maxPhotons) const {
-            //SearchResult *results = static_cast<SearchResult *>(alloca((maxPhotons + 1) * sizeof(SearchResult)));
-            float squaredRadius = searchRadius * searchRadius;
-            size_t resultCount  = min(maxPhotons, photons.size()); // nnSearch(p, squaredRadius,
-                                                 // maxPhotons, results);
-            float invSquaredRadius = 1.0f / squaredRadius;
-            /* Sum over all contributions */
-            Spectrum result(0.0f);
-            for (size_t i = 0; i < resultCount; i++) {
-                //const SearchResult &searchResult = results[i];
-                Photon photon = photons[i];
-                if (photon.depth > maxDepth)
-                    continue;
-                Point3f photonP(photon.point[0], photon.point[1], photon.point[2]);
-
-                Vector3f between   = photonP - p;
-                float distSquared =
-                    between[0] * between[0] + 
-                    between[1] * between[1] +
-                    between[2] * between[2];
-                float sqrTerm = 1.0f - distSquared * invSquaredRadius;
-
-                if (distSquared > squaredRadius)
-                    continue;
-
-                Vector3f wi = -photon.direction;
-                float wiDotGeoN = dot(photon.normal, wi);
-                float wiDotShN  = dot(n, wi);
-
-                /* Only use photons from the top side of the surface */
-                if (dot(wi, n) > 0 && dot(photon.normal, n) > 1e-1f && wiDotGeoN > 1e-2f) {
-                    /* Account for non-symmetry due to shading normals */
-                    Spectrum power = photon.spectrum* std::abs(wiDotShN / wiDotGeoN);
-
-                    /* Weight the samples using Simpson's kernel */
-                    float sqrTerm = 1.0f - distSquared * invSquaredRadius;
-
-                    result += power * (sqrTerm * sqrTerm);
-                }
-
-            }
-            /* Based on the assumption that the surface is locally flat,
-               the estimate is divided by the area of a disc corresponding to
-               the projected spherical search region */
-            return result * (m_scale * 3.0f * INV_PI * invSquaredRadius);
-        }
-
-
-
-    private:
-        std::vector<Photon> photons;
-        float m_scale;
-    };
+    typedef PhotonMap<Float, Spectrum> PhotonMap;
+    typedef typename PhotonMap::Photon Photon;
 
     PhotonMapper(const Properties &props) : Base(props) {
-        m_globalPhotonMap  = new PhotonMap();
+        m_globalPhotonMap    = new PhotonMap(numPhotons);
         m_directSamples    = props.int_("directSamples", 16);
         m_glossySamples    = props.int_("glossySamples", 32);
         m_rrStartDepth     = props.int_("rrStartDepth", 5);
@@ -216,6 +74,7 @@ public:
         m_autoCancelGathering = props.bool_("autoCancelGathering", true);
        
     }
+
 
     void preprocess(Scene* scene, Sensor* sensor) const override {
         static bool m_isPreProcessed = false;
@@ -270,7 +129,6 @@ public:
 
         sampler->seed(0);
 
-        const int numPhotons = 10000;
         std::string numPhotonsStr =
             "- Photon Count: " + std::to_string(numPhotons);
         Log(LogLevel::Info, numPhotonsStr.c_str());    
@@ -468,7 +326,7 @@ public:
         if (depth < m_minDepth)
             return;
         if (!delta)
-            m_globalPhotonMap->insert(Photon(si.p, si.n, -si.to_world(si.wi), weight, depth));
+            m_globalPhotonMap->insert(si.p, Photon(si.n, -si.to_world(si.wi), weight, depth));
     }
 
     void handleMediumInteraction(int _depth, int nullInteractions, bool delta,
@@ -479,8 +337,7 @@ public:
         if (depth < m_minDepth) {
             return;
         }
-        m_volumePhotonMap->insert(
-            Photon(mi.p, Normal3f(0.0f, 0.0f, 0.0f), -wi, weight, depth));
+        //m_volumePhotonMap->insert(Photon(mi.p, Normal3f(0.0f, 0.0f, 0.0f), -wi, weight, depth));
     }
 
     void handleSurfaceInteractionScattering(BSDFSample3f &bRec,
