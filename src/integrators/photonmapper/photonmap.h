@@ -57,7 +57,7 @@ public:
 
     PhotonMap(size_t photonCount) {
         Log(LogLevel::Info, "Constructing PhotonMap...");
-        m_scale = 0.001f;
+        m_scale = 1.0f;
         m_kdtree.reserve(photonCount);
     }
 
@@ -77,6 +77,13 @@ public:
     inline Photon &operator[](size_t idx) { return m_kdtree[idx]; }
     /// Return one of the photons by index (const version)
     inline const Photon &operator[](size_t idx) const { return m_kdtree[idx];
+    }
+
+    /// Scale all photon power values contained in this photon map
+    inline void setScaleFactor(Float value) { m_scale = value; }
+
+    inline void build(bool recomputeAABB = false) {
+        m_kdtree.build(recomputeAABB);
     }
 
     /// Perform a nearest-neighbor query, see \ref PointKDTree for details
@@ -128,7 +135,8 @@ public:
     Spectrum estimateIrradiance(const Point3f &p, const Normal3f &n,
                                 float searchRadius, int maxDepth,
                                 size_t maxPhotons) const {
-        SearchResult *results  = new SearchResult[maxPhotons];
+        SearchResult *results =
+            new SearchResult[maxPhotons];
         float squaredRadius = searchRadius * searchRadius;
         size_t resultCount = nnSearch(p, squaredRadius, maxPhotons, results);
         float invSquaredRadius = 1.0f / squaredRadius;

@@ -6,6 +6,36 @@
 
 NAMESPACE_BEGIN(mitsuba)
 
+#define SIZE_T_FMT "%Iu"
+
+template <typename DataType, typename IndexType>
+void permute_inplace(DataType *data, std::vector<IndexType> &perm) {
+    for (size_t i = 0; i < perm.size(); i++) {
+        if (perm[i] != i) {
+            /* The start of a new cycle has been found. Save
+               the value at this position, since it will be
+               overwritten */
+            IndexType j     = (IndexType) i;
+            DataType curval = data[i];
+
+            do {
+                /* Shuffle backwards */
+                IndexType k = perm[j];
+                data[j]     = data[k];
+
+                /* Also fix the permutations on the way */
+                perm[j] = j;
+                j       = k;
+
+                /* Until the end of the cycle has been found */
+            } while (perm[j] != i);
+
+            /* Fix the final position with the saved value */
+            data[j] = curval;
+            perm[j] = j;
+        }
+    }
+}
 
 /**
  * \brief Simple kd-tree node for use with \ref PointKDTree.
@@ -171,7 +201,7 @@ public:
 
     };
 
-    class SearchResultComparator {
+    struct SearchResultComparator {
     public:
         inline bool operator()(const SearchResult &a,
                                const SearchResult &b) const {
@@ -227,26 +257,17 @@ public:
 
     /// Construct the KD-tree hierarchy
     void build(bool recomputeAABB = false) {
-        ref<Timer> timer = new Timer();
-
         if (m_nodes.size() == 0) {
             Log(LogLevel::Error, "build(): kd-tree is empty!");
             return;
         }
 
-        Log(LogLevel::Error,
-             "Building a %i-dimensional kd-tree over " SIZE_T_FMT
-             " data points (%s)",
-             PointType::dim, m_nodes.size(),
-             memString(m_nodes.size() * sizeof(NodeType)).c_str());
 
         if (recomputeAABB) {
             m_aabb.reset();
             for (size_t i = 0; i < m_nodes.size(); ++i)
                 m_aabb.expand(m_nodes[i].getPosition());
         }
-        int aabbTime = timer->getMilliseconds();
-        timer->reset();
 
         /* Instead of shuffling around the node data itself, only modify
            an indirection table initially. Once the tree construction
@@ -257,35 +278,19 @@ public:
             indirection[i] = (IndexType) i;
 
         m_depth = 0;
-        int constructionTime;
         if (NodeType::leftBalancedLayout) {
             std::vector<IndexType> permutation(m_nodes.size());
             buildLB(0, 1, indirection.begin(), indirection.begin(),
                     indirection.end(), permutation);
-            constructionTime = timer->getMilliseconds();
-            timer->reset();
+
             permute_inplace(&m_nodes[0], permutation);
         } else {
             build(1, indirection.begin(), indirection.begin(),
                   indirection.end());
-            constructionTime = timer->getMilliseconds();
-            timer->reset();
+
             permute_inplace(&m_nodes[0], indirection);
         }
 
-        int permutationTime = timer->getMilliseconds();
-
-        if (recomputeAABB)
-            Log(LogLevel::Error,
-                 "Done after %i ms (breakdown: aabb: %i ms, build: %i ms, "
-                 "permute: %i ms). ",
-                 aabbTime + constructionTime + permutationTime, aabbTime,
-                 constructionTime, permutationTime);
-        else
-            Log(LogLevel::Error,
-                 "Done after %i ms (breakdown: build: %i ms, permute: %i ms). ",
-                 constructionTime + permutationTime, constructionTime,
-                 permutationTime);
     }
 
     /**
@@ -744,15 +749,34 @@ public:
 
 protected:
 
-    inline bool operator()(const IndexType &i1, const IndexType &i2) const {
-        return m_nodes[i1].getPosition()[m_axis] <
-                m_nodes[i2].getPosition()[m_axis];
-    }
+    struct CoordinateOrdering {
+    public:
+        inline CoordinateOrdering(const std::vector<NodeType> &nodes, int axis)
+            : m_nodes(nodes), m_axis(axis) {}
+        inline bool operator()(const IndexType &i1, const IndexType &i2) const {
+            return m_nodes[i1].getPosition()[m_axis] <
+                   m_nodes[i2].getPosition()[m_axis];
+        }
 
+    private:
+        const std::vector<NodeType> &m_nodes;
+        int m_axis;
+    };
 
-    inline bool operator()(const IndexType &i) const {
-        return m_nodes[i].getPosition()[m_axis] <= m_value;
-    }
+    struct LessThanOrEqual {
+    public:
+        inline LessThanOrEqual(const std::vector<NodeType> &nodes, int axis,
+                               Scalar value)
+            : m_nodes(nodes), m_axis(axis), m_value(value) {}
+        inline bool operator()(const IndexType &i) const {
+            return m_nodes[i].getPosition()[m_axis] <= m_value;
+        }
+
+    private:
+        const std::vector<NodeType> &m_nodes;
+        int m_axis;
+        Scalar m_value;
+    };
 
     /**
      * Given a number of entries, this method calculates the number of nodes
@@ -800,7 +824,7 @@ protected:
         m_depth = std::max(depth, m_depth);
 
         IndexType count = (IndexType) (rangeEnd - rangeStart);
-        SAssert(count > 0);
+        Assert(count > 0);
 
         if (count == 1) {
             /* Create a leaf node */
@@ -811,7 +835,7 @@ protected:
 
         typename std::vector<IndexType>::iterator split =
             rangeStart + leftSubtreeSize(count);
-        int axis = m_aabb.getLargestAxis();
+        int axis = m_aabb.major_axis();
         std::nth_element(rangeStart, split, rangeEnd,
                          CoordinateOrdering(m_nodes, axis));
 
@@ -843,7 +867,7 @@ protected:
         m_depth = std::max(depth, m_depth);
 
         IndexType count = (IndexType) (rangeEnd - rangeStart);
-        SAssert(count > 0);
+        Assert(count > 0);
 
         if (count == 1) {
             /* Create a leaf node */
@@ -857,14 +881,14 @@ protected:
         switch (m_heuristic) {
             case EBalanced: {
                 split = rangeStart + count / 2;
-                axis  = m_aabb.getLargestAxis();
+                axis  = m_aabb.major_axis();
                 std::nth_element(rangeStart, split, rangeEnd,
                                  CoordinateOrdering(m_nodes, axis));
             }; break;
 
             case ELeftBalanced: {
                 split = rangeStart + leftSubtreeSize(count);
-                axis  = m_aabb.getLargestAxis();
+                axis  = m_aabb.major_axis();
                 std::nth_element(rangeStart, split, rangeEnd,
                                  CoordinateOrdering(m_nodes, axis));
             }; break;
@@ -872,7 +896,7 @@ protected:
             case ESlidingMidpoint: {
                 /* Sliding midpoint rule: find a split that is close to the
                  * spatial median */
-                axis = m_aabb.getLargestAxis();
+                axis = m_aabb.major_axis();
 
                 Scalar midpoint =
                     (Scalar) 0.5f * (m_aabb.max[axis] + m_aabb.min[axis]);
@@ -896,13 +920,13 @@ protected:
             case EVoxelVolume: {
                 float bestCost = std::numeric_limits<float>::infinity();
 
-                for (int dim = 0; dim < PointType::dim; ++dim) {
+                for (int dim = 0; dim < 3; ++dim) {
                     std::sort(rangeStart, rangeEnd,
                               CoordinateOrdering(m_nodes, dim));
 
                     size_t numLeft = 1, numRight = count - 2;
                     AABBType leftAABB(m_aabb), rightAABB(m_aabb);
-                    float invVolume = 1.0f / m_aabb.getVolume();
+                    float invVolume = 1.0f / m_aabb.volume();
                     for (typename std::vector<IndexType>::iterator it =
                              rangeStart + 1;
                          it != rangeEnd; ++it) {
@@ -911,8 +935,8 @@ protected:
                         float pos         = m_nodes[*it].getPosition()[dim];
                         leftAABB.max[dim] = rightAABB.min[dim] = pos;
 
-                        float cost = (numLeft * leftAABB.getVolume() +
-                                      numRight * rightAABB.getVolume()) *
+                        float cost = (numLeft * leftAABB.volume() +
+                                      numRight * rightAABB.volume()) *
                                      invVolume;
                         if (cost < bestCost) {
                             bestCost = cost;

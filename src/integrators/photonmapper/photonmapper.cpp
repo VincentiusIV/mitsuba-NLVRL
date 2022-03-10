@@ -39,7 +39,7 @@ template <class T> constexpr std::string_view type_name() {
 NAMESPACE_BEGIN(mitsuba)
 
 const int k          = 3;
-const int numPhotons = 100;
+const int numPhotons = 10000;
 
 template <typename Float, typename Spectrum>
 class PhotonMapper : public SamplingIntegrator<Float, Spectrum> {
@@ -115,10 +115,8 @@ public:
             auto [bs, bsdf_val] = bsdf->sample(bCtx, si, sampler->next_1d(active), sampler->next_2d(active), active);
             bsdf_val = si.to_world_mueller(bsdf_val, -bs.wo, si.wi);
 
-            LiSurf += m_globalPhotonMap->estimateRadiance(si, m_globalLookupRadius, m_globalLookupSize);
-            LiSurf += m_globalPhotonMap->estimateIrradiance(si.p, si.sh_frame.n, m_globalLookupRadius, maxDepth, m_globalLookupSize) * bsdf_val;
-
-            
+            //LiSurf += m_globalPhotonMap->estimateRadiance(si, m_globalLookupRadius, m_globalLookupSize);
+            LiSurf += m_globalPhotonMap->estimateIrradiance(si.p, si.sh_frame.n, m_globalLookupRadius, maxDepth, m_globalLookupSize) * bsdf_val;            
         }
 
         return { LiSurf, si.is_valid() };
@@ -148,6 +146,8 @@ public:
         Interaction3f its;
         ref<Sensor> sensor = scene->sensors()[0];
         Float time = sensor->shutter_open() + 0.5f * sensor->shutter_open_time();
+
+        int numShot = 0;
 
         for (int index = 0; index < numPhotons; index++) {
             std::string debugStr =  "- Photon Num: " + std::to_string(index);
@@ -180,6 +180,7 @@ public:
             Spectrum throughput(1.0f);
             while (throughput != Spectrum(0.0f) &&
                    (depth <= m_maxDepth || m_maxDepth < 0)) {
+                ++numShot;
                 si = scene->ray_intersect(ray);
                 if (false) { // medium && medium->sampleDistance(Ray(ray, 0,
                              // its.t), mRec, m_sampler)
@@ -263,6 +264,9 @@ public:
                 }
             }
         }
+
+        m_globalPhotonMap->setScaleFactor(1.0f / numShot);
+        m_globalPhotonMap->build();
     }
 
     std::tuple<DirectionSample3f, Spectrum, EmitterPtr>
