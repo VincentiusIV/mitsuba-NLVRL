@@ -39,7 +39,7 @@ template <class T> constexpr std::string_view type_name() {
 NAMESPACE_BEGIN(mitsuba)
 
 const int k          = 3;
-const int numPhotons = 1000;
+const int numPhotons = 100;
 
 template <typename Float, typename Spectrum>
 class PhotonMapper : public SamplingIntegrator<Float, Spectrum> {
@@ -50,7 +50,7 @@ public:
     MTS_IMPORT_OBJECT_TYPES()
 
     typedef PhotonMap<Float, Spectrum> PhotonMap;
-    typedef typename PhotonMap::Photon Photon;
+    typedef typename PhotonMap::PhotonData PhotonData;
 
     PhotonMapper(const Properties &props) : Base(props) {
         m_globalPhotonMap    = new PhotonMap(numPhotons);
@@ -326,7 +326,7 @@ public:
         if (depth < m_minDepth)
             return;
         if (!delta)
-            m_globalPhotonMap->insert(si.p, Photon(si.n, -si.to_world(si.wi), weight, depth));
+            m_globalPhotonMap->insert(si.p, PhotonData(si.n, -si.to_world(si.wi), weight, depth));
     }
 
     void handleMediumInteraction(int _depth, int nullInteractions, bool delta,
@@ -337,7 +337,7 @@ public:
         if (depth < m_minDepth) {
             return;
         }
-        //m_volumePhotonMap->insert(Photon(mi.p, Normal3f(0.0f, 0.0f, 0.0f), -wi, weight, depth));
+        //m_volumePhotonMap->insert(PhotonData(mi.p, Normal3f(0.0f, 0.0f, 0.0f), -wi, weight, depth));
     }
 
     void handleSurfaceInteractionScattering(BSDFSample3f &bRec,

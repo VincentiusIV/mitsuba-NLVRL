@@ -169,11 +169,15 @@ public:
             return distSquared == r.distSquared && index == r.index;
         }
 
-        inline bool operator<(const SearchResult &other) const {
-            return distSquared < other.distSquared;
-        }
     };
 
+    class SearchResultComparator {
+    public:
+        inline bool operator()(const SearchResult &a,
+                               const SearchResult &b) const {
+            return a.distSquared < b.distSquared;
+        }
+    };
 
 public:
     /**
@@ -301,7 +305,7 @@ public:
      * \return The number of search results (equal to \c k or less)
      */
     size_t nnSearch(const PointType &p, float &_sqrSearchRadius, size_t k,
-                    std::vector<SearchResult> &results) const {
+                    SearchResult *results) const {
         if (m_nodes.size() == 0)
             return 0;
 
@@ -360,20 +364,24 @@ public:
                 if (resultCount < k) {
                     /* There is still room, just add the point to
                        the search result list */
-                    ++resultCount;
-                    results.push_back(SearchResult(pointDistSquared, index));
+                    results[resultCount++] =
+                        SearchResult(pointDistSquared, index);
                 } else {
+                    return resultCount;
                     if (!isHeap) {
                         /* Establish the max-heap property */
-                        std::make_heap(results.begin(), results.end()); //, SearchResultComparator()
+                        std::make_heap(results, results + resultCount, SearchResultComparator());
                         isHeap = true;
                     }
+                    SearchResult *end = results + resultCount + 1;
 
                     /* Add the new point, remove the one that is farthest away
                      */
-                    results[resultCount] = SearchResult(pointDistSquared, index);
-                    std::push_heap(results.begin(), results.end()); //, SearchResultComparator()
-                    std::pop_heap(results.begin(), results.end()); //, SearchResultComparator()
+                    results[resultCount] =
+                        SearchResult(pointDistSquared, index);
+                    std::push_heap(results, end, SearchResultComparator());
+                    std::pop_heap(results, end, SearchResultComparator());
+
 
                     /* Reduce the search radius accordingly */
                     sqrSearchRadius = results[0].distSquared;
@@ -457,31 +465,31 @@ public:
             const float pointDistSquared =
                 (node.getPosition() - p).lengthSquared();
 
-            if (pointDistSquared < sqrSearchRadius) {
-                /* Switch to a max-heap when the available search
-                   result space is exhausted */
-                if (resultCount < k) {
+            if (resultCount < k) {
                     /* There is still room, just add the point to
                        the search result list */
-                    results.push_back(SearchResult(pointDistSquared, index));
+                    results[resultCount++] =
+                        SearchResult(pointDistSquared, index);
                 } else {
                     if (!isHeap) {
                         /* Establish the max-heap property */
-                        std::make_heap(results.begin(), results.end());
+                        std::make_heap(results, results + resultCount,
+                                       SearchResultComparator());
                         isHeap = true;
                     }
+                    SearchResult *end = results + resultCount + 1;
 
                     /* Add the new point, remove the one that is farthest away
                      */
                     results[resultCount] =
                         SearchResult(pointDistSquared, index);
-                    std::push_heap(results.begin(), results.end());
-                    std::pop_heap(results.begin(), results.end());
+                    std::push_heap(results, end, SearchResultComparator());
+                    std::pop_heap(results, end, SearchResultComparator());
+
 
                     /* Reduce the search radius accordingly */
                     sqrSearchRadius = results[0].distSquared;
                 }
-            }
             index = nextIndex;
         }
         return resultCount;

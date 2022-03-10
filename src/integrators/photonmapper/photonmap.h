@@ -10,7 +10,7 @@ NAMESPACE_BEGIN(mitsuba)
 
 #define INV_PI 0.31830988618379067154
 
-template <typename Float, typename Spectrum> struct Photon {
+template <typename Float, typename Spectrum> struct PhotonData {
     MTS_IMPORT_TYPES()
     MTS_IMPORT_OBJECT_TYPES()
 
@@ -19,9 +19,9 @@ template <typename Float, typename Spectrum> struct Photon {
     Vector3f direction;
     int depth;
 
-    inline Photon() : spectrum(0.0f), normal(0.0f), direction(0.0f), depth(0) {}
+    inline PhotonData() : spectrum(0.0f), normal(0.0f), direction(0.0f), depth(0) {}
 
-    Photon(const Normal3f &normal,
+    PhotonData(const Normal3f &normal,
            const Vector3f &direction, const Spectrum &spectrum,
            const int &depth) {
         this->spectrum  = spectrum;
@@ -32,12 +32,12 @@ template <typename Float, typename Spectrum> struct Photon {
 };
 
 template <typename Float, typename Spectrum, typename Point>
-struct PhotonNode : SimpleKDNode<Point, Photon<Float, Spectrum>> {
-    typedef Photon<Float, Spectrum> Photon;
+struct Photon : SimpleKDNode<Point, PhotonData<Float, Spectrum>> {
+    typedef PhotonData<Float, Spectrum> PhotonData;
 
-    inline PhotonNode() : SimpleKDNode() {}
+    inline Photon() {}
 
-    inline PhotonNode(const Point &position, const Photon &photon)
+    inline Photon(const Point &position, const PhotonData &photon)
         : SimpleKDNode(photon) {
         this->setPosition(position);
     }
@@ -49,9 +49,9 @@ public:
     MTS_IMPORT_TYPES()
     MTS_IMPORT_OBJECT_TYPES()
 
-    typedef Photon<Float, Spectrum> Photon;
-    typedef PhotonNode<Float, Spectrum, Point3f> PhotonNode;
-    typedef PointKDTree<Float, Spectrum, PhotonNode> PhotonTree;
+    typedef PhotonData<Float, Spectrum> PhotonData;
+    typedef Photon<Float, Spectrum, Point3f> Photon;
+    typedef PointKDTree<Float, Spectrum, Photon> PhotonTree;
     typedef typename PhotonTree::IndexType IndexType;
     typedef typename PhotonTree::SearchResult SearchResult;
 
@@ -71,28 +71,27 @@ public:
     inline size_t size() const { return m_kdtree.size(); }
     /// Return the capacity of the kd-tree
     inline size_t capacity() const { return m_kdtree.capacity(); }
-    /// Append a kd-tree photon to the photon array
-    inline void push_back(const PhotonNode &photon) { m_kdtree.push_back(photon); }
+    /// Append a kd-tree photonData to the photonData array
+    inline void push_back(const Photon &photon) { m_kdtree.push_back(photon); }
     /// Return one of the photons by index
-    inline PhotonNode &operator[](size_t idx) { return m_kdtree[idx]; }
+    inline Photon &operator[](size_t idx) { return m_kdtree[idx]; }
     /// Return one of the photons by index (const version)
-    inline const PhotonNode &operator[](size_t idx) const { return m_kdtree[idx];
+    inline const Photon &operator[](size_t idx) const { return m_kdtree[idx];
     }
 
     /// Perform a nearest-neighbor query, see \ref PointKDTree for details
     inline size_t nnSearch(const Point3f &p, Float &sqrSearchRadius, size_t k,
-                           std::vector<SearchResult> &results) const {
+                           SearchResult *results) const {
         return m_kdtree.nnSearch(p, sqrSearchRadius, k, results);
     }
 
     /// Perform a nearest-neighbor query, see \ref PointKDTree for details
-    inline size_t nnSearch(const Point3f &p, size_t k,
-                           std::vector<SearchResult> &results) const {
+    inline size_t nnSearch(const Point3f &p, size_t k, SearchResult *) const {
         return m_kdtree.nnSearch(p, k, results);
     }
 
-    inline void insert(const Point3f &position, const Photon &photon) {
-        PhotonNode newNode(position, photon);
+    inline void insert(const Point3f &position, const PhotonData &photon) {
+        Photon newNode(position, photon);
         push_back(newNode);
         //push_back(newNode);
         std::string numPhotonsStr = "Inserted new photon, photon Count: " +
@@ -103,73 +102,61 @@ public:
 
     Spectrum estimateRadiance(const SurfaceInteraction3f &si,
                               float searchRadius, size_t maxPhotons) const {
-        std::vector<SearchResult> results;
-        results.reserve(maxPhotons);
+        SearchResult *results  = new SearchResult[maxPhotons]; // this is really expensive, consider a buffer per thread
         float squaredRadius = searchRadius * searchRadius;
         size_t resultCount  = nnSearch(si.p, squaredRadius, maxPhotons, results);
         float invSquaredRadius = 1.0f / squaredRadius;
-
-        std::string numPhotonsStr =
-            "- nn Count: " + std::to_string(resultCount);
-        //Log(LogLevel::Info, numPhotonsStr.c_str());    
-
         Spectrum result(0.0f);
         const BSDF *bsdf = si.bsdf();
         for (size_t i = 0; i < resultCount; i++) {
             const SearchResult &searchResult = results[i];
-            const PhotonNode &photonNode     = m_kdtree[searchResult.index];
-            const Photon &photon             = photonNode.getData();
-            Vector3f between      = photonNode.getPosition() - si.p;
+            const Photon &photon         = m_kdtree[searchResult.index];
+            const PhotonData &photonData             = photon.getData();
+            Vector3f between      = photon.getPosition() - si.p;
             float sqrTerm = 1.0f - searchResult.distSquared * invSquaredRadius;
             if (searchResult.distSquared > squaredRadius)
                 continue;
-            Vector3f wi = si.to_local(-photon.direction);
+            Vector3f wi = si.to_local(-photonData.direction);
             BSDFContext bRec(TransportMode::Importance);
-            result += photon.spectrum * bsdf->eval(bRec, si, si.wi) * (sqrTerm * sqrTerm);
+            result += photonData.spectrum * bsdf->eval(bRec, si, si.wi) * (sqrTerm * sqrTerm);
         }
 
+        delete results;
         return result * (m_scale * 3.0 * INV_PI * invSquaredRadius);
     }
 
     Spectrum estimateIrradiance(const Point3f &p, const Normal3f &n,
                                 float searchRadius, int maxDepth,
                                 size_t maxPhotons) const {
-        std::vector<SearchResult> results;
-        results.reserve(maxPhotons);
+        SearchResult *results  = new SearchResult[maxPhotons];
         float squaredRadius = searchRadius * searchRadius;
         size_t resultCount = nnSearch(p, squaredRadius, maxPhotons, results);
         float invSquaredRadius = 1.0f / squaredRadius;
         Spectrum result(0.0f);
         for (size_t i = 0; i < resultCount; i++) {
             const SearchResult &searchResult = results[i];
-            const PhotonNode &photonNode     = m_kdtree[searchResult.index];
-            const Photon &photon              = photonNode.getData();
-            if (photon.depth > maxDepth)
+            const Photon &photon = m_kdtree[searchResult.index];
+            const PhotonData &photonData = photon.getData();
+            if (photonData.depth > maxDepth)
                 continue;
 
-            Vector3f between  = photonNode.position - p;
-            float distSquared = between[0] * between[0] +
-                                between[1] * between[1] +
-                                between[2] * between[2];
-            float sqrTerm = 1.0f - distSquared * invSquaredRadius;
+            float sqrTerm = 1.0f - searchResult.distSquared * invSquaredRadius;
 
-            if (distSquared > squaredRadius)
-                continue;
-
-            Vector3f wi     = -photon.direction;
-            float wiDotGeoN = dot(photon.normal, wi);
+            Vector3f wi     = -photonData.direction;
+            float wiDotGeoN = dot(photonData.normal, wi);
             float wiDotShN  = dot(n, wi);
 
-            if (dot(wi, n) > 0 && dot(photon.normal, n) > 1e-1f &&
+            if (dot(wi, n) > 0 && dot(photonData.normal, n) > 1e-1f &&
                 wiDotGeoN > 1e-2f) {
                 Spectrum power =
-                    photon.spectrum * std::abs(wiDotShN / wiDotGeoN);
+                    photonData.spectrum * std::abs(wiDotShN / wiDotGeoN);
 
-                float sqrTerm = 1.0f - distSquared * invSquaredRadius;
+                float sqrTerm = 1.0f - searchResult.distSquared * invSquaredRadius;
 
                 result += power * (sqrTerm * sqrTerm);
             }
         }
+        delete results;
         return result * (m_scale * 3.0 * INV_PI * invSquaredRadius);
     }
 
