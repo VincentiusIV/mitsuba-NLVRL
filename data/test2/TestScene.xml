@@ -16,9 +16,6 @@
 		</emitter>
 	</shape>
 
-
-
-
 	<bsdf type="roughplastic" id="AurichalciteMaterial">
 		<string name="distribution" value="ggx"/>
 		<float name="alpha" value="0.05"/>

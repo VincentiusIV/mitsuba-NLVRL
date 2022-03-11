@@ -69,6 +69,7 @@ public:
         SurfaceInteraction3f si = zero<SurfaceInteraction3f>();
         si.t = math::Infinity<Float>;
         Mask needs_intersection = true;
+
         for (int bounce = 0;; ++bounce) {
             // ----------------- Handle termination of paths ------------------
 

@@ -17,6 +17,7 @@
 #include <random>
 #include "photonmap.h"
 
+#define M_PI 3.14159265358979323846
 
 template <class T> constexpr std::string_view type_name() {
     using namespace std;
@@ -46,7 +47,7 @@ class PhotonMapper : public SamplingIntegrator<Float, Spectrum> {
 
 public:
     MTS_IMPORT_BASE(SamplingIntegrator, m_hide_emitters)
-    MTS_IMPORT_TYPES()
+    MTS_IMPORT_TYPES(PhaseFunctionContext)
     MTS_IMPORT_OBJECT_TYPES()
 
     typedef PhotonMap<Float, Spectrum> PhotonMap;
@@ -54,6 +55,10 @@ public:
 
     PhotonMapper(const Properties &props) : Base(props) {
         m_globalPhotonMap    = new PhotonMap(numPhotons);
+        m_causticPhotonMap = new PhotonMap(numPhotons);
+        m_volumePhotonMap    = new PhotonMap(numPhotons);
+
+
         m_directSamples    = props.int_("directSamples", 16);
         m_glossySamples    = props.int_("glossySamples", 32);
         m_rrStartDepth     = props.int_("rrStartDepth", 5);
@@ -64,7 +69,7 @@ public:
         m_causticPhotons   = props.int_("causticPhotons", 250000);
         m_volumePhotons    = props.int_("volumePhotons", 250000);
         m_globalLookupRadiusRelative =
-            props.float_("globalLookupRadiusRelative", 0.05f);
+            props.float_("globalLookupRadiusRelative", 0.1f);
         m_causticLookupRadiusRelative =
             props.float_("causticLookupRadiusRelative", 0.0125f);
         m_globalLookupSize    = props.int_("globalLookupSize", 120);
@@ -103,23 +108,75 @@ public:
             Log(LogLevel::Info, lookupString.c_str());   
         }
 
-        SurfaceInteraction3f si = scene->ray_intersect(ray);
+        
+        RayDifferential3f r(ray);
+        
+        SurfaceInteraction3f si;
+        si = scene->ray_intersect(r);
 
-        Spectrum LiSurf(0.0f), LiMedium(0.0f), transmittance(1.0f);
-        int maxDepth = m_maxDepth == -1 ? INT_MAX : (m_maxDepth); // - rRec.depth)
+        if (!si.is_valid())
+            return { Spectrum(0.0f), false }; 
+        Spectrum E(0.0f);
+        int maxDepth = m_maxDepth == -1 ? INT_MAX : (m_maxDepth);
+        if (si.shape->is_emitter())
+            return { Spectrum(1.0f), true };   
+        
 
-        if (si.is_valid()) {
+        for (int i = 0; i < m_directSamples; ++i) {
 
+            if (!si.is_valid())
+                // TODO: Sample environment emitter (skybox)
+            {
+                E /= i;
+                break;
+            }
             const BSDF *bsdf = si.bsdf();
             BSDFContext bCtx(TransportMode::Radiance);
-            auto [bs, bsdf_val] = bsdf->sample(bCtx, si, sampler->next_1d(active), sampler->next_2d(active), active);
-            bsdf_val = si.to_world_mueller(bsdf_val, -bs.wo, si.wi);
+            auto [bs, bsdf_val] = bsdf->sample(bCtx, si, sampler->next_1d(), sampler->next_2d(), true);
+            bsdf_val = si.to_world_mueller(bsdf_val, si.to_local(-r.d), bs.wo);
 
-            //LiSurf += m_globalPhotonMap->estimateRadiance(si, m_globalLookupRadius, m_globalLookupSize);
-            LiSurf += m_globalPhotonMap->estimateIrradiance(si.p, si.sh_frame.n, m_globalLookupRadius, maxDepth, m_globalLookupSize) * bsdf_val;            
+            /*auto [ds, directIllum] =
+                scene->sample_emitter_direction(si, sampler->next_2d());
+            if (directIllum != Spectrum(0.0)) {
+                Float dp = dot(ds.d, si.sh_frame.n);
+                if (dp > 0)
+                    E += directIllum * dp;
+            }*/
+
+
+            bool isDiffuse = bsdf->flags() & BSDFFlags::DiffuseReflection;
+
+            if (isDiffuse)
+            {
+                E += m_globalPhotonMap->estimateRadiance(
+                    si, m_globalLookupRadius, m_globalLookupSize);
+
+                E += m_globalPhotonMap->estimateIrradiance(
+                         si.p, si.sh_frame.n, m_globalLookupRadius, maxDepth,
+                         m_globalLookupSize) *
+                     bsdf_val * M_PI;
+
+                sampler->advance();
+            }
+
+            Ray bsdfRay = si.spawn_ray(si.to_world(bs.wo));
+            r           = bsdfRay;
+            si          = scene->ray_intersect(r);
         }
 
-        return { LiSurf, si.is_valid() };
+        return { E, active };
+    }
+
+    MTS_INLINE Float index_spectrum(const UnpolarizedSpectrum &spec,
+                         const UInt32 &idx) const {
+        Float m = spec[0];
+        if constexpr (is_rgb_v<Spectrum>) { // Handle RGB rendering
+            masked(m, eq(idx, 1u)) = spec[1];
+            masked(m, eq(idx, 2u)) = spec[2];
+        } else {
+            ENOKI_MARK_USED(idx);
+        }
+        return m;
     }
 
     void preProcess(const Scene *scene, Sampler *sampler) const {
@@ -141,7 +198,7 @@ public:
             Log(LogLevel::Info, emitterType.c_str());    
         }
 
-        MediumInteraction3f mRec;
+        MediumInteraction3f mi;
         SurfaceInteraction3f si;
         Interaction3f its;
         ref<Sensor> sensor = scene->sensors()[0];
@@ -153,50 +210,146 @@ public:
             std::string debugStr =  "- Photon Num: " + std::to_string(index);
             Log(LogLevel::Info, debugStr.c_str());   
             
-            //sampler->seed(index);
-
             EmitterPtr emitter;
-            const Medium *medium;
+            MediumPtr medium;
             Spectrum power(1.0f);
 
-            Log(LogLevel::Info, "Sampling emitter direction");   
-
-            auto tuple = sample_emitter_direction(
-                scene, its, sampler->next_2d(), false, true);
-            //power   = std::get<1>(tuple);
+            // Sample random emitter
+            auto tuple = sample_emitter_direction(scene, its, sampler->next_2d(), false, true);
             emitter = std::get<2>(tuple);
-            medium  = emitter->medium();
-
-            Log(LogLevel::Info, "Sampling ray from emitter");   
 
             auto rayColorPair = emitter->sample_ray(time, sampler->next_1d(), sampler->next_2d(), sampler->next_2d());
             RayDifferential3f ray(rayColorPair.first);
+            //power = rayColorPair.second;
 
             int depth = 1, nullInteractions = 0;
             bool delta               = false;
             bool lastNullInteraction = false;
 
-            Log(LogLevel::Info, "Tracing ray");   
             Spectrum throughput(1.0f);
-            while (throughput != Spectrum(0.0f) &&
-                   (depth <= m_maxDepth || m_maxDepth < 0)) {
+            Mask active             = true;
+            Mask needs_intersection = true;
+
+            UInt32 channel = 0;
+            if (is_rgb_v<Spectrum>) {
+                uint32_t n_channels = (uint32_t) array_size_v<Spectrum>;
+                channel = (UInt32) min(sampler->next_1d(active) * n_channels, n_channels - 1);
+            }
+
+            while (throughput != Spectrum(0.0f) && (depth <= m_maxDepth || m_maxDepth < 0)) {
                 ++numShot;
                 si = scene->ray_intersect(ray);
-                if (false) { // medium && medium->sampleDistance(Ray(ray, 0,
-                             // its.t), mRec, m_sampler)
-                    /*throughput *= mRec.sigma_s * mRec.transmittance /
-                                        mRec.pdfSuccess;
-                    handleMediumInteraction(depth, nullInteractions, delta,
-                    mRec, medium, -ray.d, throughput * power);
-                    PhaseFunctionSamplingRecord pRec(mRec, -ray.d,
-                    TransportMode::Importance); throughput *=
-                    medium->getPhaseFunction()->sample(pRec, m_sampler);
-                    delta = false;
-                    lastNullInteraction = false;
-                    handleMediumInteractionScattering(mRec, pRec, ray);*/
-                } else if (!si.is_valid()) {
+
+                 if (!si.is_valid()) {
                     break;
-                } else {
+                 }
+
+                 if (false) {
+
+                 bool is_medium_trans = any_or<true>(si.is_medium_transition());
+                 medium = si.target_medium(ray.d);
+                 
+                 Mask active_medium    = active && neq(medium, nullptr);
+                 Mask active_surface   = active && !active_medium;
+                 Mask act_null_scatter = false, act_medium_scatter = false,
+                      escaped_medium = false;
+
+                 // If the medium does not have a spectrally varying
+                 // extinction, we can perform a few optimizations to speed
+                 // up rendering
+                 Mask is_spectral  = active_medium;
+                 Mask not_spectral = false;
+                 if (any_or<true>(active_medium)) {
+                     is_spectral &= medium->has_spectral_extinction();
+                     not_spectral = !is_spectral && active_medium;
+                 }
+
+                 if (any_or<true>(active_medium)) {
+                     mi = medium->sample_interaction(
+                         ray, sampler->next_1d(active_medium), channel,
+                         active_medium);
+                     masked(ray.maxt, active_medium &&
+                                          medium->is_homogeneous() &&
+                                          mi.is_valid()) = mi.t;
+                     Mask intersect = needs_intersection && active_medium;
+                     if (any_or<true>(intersect))
+                         masked(si, intersect) =
+                             scene->ray_intersect(ray, intersect);
+                     needs_intersection &= !active_medium;
+
+                     masked(mi.t, active_medium && (si.t < mi.t)) =
+                         math::Infinity<Float>;
+                     if (any_or<true>(is_spectral)) {
+                         auto [tr, free_flight_pdf] =
+                             medium->eval_tr_and_pdf(mi, si, is_spectral);
+                         Float tr_pdf =
+                             index_spectrum(free_flight_pdf, channel);
+                         masked(throughput, is_spectral) *=
+                             select(tr_pdf > 0.f, tr / tr_pdf, 0.f);
+                     }
+
+                     escaped_medium = active_medium && !mi.is_valid();
+                     active_medium &= mi.is_valid();
+
+                     // Handle null and real scatter events
+                     Mask null_scatter =
+                         sampler->next_1d(active_medium) >=
+                         index_spectrum(mi.sigma_t, channel) /
+                             index_spectrum(mi.combined_extinction, channel);
+
+                     act_null_scatter |= null_scatter && active_medium;
+                     act_medium_scatter |= !act_null_scatter && active_medium;
+
+                     if (any_or<true>(is_spectral && act_null_scatter))
+                         masked(throughput, is_spectral && act_null_scatter) *=
+                             mi.sigma_n *
+                             index_spectrum(mi.combined_extinction, channel) /
+                             index_spectrum(mi.sigma_n, channel);
+
+                     masked(depth, act_medium_scatter) += 1;
+
+                     handleMediumInteraction(depth, nullInteractions, delta, mi,
+                                             medium, -ray.d, throughput);
+                 }
+
+                 // Dont estimate lighting if we exceeded number of bounces
+                 active &= depth < (uint32_t) m_maxDepth;
+                 act_medium_scatter &= active;
+
+                 if (any_or<true>(act_null_scatter)) {
+                     masked(ray.o, act_null_scatter)    = mi.p;
+                     masked(ray.mint, act_null_scatter) = 0.f;
+                     masked(si.t, act_null_scatter)     = si.t - mi.t;
+                 }
+
+                 if (any_or<true>(act_medium_scatter)) {
+                     if (any_or<true>(is_spectral))
+                         masked(throughput,
+                                is_spectral && act_medium_scatter) *=
+                             mi.sigma_s *
+                             index_spectrum(mi.combined_extinction, channel) /
+                             index_spectrum(mi.sigma_t, channel);
+                     if (any_or<true>(not_spectral))
+                         masked(throughput,
+                                not_spectral && act_medium_scatter) *=
+                             mi.sigma_s / mi.sigma_t;
+
+                     PhaseFunctionContext phase_ctx(sampler);
+                     auto phase = mi.medium->phase_function();
+
+                     // ------------------ Phase function sampling
+                     // -----------------
+                     masked(phase, !act_medium_scatter) = nullptr;
+                     auto [wo, phase_pdf]               = phase->sample(
+                         phase_ctx, mi, sampler->next_2d(act_medium_scatter),
+                         act_medium_scatter);
+                     Ray3f new_ray                   = mi.spawn_ray(wo);
+                     new_ray.mint                    = 0.0f;
+                     masked(ray, act_medium_scatter) = new_ray;
+                     needs_intersection |= act_medium_scatter;
+                 }
+                 }
+                 {
                     /* Sample
                         tau(x, y) (Surface integral). This happens with
                         probability mRec.pdfFailure Account for this and
@@ -213,10 +366,8 @@ public:
                     handleSurfaceInteraction(depth, nullInteractions, delta, si,
                                              medium, throughput * power);
                     BSDFContext bCtx(TransportMode::Importance);
-                    std::pair<BSDFSample3f, Spectrum> _sample = bsdf->sample(
-                        bCtx, si, sampler->next_1d(), sampler->next_2d());
-                    BSDFSample3f bsdfSample = _sample.first;
-                    Spectrum bsdfWeight     = _sample.second;
+                    auto [bs, bsdfWeight] = bsdf->sample(bCtx, si, sampler->next_1d(), sampler->next_2d());
+                    bsdfWeight = si.to_world_mueller(bsdfWeight, -bs.wo, si.wi);
                     if (bsdfWeight == Spectrum(0.0f)) {
                         Log(LogLevel::Info, "BSDF Weight is zero :(");                        
                         break;
@@ -224,11 +375,12 @@ public:
 
                     /* Prevent light leaks due to the use of shading normals
                      * * -- [Veach, p. 158] */
-                    Vector3f wi = -ray.d, wo = si.to_world(bsdfSample.wo);
+                    Vector3f wi = -ray.d, wo = si.to_world(bs.wo);
                     Float wiDotGeoN = dot(si.n, wi), woDotGeoN = dot(si.n, wo);
-                    if (wiDotGeoN * Frame3f::cos_theta(-bsdfSample.wo) <= 0 ||
-                        woDotGeoN * Frame3f::cos_theta(bsdfSample.wo) <= 0)
+                    if (wiDotGeoN * Frame3f::cos_theta(si.wi) <= 0 ||
+                        woDotGeoN * Frame3f::cos_theta(bs.wo) <= 0) {                    
                         break;
+                    }
 
                     /* Keep track of the weight, medium and relative
                         refractive index along the path */
@@ -236,11 +388,11 @@ public:
                     if (si.is_medium_transition())
                         medium = si.target_medium(woDotGeoN);
 
-                    if (bsdfSample.sampled_type & BSDFFlags::Null) {
+                    if (bs.sampled_type & BSDFFlags::Null) {
                         ++nullInteractions;
                         lastNullInteraction = true;
                     } else {
-                        delta = bsdfSample.sampled_type & BSDFFlags::Delta;
+                        delta = bs.sampled_type & BSDFFlags::Delta;
                         lastNullInteraction = false;
                     }
 
@@ -248,16 +400,15 @@ public:
                      */
                     if (true) {
                         throughput *= std::abs(
-                            (Frame3f::cos_theta(-bsdfSample.wo) * woDotGeoN) /
-                            (Frame3f::cos_theta(bsdfSample.wo) * wiDotGeoN));
+                            (Frame3f::cos_theta(-bs.wo) * woDotGeoN) /
+                            (Frame3f::cos_theta(bs.wo) * wiDotGeoN));
                     }
 
-                    handleSurfaceInteractionScattering(bsdfSample, si, ray);
+                    handleSurfaceInteractionScattering(bs, si, ray);
                 }
 
                 if (depth++ >= m_rrStartDepth) {
-                    Float q =
-                        enoki::min(enoki::hmax(throughput), (Float) 0.95f);
+                    Float q = enoki::min(enoki::hmax(throughput), (Float) 0.95f);
                     if (sampler->next_1d() >= q)
                         break;
                     throughput /= q;
@@ -267,6 +418,12 @@ public:
 
         m_globalPhotonMap->setScaleFactor(1.0f / numShot);
         m_globalPhotonMap->build();
+
+        if (m_volumePhotonMap->size() > 0)
+        {
+            m_volumePhotonMap->setScaleFactor(1.0f / numShot);
+            m_volumePhotonMap->build();
+        }
     }
 
     std::tuple<DirectionSample3f, Spectrum, EmitterPtr>
@@ -293,8 +450,7 @@ public:
                              scene->emitters().size();
                 emitter = scene->emitters()[index];
                     //gather<EmitterPtr>(scene->emitters().data(), index, active);
-                std::tie(ds, spec) =
-                    emitter->sample_direction(ref, sample, active);
+                std::tie(ds, spec) = emitter->sample_direction(ref, sample, active);
                 ds.pdf *= emitter_pdf;
                 spec *= rcp(emitter_pdf);
             }
@@ -341,12 +497,12 @@ public:
         if (depth < m_minDepth) {
             return;
         }
-        //m_volumePhotonMap->insert(PhotonData(mi.p, Normal3f(0.0f, 0.0f, 0.0f), -wi, weight, depth));
+        m_volumePhotonMap->insert(mi.p, PhotonData(Normal3f(0.0f, 0.0f, 0.0f), -wi, weight, depth));
     }
 
-    void handleSurfaceInteractionScattering(BSDFSample3f &bRec,
+    void handleSurfaceInteractionScattering(const BSDFSample3f &bRec,
                                             const SurfaceInteraction3f &si,
-                                            RayDifferential3f &ray) const {
+                                            RayDifferential3f &ray) const { 
         ray.o    = si.p;
         ray.d    = si.to_world(bRec.wo);
         ray.mint = math::RayEpsilon<Float>;
