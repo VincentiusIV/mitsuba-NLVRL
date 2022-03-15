@@ -147,9 +147,6 @@ public:
             const PhotonData &photonData = photon.getData();
             if (photonData.depth > maxDepth)
                 continue;
-
-            float sqrTerm = 1.0f - searchResult.distSquared * invSquaredRadius;
-
             Vector3f wi     = -photonData.direction;
             float wiDotGeoN = dot(photonData.normal, wi);
             float wiDotShN  = dot(n, wi);

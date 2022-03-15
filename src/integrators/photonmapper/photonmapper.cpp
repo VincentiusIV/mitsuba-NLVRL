@@ -14,6 +14,7 @@
 #include <mitsuba/render/medium.h>
 #include <mitsuba/render/phase.h>
 #include <mitsuba/render/records.h>
+#include <mitsuba/core/warp.h>
 #include <random>
 #include "photonmap.h"
 
@@ -76,10 +77,8 @@ public:
         m_causticLookupSize   = props.int_("causticLookupSize", 120);
         m_volumeLookupSize    = props.int_("volumeLookupSize", 120);
         m_gatherLocally       = props.bool_("gatherLocally", true);
-        m_autoCancelGathering = props.bool_("autoCancelGathering", true);
-       
+        m_autoCancelGathering = props.bool_("autoCancelGathering", true);       
     }
-
 
     void preprocess(Scene* scene, Sensor* sensor) const override {
         static bool m_isPreProcessed = false;
@@ -91,81 +90,128 @@ public:
         }
     }
 
+    Spectrum E(const Scene *scene, const SurfaceInteraction3f &si,
+               const Medium *medium, Sampler *sampler, int nSamples,
+               bool handleIndirect) const {
+
+        Spectrum E(0.0f);
+        Frame3f frame(si.sh_frame);
+        int depth = 1;
+
+        for (int i = 0; i < nSamples; i++) {
+            // direct illum
+
+            // indirect illum
+            Vector3f dir = frame.to_world(
+                warp::square_to_cosine_hemisphere(sampler->next_2d()));
+            RayDifferential3f indirectRay =
+                RayDifferential3f(si.p, dir, si.time);
+            SurfaceInteraction3f indirectSi = scene->ray_intersect(indirectRay);
+            ++depth;
+            E += Li(indirectRay, indirectSi, scene, sampler, depth);
+        }
+
+        return E / nSamples;
+    }
+
+    Spectrum Li(const RayDifferential3f &ray, const SurfaceInteraction3f &si,
+                const Scene *scene, Sampler *sampler, int &depth) const {
+        static Float m_globalLookupRadius = -1, m_causticLookupRadius = -1;
+        if (m_globalLookupRadius == -1) {
+            Float sceneRadius =
+                norm(scene->bbox().center() - scene->bbox().max);
+            m_globalLookupRadius  = m_globalLookupRadiusRelative * sceneRadius;
+            m_causticLookupRadius = m_causticLookupRadiusRelative * sceneRadius;
+            std::string lookupString = "- Global Lookup Radius: " +
+                                       std::to_string(m_globalLookupRadius);
+            Log(LogLevel::Info, lookupString.c_str());
+            lookupString = "- Scene Radius: " + std::to_string(sceneRadius);
+            Log(LogLevel::Info, lookupString.c_str());
+        }
+
+        Spectrum LiSurf(0.0f), LiMedium(0.0f), transmittance(1.0f);
+
+        if (!si.is_valid()) {
+            if (!m_hide_emitters)
+                LiSurf = scene->environment()->eval(si);
+            return LiSurf * transmittance + LiMedium;
+        }
+
+        MediumPtr medium    = si.target_medium(ray.d);
+        Mask active_medium = neq(medium, nullptr);
+        if (any_or<true>(active_medium)) {
+            UInt32 channel = 0;
+            if (is_rgb_v<Spectrum>) {
+                uint32_t n_channels = (uint32_t) array_size_v<Spectrum>;
+                channel = (UInt32) min(sampler->next_1d() * n_channels, n_channels - 1);
+            }
+        
+            Ray mediumRaySegment(ray, 0, si.t);
+            Mask is_spectral       = active_medium;
+            MediumInteraction3f mi = medium->sample_interaction(
+                ray, sampler->next_1d(), channel, active_medium);
+            auto [tr, pdf] = medium->eval_tr_and_pdf(mi, si, is_spectral);
+            transmittance         = tr;
+            mediumRaySegment.mint = ray.mint;
+            //if ((depth < m_maxDepth || m_maxDepth < 0) && m_bre.get() != NULL)
+            //    LiMedium = m_bre->query(mediumRaySegment, rRec.medium, m_maxDepth - 1);
+        }
+
+        /* Possibly include emitted radiance if requested */
+        if (si.shape->is_emitter() && !m_hide_emitters)
+            LiSurf += si.shape->emitter()->eval(si);
+
+        const BSDF *bsdf = si.bsdf();
+
+        if (depth >= m_maxDepth && m_maxDepth > 0)
+            return LiSurf * transmittance + LiMedium;
+
+
+        /* Irradiance cache query -> treat as diffuse */
+        bool isDiffuse   = has_flag(bsdf->flags(), BSDFFlags::DiffuseReflection);
+        bool hasSpecular = has_flag(bsdf->flags(), BSDFFlags::Delta);
+        /* Exhaustively recurse into all specular lobes? */
+        bool exhaustiveSpecular = depth < m_maxSpecularDepth;
+
+        if (isDiffuse && (dot(si.sh_frame.n, ray.d) < 0 || has_flag(bsdf->flags(), BSDFFlags::BackSide))) {
+            /* 1. Diffuse indirect */
+            int maxDepth = m_maxDepth == -1 ? INT_MAX : (m_maxDepth - depth);
+            
+            BSDFContext ctx(TransportMode::Radiance);
+            LiSurf += m_globalPhotonMap->estimateIrradiance(
+                          si.p, si.sh_frame.n, m_globalLookupRadius,
+                            maxDepth, m_globalLookupSize) *
+                        bsdf->eval(ctx, si, Vector3f(0, 0, 1)) * INV_PI;
+            
+
+            if (false) {
+                BSDFContext ctx(TransportMode::Radiance);
+                LiSurf += m_causticPhotonMap->estimateIrradiance(
+                              si.p, si.sh_frame.n, m_causticLookupRadius,
+                              maxDepth, m_causticLookupSize) *
+                          bsdf->eval(ctx, si, Vector3f(0, 0, 1)) * INV_PI;
+            }
+        }
+
+        return LiSurf * transmittance + LiMedium;
+    }
+
+
     std::pair<Spectrum, Mask> sample(const Scene *scene, Sampler *sampler,
                                      const RayDifferential3f &ray,
                                      const Medium *medium, Float *aovs,
                                      Mask active) const override {
         MTS_MASKED_FUNCTION(ProfilerPhase::SamplingIntegratorSample, active);
-
-        static Float m_globalLookupRadius = -1, m_causticLookupRadius = -1;
-        if (m_globalLookupRadius == -1) {
-            Float sceneRadius = norm(scene->bbox().center() - scene->bbox().max);
-            m_globalLookupRadius = m_globalLookupRadiusRelative * sceneRadius;
-            m_causticLookupRadius = m_causticLookupRadiusRelative * sceneRadius;
-            std::string lookupString = "- Global Lookup Radius: " + std::to_string(m_globalLookupRadius);
-            Log(LogLevel::Info, lookupString.c_str());   
-            lookupString = "- Scene Radius: " + std::to_string(sceneRadius);
-            Log(LogLevel::Info, lookupString.c_str());   
-        }
-
-        
         RayDifferential3f r(ray);
-        
-        SurfaceInteraction3f si;
-        si = scene->ray_intersect(r);
-
-        if (!si.is_valid())
-            return { Spectrum(0.0f), false }; 
-        Spectrum E(0.0f);
+        SurfaceInteraction3f si = scene->ray_intersect(ray);
+        Spectrum e_value(0.0f);
         int maxDepth = m_maxDepth == -1 ? INT_MAX : (m_maxDepth);
-        if (si.shape->is_emitter())
-            return { Spectrum(1.0f), true };   
-        
 
-        for (int i = 0; i < m_directSamples; ++i) {
+        e_value += E(scene, si, medium, sampler, 4, true);
 
-            if (!si.is_valid())
-                // TODO: Sample environment emitter (skybox)
-            {
-                E /= i;
-                break;
-            }
-            const BSDF *bsdf = si.bsdf();
-            BSDFContext bCtx(TransportMode::Radiance);
-            auto [bs, bsdf_val] = bsdf->sample(bCtx, si, sampler->next_1d(), sampler->next_2d(), true);
-            bsdf_val = si.to_world_mueller(bsdf_val, si.to_local(-r.d), bs.wo);
-
-            /*auto [ds, directIllum] =
-                scene->sample_emitter_direction(si, sampler->next_2d());
-            if (directIllum != Spectrum(0.0)) {
-                Float dp = dot(ds.d, si.sh_frame.n);
-                if (dp > 0)
-                    E += directIllum * dp;
-            }*/
-
-
-            bool isDiffuse = bsdf->flags() & BSDFFlags::DiffuseReflection;
-
-            if (isDiffuse)
-            {
-                E += m_globalPhotonMap->estimateRadiance(
-                    si, m_globalLookupRadius, m_globalLookupSize);
-
-                E += m_globalPhotonMap->estimateIrradiance(
-                         si.p, si.sh_frame.n, m_globalLookupRadius, maxDepth,
-                         m_globalLookupSize) *
-                     bsdf_val * M_PI;
-
-                sampler->advance();
-            }
-
-            Ray bsdfRay = si.spawn_ray(si.to_world(bs.wo));
-            r           = bsdfRay;
-            si          = scene->ray_intersect(r);
-        }
-
-        return { E, active };
+        return { e_value, active };
     }
+
 
     MTS_INLINE Float index_spectrum(const UnpolarizedSpectrum &spec,
                          const UInt32 &idx) const {
@@ -365,7 +411,7 @@ public:
                      * * handler */
                     handleSurfaceInteraction(depth, nullInteractions, delta, si,
                                              medium, throughput * power);
-                    BSDFContext bCtx(TransportMode::Importance);
+                    BSDFContext bCtx(TransportMode::Radiance);
                     auto [bs, bsdfWeight] = bsdf->sample(bCtx, si, sampler->next_1d(), sampler->next_2d());
                     bsdfWeight = si.to_world_mueller(bsdfWeight, -bs.wo, si.wi);
                     if (bsdfWeight == Spectrum(0.0f)) {
