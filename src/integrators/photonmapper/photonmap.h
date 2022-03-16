@@ -122,8 +122,10 @@ public:
             Vector3f between      = photon.getPosition() - si.p;
             float sqrTerm = 1.0f - searchResult.distSquared * invSquaredRadius;
             Vector3f wi = si.to_local(-photonData.direction);
-            BSDFContext bRec(TransportMode::Importance);
-            result += photonData.spectrum * bsdf->eval(bRec, si, si.wi) * (sqrTerm * sqrTerm);
+            BSDFContext bRec(TransportMode::Radiance);
+            Vector3f tempWi = si.wi;
+            result += photonData.spectrum * bsdf->eval(bRec, si, wi) *
+                 (sqrTerm * sqrTerm);
         }
 
         delete results;

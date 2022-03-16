@@ -98,9 +98,8 @@ public:
         Spectrum E(0.0f);
         Frame3f frame(si.sh_frame);
         int depth = 1;
-
+        sampler->seed(0);
         for (int i = 0; i < nSamples; i++) {
-            // direct illum
 
             // indirect illum
             Vector3f dir = frame.to_world(
@@ -109,7 +108,7 @@ public:
                 RayDifferential3f(si.p, dir, si.time);
             SurfaceInteraction3f indirectSi = scene->ray_intersect(indirectRay);
             ++depth;
-            E += Li(indirectRay, indirectSi, scene, sampler, depth);
+            E += Li(indirectRay, indirectSi, scene, sampler->clone(), depth);
 
             //sampler->advance();
         }
@@ -215,7 +214,7 @@ public:
                 RayDifferential3f bsdfRay(si.p, si.to_world(bsdfSample.wo), ray.time);
                 SurfaceInteraction3f bsdfSi = scene->ray_intersect(bsdfRay);
                 ++depth;
-                LiSurf += bsdfVal * Li(bsdfRay, bsdfSi, scene, sampler, depth);
+                LiSurf += bsdfVal * Li(bsdfRay, bsdfSi, scene, sampler->clone(), depth);
             }
         }
 
@@ -239,7 +238,15 @@ public:
         }
 
         if (has_flag(bsdf->flags(), BSDFFlags::Smooth)) {
-            Spectrum value = m_globalPhotonMap->estimateRadiance(si, m_globalLookupRadius, m_globalLookupSize);
+            BSDFContext bCtx;
+            auto [bs, bsdf_val] =
+                bsdf->sample(bCtx, si, sampler->next_1d(),
+                             sampler->next_2d(), true);
+            bsdf_val       = si.to_world_mueller(bsdf_val, -bs.wo, si.wi);
+
+            Spectrum value = m_globalPhotonMap->estimateRadiance(
+                                 si, m_globalLookupRadius, m_globalLookupSize) *
+                             bsdf_val;
             LiSurf += value;
         }
         

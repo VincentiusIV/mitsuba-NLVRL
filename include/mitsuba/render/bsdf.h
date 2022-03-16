@@ -362,6 +362,7 @@ public:
                           const Vector3f &wo,
                           Mask active = true) const = 0;
 
+
     /**
      * \brief Compute the probability per unit solid angle of sampling a
      * given direction
