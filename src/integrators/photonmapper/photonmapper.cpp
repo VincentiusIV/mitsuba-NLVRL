@@ -95,20 +95,42 @@ public:
                const Medium *medium, Sampler *sampler, int nSamples,
                bool handleIndirect) const {
 
+        static Float m_globalLookupRadius = -1, m_causticLookupRadius = -1;
+        if (m_globalLookupRadius == -1) {
+            Float sceneRadius =
+                norm(scene->bbox().center() - scene->bbox().max);
+            m_globalLookupRadius  = m_globalLookupRadiusRelative * sceneRadius;
+            m_causticLookupRadius = m_causticLookupRadiusRelative * sceneRadius;
+            std::string lookupString = "- Global Lookup Radius: " +
+                                       std::to_string(m_globalLookupRadius);
+            Log(LogLevel::Info, lookupString.c_str());
+            lookupString = "- Scene Radius: " + std::to_string(sceneRadius);
+            Log(LogLevel::Info, lookupString.c_str());
+        }
+
         Spectrum E(0.0f);
         Frame3f frame(si.sh_frame);
         int depth = 1;
-        sampler->seed(0);
+        //sampler->seed(0);
         for (int i = 0; i < nSamples; i++) {
+            if (si.is_valid())
+            {
+                /*const BSDF *bsdf = si.bsdf();
+                BSDFContext bCtx(TransportMode::Radiance);
+                auto [bs, bsdf_val] = bsdf->sample(bCtx, si, sampler->next_1d(),
+                                                   sampler->next_2d(), true);
+                bsdf_val = si.to_world_mueller(bsdf_val, -bs.wo, si.wi);*/
+                //E += m_globalPhotonMap->estimateIrradiance(si.p, si.n,
+                //         m_globalLookupRadius, depth, m_globalLookupSize) * bsdf_val;
+                E += m_globalPhotonMap->estimateRadiance(si, m_globalLookupRadius, m_globalLookupSize) * M_PI;
 
-            // indirect illum
-            Vector3f dir = frame.to_world(
-                warp::square_to_cosine_hemisphere(sampler->next_2d()));
-            RayDifferential3f indirectRay =
-                RayDifferential3f(si.p, dir, si.time);
-            SurfaceInteraction3f indirectSi = scene->ray_intersect(indirectRay);
-            ++depth;
-            E += Li(indirectRay, indirectSi, scene, sampler->clone(), depth);
+                // indirect illum
+                Vector3f dir = frame.to_world(warp::square_to_cosine_hemisphere(sampler->next_2d()));
+                RayDifferential3f indirectRay = RayDifferential3f(si.p, dir, si.time);
+                SurfaceInteraction3f indirectSi = scene->ray_intersect(indirectRay);
+                ++depth;
+                E += Li(indirectRay, indirectSi, scene, sampler, depth);
+            }
 
             //sampler->advance();
         }
@@ -238,16 +260,7 @@ public:
         }
 
         if (has_flag(bsdf->flags(), BSDFFlags::Smooth)) {
-            BSDFContext bCtx;
-            auto [bs, bsdf_val] =
-                bsdf->sample(bCtx, si, sampler->next_1d(),
-                             sampler->next_2d(), true);
-            bsdf_val       = si.to_world_mueller(bsdf_val, -bs.wo, si.wi);
-
-            Spectrum value = m_globalPhotonMap->estimateRadiance(
-                                 si, m_globalLookupRadius, m_globalLookupSize) *
-                             bsdf_val;
-            LiSurf += value;
+            LiSurf += m_globalPhotonMap->estimateRadiance(si, m_globalLookupRadius, m_globalLookupSize);
         }
         
         /* Sample direct compontent via BSDF sampling if this is generally
@@ -341,8 +354,10 @@ public:
         SurfaceInteraction3f si = scene->ray_intersect(ray);
         Spectrum e_value(0.0f);
         int maxDepth = m_maxDepth == -1 ? INT_MAX : (m_maxDepth);
-
-        e_value += E(scene, si, medium, sampler, 16, true);
+        if (si.is_valid())
+            e_value += E(scene, si, medium, sampler, 1, true);
+        else
+            active = false;
 
         return { e_value, active };
     }
