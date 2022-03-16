@@ -102,7 +102,6 @@ public:
         for (int i = 0; i < nSamples; i++) {
             // direct illum
 
-
             // indirect illum
             Vector3f dir = frame.to_world(
                 warp::square_to_cosine_hemisphere(sampler->next_2d()));
@@ -141,15 +140,18 @@ public:
             return LiSurf * transmittance + LiMedium;
         }
 
+        UInt32 channel = 0;
+        if (is_rgb_v<Spectrum>) {
+            uint32_t n_channels = (uint32_t) array_size_v<Spectrum>;
+            channel =
+                (UInt32) min(sampler->next_1d() * n_channels, n_channels - 1);
+        }
+        
+
         MediumPtr medium    = si.target_medium(ray.d);
         Mask active_medium = neq(medium, nullptr);
         if (any_or<true>(active_medium)) {
-            UInt32 channel = 0;
-            if (is_rgb_v<Spectrum>) {
-                uint32_t n_channels = (uint32_t) array_size_v<Spectrum>;
-                channel = (UInt32) min(sampler->next_1d() * n_channels, n_channels - 1);
-            }
-        
+
             Ray mediumRaySegment(ray, 0, si.t);
             Mask is_spectral       = active_medium;
             MediumInteraction3f mi = medium->sample_interaction(
@@ -185,6 +187,7 @@ public:
                           si.p, si.sh_frame.n, m_globalLookupRadius,
                             maxDepth, m_globalLookupSize) *
                         bsdf->eval(ctx1, si, Vector3f(0, 0, 1));
+
             
             if (false) {
                 BSDFContext ctx2(TransportMode::Radiance);
@@ -220,7 +223,6 @@ public:
         int numEmitterSamples = m_directSamples, numBSDFSamples;
         Float weightLum, weightBSDF;
         std::vector<Point2f> sampleArray;
-        Point2f sample;
         
         if (depth > 1) {
             numBSDFSamples = numEmitterSamples = 1;
@@ -235,11 +237,16 @@ public:
                 weightBSDF     = m_invGlossySamples;
             }
         }
+
+        if (has_flag(bsdf->flags(), BSDFFlags::Smooth)) {
+            Spectrum value = m_globalPhotonMap->estimateRadiance(si, m_globalLookupRadius, m_globalLookupSize);
+            LiSurf += value;
+        }
         
         /* Sample direct compontent via BSDF sampling if this is generally
          requested AND the BSDF is smooth, or there is a delta component that
          was not handled by the exhaustive sampling loop above */
-        bool bsdfSampleDirect = has_flag(bsdf->flags(), BSDFFlags::BackSide) ||
+        bool bsdfSampleDirect = has_flag(bsdf->flags(), BSDFFlags::Smooth) ||
              (hasSpecular && !exhaustiveSpecular);
 
         /* Sample indirect component via BSDF sampling if this is generally
@@ -256,12 +263,6 @@ public:
                 }
             } else {
                 sampleArray.push_back(sampler->next_2d());
-            }
-
-            UInt32 channel = 0;
-            if (is_rgb_v<Spectrum>) {
-                uint32_t n_channels = (uint32_t) array_size_v<Spectrum>;
-                channel = (UInt32) min(sampler->next_1d() * n_channels, n_channels - 1);
             }
 
             for (int i = 0; i < numBSDFSamples; ++i) {
@@ -310,7 +311,7 @@ public:
 
                 /* Recurse */
                 if (bsdfSampleIndirect) {
-                    LiSurf += bsdfVal * Li(bsdfRay, bsdfSi, scene, sampler, depth) * weightBSDF;
+                    LiSurf += bsdfVal * Li(bsdfRay, bsdfSi, scene, sampler->clone(), depth) * weightBSDF;
                 }
             }
         }

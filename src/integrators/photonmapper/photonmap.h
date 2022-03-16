@@ -121,8 +121,6 @@ public:
             const PhotonData &photonData             = photon.getData();
             Vector3f between      = photon.getPosition() - si.p;
             float sqrTerm = 1.0f - searchResult.distSquared * invSquaredRadius;
-            if (searchResult.distSquared > squaredRadius)
-                continue;
             Vector3f wi = si.to_local(-photonData.direction);
             BSDFContext bRec(TransportMode::Importance);
             result += photonData.spectrum * bsdf->eval(bRec, si, si.wi) * (sqrTerm * sqrTerm);
