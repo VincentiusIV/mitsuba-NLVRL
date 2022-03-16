@@ -82,6 +82,8 @@ public:
     /// Scale all photon power values contained in this photon map
     inline void setScaleFactor(Float value) { m_scale = value; }
 
+    inline float getScaleFactor() { return m_scale; }
+
     inline void build(bool recomputeAABB = false) {
         m_kdtree.build(recomputeAABB);
     }
@@ -140,6 +142,7 @@ public:
         size_t resultCount = nnSearch(p, squaredRadius, maxPhotons, results);
         float invSquaredRadius = 1.0f / squaredRadius;
         Spectrum result(0.0f);
+        float lastDist = squaredRadius;
         for (size_t i = 0; i < resultCount; i++) {
             const SearchResult &searchResult = results[i];
             const Photon &photon = m_kdtree[searchResult.index];
@@ -159,6 +162,9 @@ public:
 
                 result += power * (sqrTerm * sqrTerm);
             }
+
+            if (searchResult.distSquared > lastDist)
+                Log(LogLevel::Info, "Potential issue in kdtree sorting");   
         }
         delete results;
         return result * (m_scale * 3.0 * INV_PI * invSquaredRadius);

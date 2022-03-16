@@ -17,6 +17,7 @@
 #include <mitsuba/core/warp.h>
 #include <random>
 #include "photonmap.h"
+#include "bre.h"
 
 #define M_PI 3.14159265358979323846
 
@@ -182,8 +183,8 @@ public:
             auto [tr, pdf] = medium->eval_tr_and_pdf(mi, si, is_spectral);
             transmittance         = tr;
             mediumRaySegment.mint = ray.mint;
-            //if ((depth < m_maxDepth || m_maxDepth < 0) && m_bre.get() != NULL)
-            //    LiMedium = m_bre->query(mediumRaySegment, rRec.medium, m_maxDepth - 1);
+            if ((depth < m_maxDepth || m_maxDepth < 0) && m_bre.get() != NULL)
+                LiMedium = m_bre->query(mediumRaySegment, rRec.medium, m_maxDepth - 1);
         }
 
         /* Possibly include emitted radiance if requested */

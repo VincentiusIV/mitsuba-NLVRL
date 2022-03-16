@@ -1,0 +1,178 @@
+[1mdiff --git a/src/integrators/photonmapper/bre.cpp b/src/integrators/photonmapper/bre.cpp[m
+[1mindex 8bb19a76..f31fcfb8 100644[m
+[1m--- a/src/integrators/photonmapper/bre.cpp[m
+[1m+++ b/src/integrators/photonmapper/bre.cpp[m
+[36m@@ -1,20 +1,3 @@[m
+[31m-/*[m
+[31m-    This file is part of Mitsuba, a physically based rendering system.[m
+[31m-[m
+[31m-    Copyright (c) 2007-2014 by Wenzel Jakob and others.[m
+[31m-[m
+[31m-    Mitsuba is free software; you can redistribute it and/or modify[m
+[31m-    it under the terms of the GNU General Public License Version 3[m
+[31m-    as published by the Free Software Foundation.[m
+[31m-[m
+[31m-    Mitsuba is distributed in the hope that it will be useful,[m
+[31m-    but WITHOUT ANY WARRANTY; without even the implied warranty of[m
+[31m-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the[m
+[31m-    GNU General Public License for more details.[m
+[31m-[m
+[31m-    You should have received a copy of the GNU General Public License[m
+[31m-    along with this program. If not, see <http://www.gnu.org/licenses/>.[m
+[31m-*/[m
+ [m
+ #include <mitsuba/render/medium.h>[m
+ #include <mitsuba/render/phase.h>[m
+[1mdiff --git a/src/integrators/photonmapper/bre.h b/src/integrators/photonmapper/bre.h[m
+[1mindex 251f7194..1a2c4f59 100644[m
+[1m--- a/src/integrators/photonmapper/bre.h[m
+[1m+++ b/src/integrators/photonmapper/bre.h[m
+[36m@@ -1,27 +1,11 @@[m
+[31m-/*[m
+[31m-    This file is part of Mitsuba, a physically based rendering system.[m
+ [m
+[31m-    Copyright (c) 2007-2014 by Wenzel Jakob and others.[m
+[31m-[m
+[31m-    Mitsuba is free software; you can redistribute it and/or modify[m
+[31m-    it under the terms of the GNU General Public License Version 3[m
+[31m-    as published by the Free Software Foundation.[m
+[31m-[m
+[31m-    Mitsuba is distributed in the hope that it will be useful,[m
+[31m-    but WITHOUT ANY WARRANTY; without even the implied warranty of[m
+[31m-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the[m
+[31m-    GNU General Public License for more details.[m
+[31m-[m
+[31m-    You should have received a copy of the GNU General Public License[m
+[31m-    along with this program. If not, see <http://www.gnu.org/licenses/>.[m
+[31m-*/[m
+[31m-[m
+[31m-#if !defined(__BEAM_RADIANCE_ESTIMATOR_H)[m
+[31m-#define __BEAM_RADIANCE_ESTIMATOR_H[m
+[32m+[m[32m#include <mitsuba/render/medium.h>[m
+[32m+[m[32m#include <mitsuba/render/phase.h>[m
+[32m+[m[32m#include <mitsuba/core/timer.h>[m
+ [m
+ #include "photonmap.h"[m
+ [m
+[31m-MTS_NAMESPACE_BEGIN(mitsuba)[m
+[32m+[m[32mNAMESPACE_BEGIN(mitsuba)[m
+ [m
+ /**[m
+  * \brief Implements the beam radiance estimate described in[m
+[36m@@ -29,15 +13,73 @@[m [mMTS_NAMESPACE_BEGIN(mitsuba)[m
+  * by Wojciech Jarosz, Matthias Zwicker, and Henrik Wann Jensen.[m
+  */[m
+ [m
+[31m-class BeamRadianceEstimator : public SerializableObject {[m
+[32m+[m[32mtemplate <typename Float, typename Spectrum>[m
+[32m+[m[32mclass BeamRadianceEstimator {[m
+ public:[m
+[31m-    typedef PhotonMap::IndexType IndexType;[m
+[32m+[m[32m    MTS_IMPORT_TYPES()[m
+[32m+[m[32m    MTS_IMPORT_OBJECT_TYPES()[m
+[32m+[m
+[32m+[m[32m    typedef typename PhotonMap::IndexType IndexType;[m
+ [m
+     /**[m
+      * \brief Create a BRE acceleration data structure from[m
+      * an existing volumetric photon map[m
+      */[m
+[31m-    BeamRadianceEstimator(const PhotonMap *pmap, size_t lookupSize);[m
+[32m+[m[32m    BeamRadianceEstimator(const PhotonMap* pmap, size_t lookupSize) {[m
+[32m+[m[32m        /* Use an optimization proposed by Jarosz et al, which accelerates[m
+[32m+[m[32m       the radius computation by extrapolating radius information obtained[m
+[32m+[m[32m       from a kd-tree lookup of a smaller size */[m
+[32m+[m[32m        size_t reducedLookupSize = (size_t) std::sqrt((Float) lookupSize);[m
+[32m+[m[32m        Float sizeFactor = (Float) lookupSize / (Float) reducedLookupSize;[m
+[32m+[m
+[32m+[m[32m        m_photonCount = pmap->size();[m
+[32m+[m[32m        m_scaleFactor = pmap->getScaleFactor();[m
+[32m+[m[32m        m_depth       = pmap->getDepth();[m
+[32m+[m
+[32m+[m[32m        Log(LogLevel::Info, "Allocating memory for the BRE acceleration data structure");[m
+[32m+[m[32m        m_nodes = new BRENode[m_photonCount];[m
+[32m+[m
+[32m+[m[32m        Log(LogLevel::Info, "Computing photon radii ..");[m
+[32m+[m[32m        #if defined(MTS_OPENMP)[m
+[32m+[m[32m                int tcount = mts_omp_get_max_threads();[m
+[32m+[m[32m        #else[m
+[32m+[m[32m                int tcount = 1;[m
+[32m+[m[32m        #endif[m
+[32m+[m[32m                PhotonMap::SearchResult **resultsPerThread =[m
+[32m+[m[32m                    new PhotonMap::SearchResult *[tcount];[m
+[32m+[m[32m                for (int i = 0; i < tcount; ++i)[m
+[32m+[m[32m                    resultsPerThread[i] =[m
+[32m+[m[32m                        new PhotonMap::SearchResult[reducedLookupSize + 1];[m
+[32m+[m
+[32m+[m[32m        #if defined(MTS_OPENMP)[m
+[32m+[m[32m        #endif[m
+[32m+[m[32m                for (int i = 0; i < (int) m_photonCount; ++i) {[m
+[32m+[m[32m                    int tid = 0;[m
+[32m+[m[32m        #endif[m
+[32m+[m
+[32m+[m[32m            PhotonMap::SearchResult *results = resultsPerThread[tid];[m
+[32m+[m[32m            const Photon &photon             = pmap->operator[](i);[m
+[32m+[m[32m            BRENode &node                    = m_nodes[i];[m
+[32m+[m[32m            node.photon                      = photon;[m
+[32m+[m
+[32m+[m[32m            Float searchRadiusSqr = std::numeric_limits<Float>::infinity();[m
+[32m+[m[32m            pmap->nnSearch(photon.p, searchRadiusSqr, reducedLookupSize, results);[m
+[32m+[m
+[32m+[m[32m            /* Compute photon radius based on a locally uniform density[m
+[32m+[m[32m             * assumption */[m
+[32m+[m[32m            node.radius = std::sqrt(searchRadiusSqr * sizeFactor);[m
+[32m+[m[32m        }[m
+[32m+[m[32m        Log(LogLevel::Info, "Done ");[m
+[32m+[m
+[32m+[m[32m        Log(LogLevel::Info, "Generating a hierarchy for the beam radiance estimate");[m
+[32m+[m
+[32m+[m[32m        buildHierarchy(0);[m
+[32m+[m[32m        Log(LogLevel::Info, "Done ");[m
+[32m+[m
+[32m+[m[32m        for (int i = 0; i < tcount; ++i)[m
+[32m+[m[32m            delete[] resultsPerThread[i];[m
+[32m+[m[32m        delete[] resultsPerThread;[m
+[32m+[m[32m    }[m
+ [m
+     /**[m
+      * \brief Unserialize a BRE acceleration data structure from[m
+[36m@@ -93,5 +135,3 @@[m [mprotected:[m
+ };[m
+ [m
+ NAMESPACE_END(mitsuba)[m
+[31m-[m
+[31m-#endif /* __BEAM_RADIANCE_ESTIMATOR_H */[m
+[1mdiff --git a/src/integrators/photonmapper/photonmap.h b/src/integrators/photonmapper/photonmap.h[m
+[1mindex 27c73c3f..825feb7f 100644[m
+[1m--- a/src/integrators/photonmapper/photonmap.h[m
+[1m+++ b/src/integrators/photonmapper/photonmap.h[m
+[36m@@ -140,6 +140,7 @@[m [mpublic:[m
+         size_t resultCount = nnSearch(p, squaredRadius, maxPhotons, results);[m
+         float invSquaredRadius = 1.0f / squaredRadius;[m
+         Spectrum result(0.0f);[m
+[32m+[m[32m        float lastDist = squaredRadius;[m
+         for (size_t i = 0; i < resultCount; i++) {[m
+             const SearchResult &searchResult = results[i];[m
+             const Photon &photon = m_kdtree[searchResult.index];[m
+[36m@@ -159,6 +160,9 @@[m [mpublic:[m
+ [m
+                 result += power * (sqrTerm * sqrTerm);[m
+             }[m
+[32m+[m
+[32m+[m[32m            if (searchResult.distSquared > lastDist)[m
+[32m+[m[32m                Log(LogLevel::Info, "Potential issue in kdtree sorting");[m[41m   [m
+         }[m
+         delete results;[m
+         return result * (m_scale * 3.0 * INV_PI * invSquaredRadius);[m
+[1mdiff --git a/src/integrators/photonmapper/photonmapper.cpp b/src/integrators/photonmapper/photonmapper.cpp[m
+[1mindex 0955a433..daf202f8 100644[m
+[1m--- a/src/integrators/photonmapper/photonmapper.cpp[m
+[1m+++ b/src/integrators/photonmapper/photonmapper.cpp[m
+[36m@@ -17,6 +17,7 @@[m
+ #include <mitsuba/core/warp.h>[m
+ #include <random>[m
+ #include "photonmap.h"[m
+[32m+[m[32m#include "bre.h"[m
+ [m
+ #define M_PI 3.14159265358979323846[m
+ [m
