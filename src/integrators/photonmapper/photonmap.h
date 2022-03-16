@@ -135,8 +135,7 @@ public:
     Spectrum estimateIrradiance(const Point3f &p, const Normal3f &n,
                                 float searchRadius, int maxDepth,
                                 size_t maxPhotons) const {
-        SearchResult *results =
-            new SearchResult[maxPhotons];
+        SearchResult *results = new SearchResult[maxPhotons];
         float squaredRadius = searchRadius * searchRadius;
         size_t resultCount = nnSearch(p, squaredRadius, maxPhotons, results);
         float invSquaredRadius = 1.0f / squaredRadius;

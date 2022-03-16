@@ -88,6 +88,7 @@ public:
             m_isPreProcessed = true;
             preProcess(scene, sensor->sampler()->clone());
         }
+        Log(LogLevel::Info, "Pre Processing done.");     
     }
 
     Spectrum E(const Scene *scene, const SurfaceInteraction3f &si,
@@ -101,6 +102,7 @@ public:
         for (int i = 0; i < nSamples; i++) {
             // direct illum
 
+
             // indirect illum
             Vector3f dir = frame.to_world(
                 warp::square_to_cosine_hemisphere(sampler->next_2d()));
@@ -109,6 +111,8 @@ public:
             SurfaceInteraction3f indirectSi = scene->ray_intersect(indirectRay);
             ++depth;
             E += Li(indirectRay, indirectSi, scene, sampler, depth);
+
+            //sampler->advance();
         }
 
         return E / nSamples;
@@ -132,7 +136,7 @@ public:
         Spectrum LiSurf(0.0f), LiMedium(0.0f), transmittance(1.0f);
 
         if (!si.is_valid()) {
-            if (!m_hide_emitters)
+            if (!m_hide_emitters && scene->environment() != nullptr)
                 LiSurf = scene->environment()->eval(si);
             return LiSurf * transmittance + LiMedium;
         }
@@ -166,7 +170,6 @@ public:
         if (depth >= m_maxDepth && m_maxDepth > 0)
             return LiSurf * transmittance + LiMedium;
 
-
         /* Irradiance cache query -> treat as diffuse */
         bool isDiffuse   = has_flag(bsdf->flags(), BSDFFlags::DiffuseReflection);
         bool hasSpecular = has_flag(bsdf->flags(), BSDFFlags::Delta);
@@ -177,25 +180,149 @@ public:
             /* 1. Diffuse indirect */
             int maxDepth = m_maxDepth == -1 ? INT_MAX : (m_maxDepth - depth);
             
-            BSDFContext ctx(TransportMode::Radiance);
+            BSDFContext ctx1(TransportMode::Radiance);
             LiSurf += m_globalPhotonMap->estimateIrradiance(
                           si.p, si.sh_frame.n, m_globalLookupRadius,
                             maxDepth, m_globalLookupSize) *
-                        bsdf->eval(ctx, si, Vector3f(0, 0, 1)) * INV_PI;
+                        bsdf->eval(ctx1, si, Vector3f(0, 0, 1));
             
-
             if (false) {
-                BSDFContext ctx(TransportMode::Radiance);
+                BSDFContext ctx2(TransportMode::Radiance);
                 LiSurf += m_causticPhotonMap->estimateIrradiance(
                               si.p, si.sh_frame.n, m_causticLookupRadius,
                               maxDepth, m_causticLookupSize) *
-                          bsdf->eval(ctx, si, Vector3f(0, 0, 1)) * INV_PI;
+                          bsdf->eval(ctx2, si, Vector3f(0, 0, 1));
             }
         }
 
+        if (hasSpecular && exhaustiveSpecular) {
+            /* 1. Specular indirect */
+            size_t compCount = bsdf->component_count();
+            for (size_t i = 0; i < compCount; i++) {
+                if (!has_flag(bsdf->flags(), BSDFFlags::Delta))
+                    continue;
+                /* Sample the BSDF and recurse */
+                BSDFContext ctx(TransportMode::Radiance);
+                ctx.component = i;
+                auto [ bsdfSample, bsdfVal] = bsdf->sample(ctx, si, 0.0f, Point2f(0.5f));
+                if (bsdfVal == Spectrum(0.0f))
+                    continue;
+
+                // parent integrator unsupported
+                RayDifferential3f bsdfRay(si.p, si.to_world(bsdfSample.wo), ray.time);
+                SurfaceInteraction3f bsdfSi = scene->ray_intersect(bsdfRay);
+                ++depth;
+                LiSurf += bsdfVal * Li(bsdfRay, bsdfSi, scene, sampler, depth);
+            }
+        }
+
+        /* Estimate the direct illumination if this is requested */
+        int numEmitterSamples = m_directSamples, numBSDFSamples;
+        Float weightLum, weightBSDF;
+        std::vector<Point2f> sampleArray;
+        Point2f sample;
+        
+        if (depth > 1) {
+            numBSDFSamples = numEmitterSamples = 1;
+            weightLum = weightBSDF = 1.0f;
+        } else {
+            if (isDiffuse) {
+                numBSDFSamples = m_directSamples;
+                weightBSDF = weightLum = m_invEmitterSamples;
+            } else {
+                numBSDFSamples = m_glossySamples;
+                weightLum      = m_invEmitterSamples;
+                weightBSDF     = m_invGlossySamples;
+            }
+        }
+        
+        /* Sample direct compontent via BSDF sampling if this is generally
+         requested AND the BSDF is smooth, or there is a delta component that
+         was not handled by the exhaustive sampling loop above */
+        bool bsdfSampleDirect = has_flag(bsdf->flags(), BSDFFlags::BackSide) ||
+             (hasSpecular && !exhaustiveSpecular);
+
+        /* Sample indirect component via BSDF sampling if this is generally
+           requested AND the BSDF is non-diffuse (diffuse is handled by the
+           global photon map) or there is a delta component that was not handled
+           by the exhaustive sampling loop above. */
+        bool bsdfSampleIndirect = !isDiffuse && (has_flag(bsdf->flags(), BSDFFlags::Smooth) || (hasSpecular && !exhaustiveSpecular));
+
+        if (bsdfSampleDirect || bsdfSampleIndirect) {
+            if (numBSDFSamples > 1) {
+                int samples = std::max(m_directSamples, m_glossySamples);
+                for (size_t i = 0; i < samples; i++) {
+                    sampleArray.push_back(sampler->next_2d());
+                }
+            } else {
+                sampleArray.push_back(sampler->next_2d());
+            }
+
+            UInt32 channel = 0;
+            if (is_rgb_v<Spectrum>) {
+                uint32_t n_channels = (uint32_t) array_size_v<Spectrum>;
+                channel = (UInt32) min(sampler->next_1d() * n_channels, n_channels - 1);
+            }
+
+            for (int i = 0; i < numBSDFSamples; ++i) {
+                /* Sample BSDF * cos(theta) */
+                BSDFContext bCtx(TransportMode::Radiance);
+                auto [bsdfSample, bsdfVal] = bsdf->sample(bCtx, si, 0, sampleArray[i]);
+                if (bsdfVal == Spectrum(0.0f))
+                    continue;
+
+                /* Trace a ray in this direction */
+                RayDifferential3f bsdfRay(si.p, si.to_world(bsdfSample.wo), ray.time);
+                SurfaceInteraction3f bsdfSi = scene->ray_intersect(bsdfRay);
+                Spectrum value;
+                bool hitEmitter = false;
+                if (bsdfSi.is_valid()) {
+                    if (bsdfSi.emitter(scene) != nullptr && bsdfSampleDirect) {
+                        value      = bsdfSi.emitter(scene)->eval(bsdfSi);
+                        hitEmitter = true;
+                    }
+                } else if (bsdfSampleDirect) {
+                    const Emitter *env = scene->environment();
+
+                    if (env != nullptr) {
+                        value = env->eval(bsdfSi);
+                        hitEmitter = true;
+                    }
+                }
+
+                if (hitEmitter) {
+                    EmitterPtr emitter = bsdfSi.emitter(scene);
+                    DirectionSample3f ds(bsdfSi, si);
+                    ds.object = emitter;
+
+                    Float emitterPdf = scene->pdf_emitter_direction(bsdfSi, ds);
+                    Spectrum transmittance(1.0f);
+                    if (bsdfSi.target_medium(bsdfRay.d)) {
+                        MediumInteraction3f mi = medium->sample_interaction(bsdfRay,0, channel, true);
+                        std::pair<UnpolarizedSpectrum, UnpolarizedSpectrum> tr_and_pdf =
+                                bsdfSi.target_medium(bsdfRay.d)->eval_tr_and_pdf(mi, bsdfSi, true);
+                        transmittance = tr_and_pdf.first;
+                    }
+                    const Float weight = miWeight(bsdfSample.pdf * numBSDFSamples,
+                                 emitterPdf * numEmitterSamples) * weightBSDF;
+                    LiSurf += value * bsdfVal * weight * transmittance;
+                }
+
+                /* Recurse */
+                if (bsdfSampleIndirect) {
+                    LiSurf += bsdfVal * Li(bsdfRay, bsdfSi, scene, sampler, depth) * weightBSDF;
+                }
+            }
+        }
+       
         return LiSurf * transmittance + LiMedium;
     }
 
+    inline Float miWeight(Float pdfA, Float pdfB) const {
+        pdfA *= pdfA;
+        pdfB *= pdfB;
+        return pdfA / (pdfA + pdfB);
+    }
 
     std::pair<Spectrum, Mask> sample(const Scene *scene, Sampler *sampler,
                                      const RayDifferential3f &ray,
@@ -207,7 +334,7 @@ public:
         Spectrum e_value(0.0f);
         int maxDepth = m_maxDepth == -1 ? INT_MAX : (m_maxDepth);
 
-        e_value += E(scene, si, medium, sampler, 4, true);
+        e_value += E(scene, si, medium, sampler, 16, true);
 
         return { e_value, active };
     }
@@ -489,13 +616,9 @@ public:
                 emitter = scene->emitters()[0];
             } else {
                 ScalarFloat emitter_pdf = 1.f / scene->emitters().size();
-                UInt32 index            = min(
-                    UInt32(sample.x() * (ScalarFloat) scene->emitters().size()),
-                    (uint32_t) scene->emitters().size() - 1);
-                sample.x() = (sample.x() - index * emitter_pdf) *
-                             scene->emitters().size();
+                UInt32 index = min(UInt32(sample.x() * (ScalarFloat) scene->emitters().size()), (uint32_t) scene->emitters().size() - 1);
+                sample.x() = (sample.x() - index * emitter_pdf) * scene->emitters().size();
                 emitter = scene->emitters()[index];
-                    //gather<EmitterPtr>(scene->emitters().data(), index, active);
                 std::tie(ds, spec) = emitter->sample_direction(ref, sample, active);
                 ds.pdf *= emitter_pdf;
                 spec *= rcp(emitter_pdf);
@@ -504,10 +627,7 @@ public:
             active &= neq(ds.pdf, 0.f);
 
             if (test_visibility && any_or<true>(active)) {
-                Ray3f ray(ref.p, ds.d,
-                          math::RayEpsilon<Float> * (1.f + hmax(abs(ref.p))),
-                          ds.dist * (1.f - math::ShadowEpsilon<Float>),
-                          ref.time, ref.wavelengths);
+                Ray3f ray(ref.p, ds.d, math::RayEpsilon<Float> * (1.f + hmax(abs(ref.p))), ds.dist * (1.f - math::ShadowEpsilon<Float>), ref.time, ref.wavelengths);
                 spec[scene->ray_test(ray, active)] = 0.f;
             }
         } else {
@@ -566,6 +686,7 @@ private:
     int m_globalPhotons, m_causticPhotons, m_volumePhotons;
     float m_globalLookupRadiusRelative;
     float m_causticLookupRadiusRelative;
+    float m_invEmitterSamples, m_invGlossySamples;
     int m_globalLookupSize, m_causticLookupSize, m_volumeLookupSize;
     /* Should photon gathering steps exclusively run on the local machine? */
     bool m_gatherLocally;
