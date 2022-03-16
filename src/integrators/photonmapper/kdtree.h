@@ -314,8 +314,7 @@ public:
         if (m_nodes.size() == 0)
             return 0;
 
-        IndexType *stack =
-            (IndexType *) alloca((m_depth + 1) * sizeof(IndexType));
+        IndexType *stack = new IndexType[m_depth + 1];
         IndexType index = 0, stackPos = 1;
         float sqrSearchRadius = _sqrSearchRadius;
         size_t resultCount    = 0;
@@ -394,6 +393,7 @@ public:
             }
             index = nextIndex;
         }
+        delete stack;
         _sqrSearchRadius = sqrSearchRadius;
         return resultCount;
     }

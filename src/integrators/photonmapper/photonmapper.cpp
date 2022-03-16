@@ -59,7 +59,6 @@ public:
         m_causticPhotonMap = new PhotonMap(numPhotons);
         m_volumePhotonMap    = new PhotonMap(numPhotons);
 
-
         m_directSamples    = props.int_("directSamples", 16);
         m_glossySamples    = props.int_("glossySamples", 32);
         m_rrStartDepth     = props.int_("rrStartDepth", 5);
@@ -112,24 +111,27 @@ public:
         Frame3f frame(si.sh_frame);
         int depth = 1;
         //sampler->seed(0);
+
         for (int i = 0; i < nSamples; i++) {
-            if (si.is_valid())
-            {
-                /*const BSDF *bsdf = si.bsdf();
+            if (si.is_valid()) {
+                const BSDF *bsdf = si.bsdf();
+                
                 BSDFContext bCtx(TransportMode::Radiance);
                 auto [bs, bsdf_val] = bsdf->sample(bCtx, si, sampler->next_1d(),
                                                    sampler->next_2d(), true);
-                bsdf_val = si.to_world_mueller(bsdf_val, -bs.wo, si.wi);*/
+                bsdf_val = si.to_world_mueller(bsdf_val, -bs.wo, si.wi);
                 //E += m_globalPhotonMap->estimateIrradiance(si.p, si.n,
                 //         m_globalLookupRadius, depth, m_globalLookupSize) * bsdf_val;
-                E += m_globalPhotonMap->estimateRadiance(si, m_globalLookupRadius, m_globalLookupSize) * M_PI;
+                E += m_globalPhotonMap->estimateRadiance(
+                         si, m_globalLookupRadius, m_globalLookupSize) * M_PI;
+                BSDFContext bRec(TransportMode::Radiance);
 
                 // indirect illum
                 Vector3f dir = frame.to_world(warp::square_to_cosine_hemisphere(sampler->next_2d()));
                 RayDifferential3f indirectRay = RayDifferential3f(si.p, dir, si.time);
                 SurfaceInteraction3f indirectSi = scene->ray_intersect(indirectRay);
                 ++depth;
-                E += Li(indirectRay, indirectSi, scene, sampler, depth);
+                E += Li(indirectRay, indirectSi, scene, sampler, depth) * bsdf_val;
             }
 
             //sampler->advance();
@@ -235,7 +237,6 @@ public:
                 // parent integrator unsupported
                 RayDifferential3f bsdfRay(si.p, si.to_world(bsdfSample.wo), ray.time);
                 SurfaceInteraction3f bsdfSi = scene->ray_intersect(bsdfRay);
-                ++depth;
                 LiSurf += bsdfVal * Li(bsdfRay, bsdfSi, scene, sampler->clone(), depth);
             }
         }
@@ -260,7 +261,7 @@ public:
         }
 
         if (has_flag(bsdf->flags(), BSDFFlags::Smooth)) {
-            LiSurf += m_globalPhotonMap->estimateRadiance(si, m_globalLookupRadius, m_globalLookupSize);
+            LiSurf += m_globalPhotonMap->estimateRadiance(si, m_globalLookupRadius, m_globalLookupSize) * M_PI;
         }
         
         /* Sample direct compontent via BSDF sampling if this is generally
@@ -312,21 +313,21 @@ public:
                 }
 
                 if (hitEmitter) {
-                    EmitterPtr emitter = bsdfSi.emitter(scene);
-                    DirectionSample3f ds(bsdfSi, si);
-                    ds.object = emitter;
+                    //EmitterPtr emitter = bsdfSi.emitter(scene);
+                    //DirectionSample3f ds(bsdfSi, si);
+                    //ds.object = emitter;
 
-                    Float emitterPdf = scene->pdf_emitter_direction(bsdfSi, ds);
-                    Spectrum transmittance(1.0f);
-                    if (bsdfSi.target_medium(bsdfRay.d)) {
-                        MediumInteraction3f mi = medium->sample_interaction(bsdfRay,0, channel, true);
-                        std::pair<UnpolarizedSpectrum, UnpolarizedSpectrum> tr_and_pdf =
-                                bsdfSi.target_medium(bsdfRay.d)->eval_tr_and_pdf(mi, bsdfSi, true);
-                        transmittance = tr_and_pdf.first;
-                    }
-                    const Float weight = miWeight(bsdfSample.pdf * numBSDFSamples,
-                                 emitterPdf * numEmitterSamples) * weightBSDF;
-                    LiSurf += value * bsdfVal * weight * transmittance;
+                    //Float emitterPdf = scene->pdf_emitter_direction(bsdfSi, ds);
+                    //Spectrum transmittance(1.0f);
+                    //if (bsdfSi.target_medium(bsdfRay.d)) {
+                    //    MediumInteraction3f mi = medium->sample_interaction(bsdfRay,0, channel, true);
+                    //    std::pair<UnpolarizedSpectrum, UnpolarizedSpectrum> tr_and_pdf =
+                    //            bsdfSi.target_medium(bsdfRay.d)->eval_tr_and_pdf(mi, bsdfSi, true);
+                    //    transmittance = tr_and_pdf.first;
+                    //}
+                    //const Float weight = miWeight(bsdfSample.pdf * numBSDFSamples,
+                    //             emitterPdf * numEmitterSamples) * weightBSDF;
+                    //LiSurf += value * bsdfVal * weight * transmittance;
                 }
 
                 /* Recurse */
@@ -353,9 +354,14 @@ public:
         RayDifferential3f r(ray);
         SurfaceInteraction3f si = scene->ray_intersect(ray);
         Spectrum e_value(0.0f);
+
+        int depth = 1;
+        //e_value += Li(r, si, scene, sampler, depth);
+
         int maxDepth = m_maxDepth == -1 ? INT_MAX : (m_maxDepth);
         if (si.is_valid())
-            e_value += E(scene, si, medium, sampler, 1, true);
+            e_value += (Li(r, si, scene, sampler, depth) +
+                        E(scene, si, medium, sampler, depth, true));
         else
             active = false;
 
