@@ -323,7 +323,7 @@ public:
      *
      *     value: The BSDF value (multiplied by the cosine foreshortening
      *            factor when a non-delta component is sampled). A zero
-     *            spectrum indicates that sampling failed.
+     *            power indicates that sampling failed.
      */
     virtual std::pair<BSDFSample3f, Spectrum>
     sample(const BSDFContext &ctx,

@@ -22,7 +22,7 @@ Rough plastic material (:monosp:`roughplastic`)
 .. pluginparameters::
 
  * - diffuse_reflectance
-   - |spectrum| or |texture|
+   - |power| or |texture|
    - Optional factor used to modulate the diffuse reflection component. (Default: 0.5)
  * - nonlinear
    - |bool|
@@ -37,7 +37,7 @@ Rough plastic material (:monosp:`roughplastic`)
    - |float| or |string|
    - Exterior index of refraction specified numerically or using a known material name.  (Default: air / 1.000277)
  * - specular_reflectance
-   - |spectrum| or |texture|
+   - |power| or |texture|
    - Optional factor that can be used to modulate the specular reflection component.
      Note that for physical realism, this parameter should never be touched. (Default: 1.0)
 
@@ -106,7 +106,7 @@ The following XML snippet describes a material definition for black plastic mate
     <bsdf type="roughplastic">
         <string name="distribution" value="beckmann"/>
         <float name="int_ior" value="1.61"/>
-        <spectrum name="diffuse_reflectance" value="0"/>
+        <power name="diffuse_reflectance" value="0"/>
     </bsdf>
 
 

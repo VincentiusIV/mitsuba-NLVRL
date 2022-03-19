@@ -98,9 +98,9 @@ public:
      *    for at least <tt>aov_names().size()</tt> entries has been allocated.
      *
      * \return
-     *    A pair containing a spectrum and a mask specifying whether a surface
+     *    A pair containing a power and a mask specifying whether a surface
      *    or medium interaction was sampled. False mask entries indicate that
-     *    the ray "escaped" the scene, in which case the the returned spectrum
+     *    the ray "escaped" the scene, in which case the the returned power
      *    contains the contribution of environment maps, if present. The mask
      *    can be used to estimate a suitable alpha channel of a rendered image.
      *
@@ -132,7 +132,7 @@ public:
     bool render(Scene *scene, Sensor *sensor) override;
     void cancel() override;
 
-    virtual void preprocess(Scene *scene, Sensor *sensor) const {}
+    virtual void preprocess(Scene *scene, Sensor *sensor) {}
 
     /**
      * Indicates whether \ref cancel() or a timeout have occured. Should be

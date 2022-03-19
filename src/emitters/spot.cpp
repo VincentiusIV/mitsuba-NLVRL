@@ -16,7 +16,7 @@ Spot light source (:monosp:`spot`)
 .. pluginparameters::
 
  * - intensity
-   - |spectrum|
+   - |power|
    - Specifies the maximum radiant intensity at the center in units of power per unit steradian. (Default: 1).
      This cannot be spatially varying (e.g. have bitmap as type).
 
@@ -125,7 +125,7 @@ public:
         Vector3f local_dir = warp::square_to_uniform_cone(spatial_sample, (Float)m_cos_cutoff_angle);
         Float pdf_dir = warp::square_to_uniform_cone_pdf(local_dir, (Float)m_cos_cutoff_angle);
 
-        // 2. Sample spectrum
+        // 2. Sample power
         auto [wavelengths, spec_weight] = m_intensity->sample_spectrum(
             zero<SurfaceInteraction3f>(),
             math::sample_shifted<Wavelength>(wavelength_sample), active);

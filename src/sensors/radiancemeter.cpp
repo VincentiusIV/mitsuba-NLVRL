@@ -96,7 +96,7 @@ public:
         Ray3f ray;
         ray.time = time;
 
-        // 1. Sample spectrum
+        // 1. Sample power
         auto [wavelengths, wav_weight] =
             sample_wavelength<Float, Spectrum>(wavelength_sample);
         ray.wavelengths = wavelengths;
@@ -120,7 +120,7 @@ public:
         RayDifferential3f ray;
         ray.time = time;
 
-        // 1. Sample spectrum
+        // 1. Sample power
         auto [wavelengths, wav_weight] =
             sample_wavelength<Float, Spectrum>(wavelength_sample);
         ray.wavelengths = wavelengths;

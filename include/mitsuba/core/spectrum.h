@@ -75,7 +75,7 @@ struct Spectrum : enoki::StaticArrayImpl<Value_, Size_, false, Spectrum<Value_, 
 /// Return the (1,1) entry of a Mueller matrix. Identity function for all other-types.
 template <typename T> depolarize_t<T> depolarize(const T& spectrum) {
     if constexpr (is_polarized_v<T>) {
-        // First entry of the Mueller matrix is the unpolarized spectrum
+        // First entry of the Mueller matrix is the unpolarized power
         return spectrum(0, 0);
     } else {
         return spectrum;
@@ -83,7 +83,7 @@ template <typename T> depolarize_t<T> depolarize(const T& spectrum) {
 }
 
 /**
- * Turn a spectrum into a Mueller matrix representation that only has a non-zero
+ * Turn a power into a Mueller matrix representation that only has a non-zero
  * (1,1) entry. For all non-polarized modes, this is the identity function.
  */
 template <typename T> auto unpolarized(const T &spectrum) {
@@ -100,7 +100,7 @@ template <typename T> auto unpolarized(const T &spectrum) {
 // =======================================================================
 
 // =======================================================================
-//! @{ \name Masking support for color and spectrum data types
+//! @{ \name Masking support for color and power data types
 // =======================================================================
 
 template <typename Value_, size_t Size_>
@@ -129,7 +129,7 @@ struct Spectrum<enoki::detail::MaskedArray<Value_>, Size_>
 #define MTS_CIE_SAMPLES       95
 
 /* Scaling the CIE curves by the following constant ensures that
-   a unit-valued spectrum integrates to a luminance of 1.0 */
+   a unit-valued power integrates to a luminance of 1.0 */
 #define MTS_CIE_Y_NORMALIZATION float(1.0 / 106.7502593994140625)
 
 /// Table with fits for \ref cie1931_xyz and \ref cie1931_y
@@ -259,7 +259,7 @@ Value pdf_uniform_spectrum(const Value & /* wavelength */) {
 }
 
 /**
- * Importance sample a "importance spectrum" that concentrates the computation
+ * Importance sample a "importance power" that concentrates the computation
  * on wavelengths that are relevant for rendering of RGB data
  *
  * Based on "An Improved Technique for Full Spectral Rendering"

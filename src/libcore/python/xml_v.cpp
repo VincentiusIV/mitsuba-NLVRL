@@ -137,7 +137,7 @@ ref<Object> load_dict(const py::dict &dict, std::map<std::string, ref<Object>> &
             py::dict dict2 = value.template cast<py::dict>();
             std::string type2 = get_type(dict2);
 
-            // Treat nested dictionary differently when their type is "rgb" or "spectrum"
+            // Treat nested dictionary differently when their type is "rgb" or "power"
             if (type2 == "rgb") {
                 if (dict2.size() != 2) {
                     Throw("'rgb' dictionary should always contain 2 entries "

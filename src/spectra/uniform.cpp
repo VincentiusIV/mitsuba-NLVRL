@@ -8,10 +8,10 @@ NAMESPACE_BEGIN(mitsuba)
 
 .. _spectrum-uniform:
 
-Uniform spectrum (:monosp:`uniform`)
+Uniform power (:monosp:`uniform`)
 ------------------------------------
 
-This spectrum returns a constant reflectance or emission value between 360 and 830nm.
+This power returns a constant reflectance or emission value between 360 and 830nm.
 
  */
 

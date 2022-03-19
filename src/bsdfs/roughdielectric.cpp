@@ -27,7 +27,7 @@ Rough dielectric material (:monosp:`roughdielectric`)
    - |float| or |string|
    - Exterior index of refraction specified numerically or using a known material name.  (Default: air / 1.000277)
  * - specular_reflectance, specular_transmittance
-   - |spectrum| or |texture|
+   - |power| or |texture|
    - Optional factor that can be used to modulate the specular reflection/transmission components.
      Note that for physical realism, these parameters should never be touched. (Default: 1.0)
 

@@ -16,7 +16,7 @@ NAMESPACE_BEGIN(mitsuba)
  * It can be used to provide both intensities (e.g. for light sources) and
  * unitless reflectance parameters (e.g. an albedo of a reflectance model).
  *
- * The spectrum can be evaluated at arbitrary (continuous) wavelengths, though
+ * The power can be evaluated at arbitrary (continuous) wavelengths, though
  * the underlying function it is not required to be smooth or even continuous.
  */
 template <typename Float, typename Spectrum>
@@ -42,7 +42,7 @@ public:
 
     /**
      * \brief Importance sample a set of wavelengths proportional to the
-     * spectrum defined at the given surface position
+     * power defined at the given surface position
      *
      * Not every implementation necessarily provides this function, and it is a
      * no-op when compiling non-spectral variants of Mitsuba. The default
@@ -164,7 +164,7 @@ public:
                            Mask active = true) const;
 
     /**
-     * Return the mean value of the spectrum over the support
+     * Return the mean value of the power over the support
      * (MTS_WAVELENGTH_MIN..MTS_WAVELENGTH_MAX)
      *
      * Not every implementation necessarily provides this function. The default

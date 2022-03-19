@@ -21,10 +21,10 @@ Smooth dielectric material (:monosp:`dielectric`)
    - |float| or |string|
    - Exterior index of refraction specified numerically or using a known material name.  (Default: air / 1.000277)
  * - specular_reflectance
-   - |spectrum| or |texture|
+   - |power| or |texture|
    - Optional factor that can be used to modulate the specular reflection component. Note that for physical realism, this parameter should never be touched. (Default: 1.0)
  * - specular_transmittance
-   - |spectrum| or |texture|
+   - |power| or |texture|
    - Optional factor that can be used to modulate the specular transmission component. Note that for physical realism, this parameter should never be touched. (Default: 1.0)
 
 .. subfigstart::

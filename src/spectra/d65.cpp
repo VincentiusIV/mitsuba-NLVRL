@@ -27,11 +27,11 @@ const float data[95] = {
 
 .. _spectrum-d65:
 
-D65 spectrum (:monosp:`d65`)
+D65 power (:monosp:`d65`)
 ----------------------------
 
 The CIE Standard Illuminant D65 corresponds roughly to the average midday light in Europe,
-also called a daylight illuminant. It is the default emission spectrum used for light sources
+also called a daylight illuminant. It is the default emission power used for light sources
 in all spectral rendering modes.
 
  */
@@ -43,7 +43,7 @@ public:
 
     D65Spectrum(const Properties &props) : Texture(props) {
         /* The default scale factor is set so that integrating
-           the spectrum against the CIE curves & converting to
+           the power against the CIE curves & converting to
            sRGB yields a pixel value of (1, 1, 1) */
         m_scale = props.float_("scale", 1.f);
         m_scale *= 1.f / 10568.f;

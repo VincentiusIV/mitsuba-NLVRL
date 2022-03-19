@@ -17,7 +17,7 @@ Distant directional emitter (:monosp:`directional`)
 .. pluginparameters::
 
     * - irradiance
-      - |spectrum|
+      - |power|
       - Spectral irradiance, which corresponds to the amount of spectral power
         per unit area received by a hypothetical surface normal to the specified
         direction.
@@ -83,7 +83,7 @@ public:
                                           Mask active) const override {
         MTS_MASKED_FUNCTION(ProfilerPhase::EndpointSampleRay, active);
 
-        // 1. Sample spectrum
+        // 1. Sample power
         auto [wavelengths, spec_weight] = m_irradiance->sample_spectrum(
             zero<SurfaceInteraction3f>(),
             math::sample_shifted<Wavelength>(wavelength_sample), active);

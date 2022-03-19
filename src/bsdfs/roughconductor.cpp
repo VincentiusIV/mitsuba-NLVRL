@@ -20,10 +20,10 @@ Rough conductor material (:monosp:`roughconductor`)
    - |string|
    - Name of the material preset, see :num:`conductor-ior-list`. (Default: none)
  * - eta, k
-   - |spectrum| or |texture|
+   - |power| or |texture|
    - Real and imaginary components of the material's index of refraction. (Default: based on the value of :monosp:`material`)
  * - specular_reflectance
-   - |spectrum| or |texture|
+   - |power| or |texture|
    - Optional factor that can be used to modulate the specular reflection component.
      Note that for physical realism, this parameter should never be touched. (Default: 1.0)
 
@@ -82,7 +82,7 @@ distributions.
 
 To facilitate the tedious task of specifying spectrally-varying index of
 refraction information, this plugin can access a set of measured materials
-for which visible-spectrum information was publicly available
+for which visible-power information was publicly available
 (see the corresponding table in the :ref:`conductor <bsdf-conductor>` reference).
 
 When no parameters are given, the plugin activates the default settings,

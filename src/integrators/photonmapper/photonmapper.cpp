@@ -53,12 +53,14 @@ public:
     MTS_IMPORT_OBJECT_TYPES()
 
     typedef PhotonMap<Float, Spectrum> PhotonMap;
+    typedef BeamRadianceEstimator<Float, Spectrum> BeamRadianceEstimator;
     typedef typename PhotonMap::PhotonData PhotonData;
 
     PhotonMapper(const Properties &props) : Base(props) {
         m_globalPhotonMap    = new PhotonMap(numPhotons);
         m_causticPhotonMap = new PhotonMap(numPhotons);
-        m_volumePhotonMap    = new PhotonMap(numPhotons);
+        m_volumePhotonMap    = new PhotonMap(numPhotons);       
+        m_bre = new BeamRadianceEstimator();
 
         m_directSamples    = props.int_("directSamples", 16);
         m_glossySamples    = props.int_("glossySamples", 32);
@@ -80,7 +82,7 @@ public:
         m_autoCancelGathering = props.bool_("autoCancelGathering", true);       
     }
 
-    void preprocess(Scene* scene, Sensor* sensor) const override {
+    void preprocess(Scene* scene, Sensor* sensor) override {
         static bool m_isPreProcessed = false;
         Log(LogLevel::Info, "Pre Processing...");     
  
@@ -164,10 +166,10 @@ public:
             return LiSurf * transmittance + LiMedium;
         }
 
-        UInt32 channel = 0;
+        UInt32 mediumChannel = 0;
         if (is_rgb_v<Spectrum>) {
             uint32_t n_channels = (uint32_t) array_size_v<Spectrum>;
-            channel =
+            mediumChannel =
                 (UInt32) min(sampler->next_1d() * n_channels, n_channels - 1);
         }
         
@@ -179,12 +181,12 @@ public:
             Ray mediumRaySegment(ray, 0, si.t);
             Mask is_spectral       = active_medium;
             MediumInteraction3f mi = medium->sample_interaction(
-                ray, sampler->next_1d(), channel, active_medium);
+                ray, sampler->next_1d(), mediumChannel, active_medium);
             auto [tr, pdf] = medium->eval_tr_and_pdf(mi, si, is_spectral);
             transmittance         = tr;
             mediumRaySegment.mint = ray.mint;
-            if ((depth < m_maxDepth || m_maxDepth < 0) && m_bre.get() != NULL)
-                LiMedium = m_bre->query(mediumRaySegment, rRec.medium, m_maxDepth - 1);
+            if ((depth < m_maxDepth || m_maxDepth < 0) && m_volumePhotonMap->size() > 0)
+                LiMedium = m_bre->query(mediumRaySegment, medium, si, sampler, mediumChannel, active_medium, m_maxDepth, true);
         }
 
         /* Possibly include emitted radiance if requested */
@@ -211,7 +213,6 @@ public:
                           si.p, si.sh_frame.n, m_globalLookupRadius,
                             maxDepth, m_globalLookupSize) *
                         bsdf->eval(ctx1, si, Vector3f(0, 0, 1));
-
             
             if (false) {
                 BSDFContext ctx2(TransportMode::Radiance);
@@ -238,7 +239,7 @@ public:
                 // parent integrator unsupported
                 RayDifferential3f bsdfRay(si.p, si.to_world(bsdfSample.wo), ray.time);
                 SurfaceInteraction3f bsdfSi = scene->ray_intersect(bsdfRay);
-                LiSurf += bsdfVal * Li(bsdfRay, bsdfSi, scene, sampler->clone(), depth);
+                LiSurf += bsdfVal * Li(bsdfRay, bsdfSi, scene, sampler, depth);
             }
         }
 
@@ -262,7 +263,9 @@ public:
         }
 
         if (has_flag(bsdf->flags(), BSDFFlags::Smooth)) {
-            LiSurf += m_globalPhotonMap->estimateRadiance(si, m_globalLookupRadius, m_globalLookupSize) * M_PI;
+            LiSurf += m_globalPhotonMap->estimateRadiance(
+                          si, m_globalLookupRadius, m_globalLookupSize) *
+                      M_PI;
         }
         
         /* Sample direct compontent via BSDF sampling if this is generally
@@ -321,7 +324,7 @@ public:
                     //Float emitterPdf = scene->pdf_emitter_direction(bsdfSi, ds);
                     //Spectrum transmittance(1.0f);
                     //if (bsdfSi.target_medium(bsdfRay.d)) {
-                    //    MediumInteraction3f mi = medium->sample_interaction(bsdfRay,0, channel, true);
+                    //    MediumInteraction3f mi = medium->sample_interaction(bsdfRay,0, mediumChannel, true);
                     //    std::pair<UnpolarizedSpectrum, UnpolarizedSpectrum> tr_and_pdf =
                     //            bsdfSi.target_medium(bsdfRay.d)->eval_tr_and_pdf(mi, bsdfSi, true);
                     //    transmittance = tr_and_pdf.first;
@@ -333,7 +336,7 @@ public:
 
                 /* Recurse */
                 if (bsdfSampleIndirect) {
-                    LiSurf += bsdfVal * Li(bsdfRay, bsdfSi, scene, sampler->clone(), depth) * weightBSDF;
+                    LiSurf += bsdfVal * Li(bsdfRay, bsdfSi, scene, sampler, depth) * weightBSDF;
                 }
             }
         }
@@ -382,7 +385,7 @@ public:
         return m;
     }
 
-    void preProcess(const Scene *scene, Sampler *sampler) const {
+    void preProcess(const Scene *scene, Sampler *sampler) {
         Log(LogLevel::Info, "Pre Processing Photon Map...");
 
         sampler->seed(0);
@@ -556,7 +559,7 @@ public:
                     /* Sample
                         tau(x, y) (Surface integral). This happens with
                         probability mRec.pdfFailure Account for this and
-                        multiply by the proper per-color-channel
+                        multiply by the proper per-color-mediumChannel
                         transmittance.
                     */
                     // if (medium)
@@ -622,10 +625,16 @@ public:
         m_globalPhotonMap->setScaleFactor(1.0f / numShot);
         m_globalPhotonMap->build();
 
+        if (m_causticPhotonMap->size() > 0) {
+            m_causticPhotonMap->setScaleFactor(1.0f / numShot);
+            m_causticPhotonMap->build();
+        }
+
         if (m_volumePhotonMap->size() > 0)
         {
             m_volumePhotonMap->setScaleFactor(1.0f / numShot);
             m_volumePhotonMap->build();
+            m_bre->build(m_volumePhotonMap, m_volumeLookupSize);
         }
     }
 
@@ -709,6 +718,7 @@ private:
     PhotonMap *m_globalPhotonMap;
     PhotonMap *m_causticPhotonMap;
     PhotonMap *m_volumePhotonMap;
+    BeamRadianceEstimator *m_bre;
 
     int m_directSamples, m_glossySamples, m_rrStartDepth, m_maxDepth,
         m_maxSpecularDepth, m_granularity;

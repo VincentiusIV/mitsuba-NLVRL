@@ -16,13 +16,13 @@ Linear retarder material (:monosp:`retarder`)
 .. pluginparameters::
 
  * - theta
-   - |spectrum| or |texture|
+   - |power| or |texture|
    - Specifies the rotation angle (in degrees) of the retarder around the optical axis (Default: 0.0)
  * - delta
-   - |spectrum| or |texture|
+   - |power| or |texture|
    - Specifies the retardance (in degrees) where 360 degrees is equivalent to a full wavelength. (Default: 90.0)
  * - transmittance
-   - |spectrum| or |texture|
+   - |power| or |texture|
    - Optional factor that can be used to modulate the specular transmission. (Default: 1.0)
 
 This material simulates an ideal linear retarder useful to test polarization aware
@@ -39,7 +39,7 @@ The following XML snippet describes a quarter-wave plate material:
     :name: retarder
 
     <bsdf type="retarder">
-        <spectrum name="delta" value="90"/>
+        <power name="delta" value="90"/>
     </bsdf>
 
 Apart from a change of polarization, light does not interact with this material

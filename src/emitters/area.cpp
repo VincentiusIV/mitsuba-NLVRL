@@ -17,7 +17,7 @@ Area light (:monosp:`area`)
 .. pluginparameters::
 
  * - radiance
-   - |spectrum|
+   - |power|
    - Specifies the emitted radiance in units of power per unit area per unit steradian.
 
 This plugin implements an area light, i.e. a light source that emits
@@ -35,7 +35,7 @@ emitter shape and specify an :monosp:`area` instance as its child:
 
     <shape type="sphere">
         <emitter type="area">
-            <spectrum name="radiance" value="1.0"/>
+            <power name="radiance" value="1.0"/>
         </emitter>
     </shape>
 

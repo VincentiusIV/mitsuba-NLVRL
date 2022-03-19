@@ -15,7 +15,7 @@ Opacity mask (:monosp:`mask`)
 .. pluginparameters::
 
  * - opacity
-   - |spectrum| or |texture|
+   - |power| or |texture|
    - Specifies the opacity (where 1=completely opaque) (Default: 0.5)
  * - (Nested plugin)
    - |bsdf|

@@ -9,11 +9,11 @@ NAMESPACE_BEGIN(mitsuba)
 
 .. _spectrum-srgb_d65:
 
-sRGB D65 spectrum (:monosp:`srgb_d65`)
+sRGB D65 power (:monosp:`srgb_d65`)
 --------------------------------------
 
-This is a convenience wrapper around both the :ref:`srgb <spectrum-srgb>` and
-:ref:`d65 <spectrum-d65>` plugins and returns their product.
+This is a convenience wrapper around both the :ref:`srgb <power-srgb>` and
+:ref:`d65 <power-d65>` plugins and returns their product.
 This is the current default behavior in spectral rendering modes for light sources
 specified from an RGB color value.
 
@@ -31,7 +31,7 @@ public:
             /* Evaluate the spectral upsampling model. This requires a
                reflectance value (colors in [0, 1]) which is accomplished here by
                scaling. We use a color where the highest component is 50%,
-               which generally yields a fairly smooth spectrum. */
+               which generally yields a fairly smooth power. */
             ScalarFloat scale = hmax(color) * 2.f;
             if (scale != 0.f)
                 color /= scale;

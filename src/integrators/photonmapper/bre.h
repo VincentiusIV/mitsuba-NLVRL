@@ -1,9 +1,9 @@
 #pragma once
 
+#include <mitsuba/core/bbox.h>
 #include <mitsuba/render/medium.h>
 #include <mitsuba/render/phase.h>
 #include <mitsuba/core/timer.h>
-
 #include "photonmap.h"
 
 NAMESPACE_BEGIN(mitsuba)
@@ -17,16 +17,22 @@ NAMESPACE_BEGIN(mitsuba)
 template <typename Float, typename Spectrum>
 class BeamRadianceEstimator {
 public:
-    MTS_IMPORT_TYPES()
+    MTS_IMPORT_TYPES(PhaseFunctionContext)
     MTS_IMPORT_OBJECT_TYPES()
 
+    typedef PhotonMap<Float, Spectrum> PhotonMap;
     typedef typename PhotonMap::IndexType IndexType;
+    typedef typename PhotonMap::Photon Photon;
+    typedef typename Photon::PointType PointType;
+    typedef BoundingBox<PointType> AABB;
 
     /**
      * \brief Create a BRE acceleration data structure from
      * an existing volumetric photon map
      */
-    BeamRadianceEstimator(const PhotonMap* pmap, size_t lookupSize) {
+    inline BeamRadianceEstimator() { }
+
+    void build(const PhotonMap* pmap, size_t lookupSize, Float scaleVol = 1.f, bool cameraHeuristic = false) {
         /* Use an optimization proposed by Jarosz et al, which accelerates
        the radius computation by extrapolating radius information obtained
        from a kd-tree lookup of a smaller size */
@@ -37,7 +43,8 @@ public:
         m_scaleFactor = pmap->getScaleFactor();
         m_depth       = pmap->getDepth();
 
-        Log(LogLevel::Info, "Allocating memory for the BRE acceleration data structure");
+        Log(LogLevel::Info,
+            "Allocating memory for the BRE acceleration data structure");
         m_nodes = new BRENode[m_photonCount];
 
         Log(LogLevel::Info, "Computing photon radii ..");
@@ -45,10 +52,11 @@ public:
         PhotonMap::SearchResult **resultsPerThread =
             new PhotonMap::SearchResult *[tcount];
         for (int i = 0; i < tcount; ++i)
-            resultsPerThread[i] = new PhotonMap::SearchResult[reducedLookupSize + 1];
+            resultsPerThread[i] =
+                new PhotonMap::SearchResult[reducedLookupSize + 1];
 
-            for (int i = 0; i < (int) m_photonCount; ++i) {
-                int tid = 0;
+        for (int i = 0; i < (int) m_photonCount; ++i) {
+            int tid = 0;
 
             PhotonMap::SearchResult *results = resultsPerThread[tid];
             const Photon &photon             = pmap->operator[](i);
@@ -56,7 +64,8 @@ public:
             node.photon                      = photon;
 
             Float searchRadiusSqr = std::numeric_limits<Float>::infinity();
-            pmap->nnSearch(photon.p, searchRadiusSqr, reducedLookupSize, results);
+            pmap->nnSearch(photon.position, searchRadiusSqr, reducedLookupSize,
+                           results);
 
             /* Compute photon radius based on a locally uniform density
              * assumption */
@@ -64,7 +73,8 @@ public:
         }
         Log(LogLevel::Info, "Done ");
 
-        Log(LogLevel::Info, "Generating a hierarchy for the beam radiance estimate");
+        Log(LogLevel::Info,
+            "Generating a hierarchy for the beam radiance estimate");
 
         buildHierarchy(0);
         Log(LogLevel::Info, "Done ");
@@ -75,25 +85,27 @@ public:
     }
 
     /// Compute the beam radiance estimate for the given ray segment and medium
-    Spectrum query(const Ray& ray, const Medium* medium) const {
-        const Ray ray(r(r.mint), r.d, 0, r.maxt - r.mint, r.time);
-        IndexType *stack =
-            (IndexType *) alloca((m_depth + 1) * sizeof(IndexType));
+    Spectrum query(const Ray3f &r, const Medium *medium, const SurfaceInteraction3f &si, Sampler *sampler,
+                   UInt32 channel, Mask active, int maxDepth,
+                   bool use3Dkernel) const {
+        const Ray3f ray(r, 0, r.maxt - r.mint);
+        IndexType *stack = new IndexType[m_depth + 1];
         IndexType index = 0, stackPos = 1;
         Spectrum result(0.0f);
 
-        const Spectrum &sigmaT     = medium->getSigmaT();
-        const PhaseFunction *phase = medium->getPhaseFunction();
-        MediumSamplingRecord mRec;
+        MediumInteraction3f mi = medium->sample_interaction(
+            ray, sampler->next_1d(), channel, active);
+        auto [sigma_s, sigma_n, sigmaT] =
+            medium->get_scattering_coefficients(mi);
+        const PhaseFunction *phase = medium->phase_function();
 
         while (stackPos > 0) {
             const BRENode &node  = m_nodes[index];
             const Photon &photon = node.photon;
 
             /* Test against the node's bounding box */
-            Float mint, maxt;
-            if (!node.aabb.rayIntersect(ray, mint, maxt) || maxt < ray.mint ||
-                mint > ray.maxt) {
+            auto[active, mint, maxt] = node.aabb.ray_intersect(ray);
+            if (!any_or<true>(active) || maxt < ray.mint || mint > ray.maxt) {
                 index = stack[--stackPos];
                 continue;
             }
@@ -107,25 +119,80 @@ public:
                 index = stack[--stackPos];
             }
 
-            Vector originToCenter = node.photon.getPosition() - ray.o;
+            if (maxDepth != -1 && node.photon.getData().depth > maxDepth) {
+                continue;
+            }
+
+            Vector3f originToCenter = node.photon.getPosition() - ray.o;
             Float diskDistance    = dot(originToCenter, ray.d),
                   radSqr          = node.radius * node.radius;
-            Float distSqr =
-                (ray(diskDistance) - node.photon.getPosition()).lengthSquared();
+            Vector3f between = (ray(diskDistance) - node.photon.getPosition());
+            Float distSqr = between[0] * between[0] + between[1] * between[1] +
+                            between[2] * between[2];
 
             if (diskDistance > 0 && distSqr < radSqr) {
-                Float weight = K2(distSqr / radSqr) / radSqr;
+                if (use3Dkernel) {
+                    if (diskDistance - (node.radius * 2) > ray.maxt) {
+                        // Try to stop the gathering early
+                        continue;
+                    }
 
-                Vector wi = -node.photon.getDirection();
+                    Float weight = 1 / ((4.0 / 3.0) * M_PI * std::pow(node.radius, 3));
+                    // Basically splat the photon enery to the camera segment
+                    // that intersects the 3D kernel
 
-                Spectrum transmittance = Spectrum(-sigmaT * diskDistance).exp();
-                result +=
-                    transmittance * node.photon.getPower() *
-                    phase->eval(PhaseFunctionSamplingRecord(mRec, wi, -ray.d)) *
-                    (weight * m_scaleFactor);
+                    // Determine delta T
+                    Float deltaT     = std::sqrt(radSqr - distSqr);
+                    Float tminKernel = diskDistance - deltaT;
+                    Float diskDistanceRand =
+                        tminKernel +
+                        2 * deltaT *
+                            sampler->next_1d(); // the segment tc- and tc+
+
+                    if (diskDistanceRand < 0 || diskDistanceRand > ray.maxt) {
+                        // No contribution, go to the next
+                        continue;
+                    }
+
+                    Float invPdfSampling = std::max(2.0f * deltaT, (Float) 0.0001f);
+
+                    Vector3f wi = -node.photon.getData().direction;
+
+                    Ray3f baseRay(ray);
+                    baseRay.maxt = diskDistanceRand;
+                    MediumInteraction3f mRecBase = medium->sample_interaction(
+                        baseRay, sampler->next_1d(), channel, active);
+                    std::pair<UnpolarizedSpectrum, UnpolarizedSpectrum> tr_and_pdf =
+                            medium->eval_tr_and_pdf(mRecBase, si, active);
+
+                    PhaseFunctionContext pctx(sampler);
+                    result += tr_and_pdf.first * node.photon.getData().power 
+                        * phase->eval(pctx, mi, -ray.d) 
+                        * (weight * m_scaleFactor) * invPdfSampling;
+
+                } else {
+                    Float weight = 1 / (M_PI * std::pow(node.radius, 2));
+
+                    if (diskDistance > ray.maxt) {
+                        continue; // Cannot gather it
+                    }
+
+                    Vector3f wi = -node.photon.getData().direction;
+
+                    Ray3f baseRay(ray);
+                    baseRay.maxt = diskDistance;
+                    MediumInteraction3f mRecBase = medium->sample_interaction(
+                        baseRay, sampler->next_1d(), channel, active);
+                    std::pair<UnpolarizedSpectrum, UnpolarizedSpectrum> tr_and_pdf = medium->eval_tr_and_pdf(mRecBase, si, active);
+
+                    PhaseFunctionContext pctx(sampler);
+                    result += tr_and_pdf.first * node.photon.getData().power 
+                        * phase->eval(pctx, mi, -ray.d) 
+                        * (weight * m_scaleFactor);
+                }
             }
         }
-
+        delete[] stack;
         return result;
     }
 
@@ -137,18 +204,18 @@ protected:
     AABB buildHierarchy(IndexType index) {
         BRENode &node = m_nodes[index];
 
-        Point center = node.photon.getPosition();
+        Point3f center = node.photon.getPosition();
         Float radius = node.radius;
-        node.aabb    = AABB(center - Vector(radius, radius, radius),
-                         center + Vector(radius, radius, radius));
+        node.aabb      = AABB(center - Vector3f(radius, radius, radius),
+                         center + Vector3f(radius, radius, radius));
 
         if (!node.photon.isLeaf()) {
             IndexType left  = node.photon.getLeftIndex(index);
             IndexType right = node.photon.getRightIndex(index);
             if (left)
-                node.aabb.expandBy(buildHierarchy(left));
+                node.aabb.expand(buildHierarchy(left));
             if (right)
-                node.aabb.expandBy(buildHierarchy(right));
+                node.aabb.expand(buildHierarchy(right));
         }
 
         return node.aabb;

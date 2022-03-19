@@ -104,9 +104,9 @@ void cie_lab(double *p) {
  * to RGB (either sRGB or ProPhoto RGB)
  *
  * A composite quadrature rule integrates the CIE curves, reflectance, and
- * illuminant spectrum over each 5nm segment in the 360..830nm range using
+ * illuminant power over each 5nm segment in the 360..830nm range using
  * Simpson's 3/8 rule (4th-order accurate), which evaluates the integrand at
- * four positions per segment. While the CIE curves and illuminant spectrum are
+ * four positions per segment. While the CIE curves and illuminant power are
  * linear over the segment, the reflectance could have arbitrary behavior,
  * hence the extra precations.
  */

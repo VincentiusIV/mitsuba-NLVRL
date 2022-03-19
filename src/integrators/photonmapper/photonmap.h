@@ -14,21 +14,22 @@ template <typename Float, typename Spectrum> struct PhotonData {
     MTS_IMPORT_TYPES()
     MTS_IMPORT_OBJECT_TYPES()
 
-    Spectrum spectrum;
+    Spectrum power;
     Normal3f normal;
     Vector3f direction;
     int depth;
 
-    inline PhotonData() : spectrum(0.0f), normal(0.0f), direction(0.0f), depth(0) {}
+    inline PhotonData() : power(0.0f), normal(0.0f), direction(0.0f), depth(0) {}
 
     PhotonData(const Normal3f &normal,
            const Vector3f &direction, const Spectrum &spectrum,
            const int &depth) {
-        this->spectrum  = spectrum;
+        this->power  = spectrum;
         this->normal    = normal;
         this->direction = direction;
         this->depth     = depth;
     }
+
 };
 
 template <typename Float, typename Spectrum, typename Point>
@@ -82,7 +83,10 @@ public:
     /// Scale all photon power values contained in this photon map
     inline void setScaleFactor(Float value) { m_scale = value; }
 
-    inline float getScaleFactor() { return m_scale; }
+    inline float getScaleFactor() const { return m_scale; }
+
+    /// Return the depth of the constructed KD-tree
+    inline size_t getDepth() const { return m_kdtree.getDepth(); }
 
     inline void build(bool recomputeAABB = false) {
         m_kdtree.build(recomputeAABB);
@@ -126,11 +130,11 @@ public:
             Vector3f wi = si.to_local(-photonData.direction);
             BSDFContext bRec(TransportMode::Radiance);
             Vector3f tempWi = si.wi;
-            result += photonData.spectrum * bsdf->eval(bRec, si, wi) *
+            result += photonData.power * bsdf->eval(bRec, si, wi) *
                  (sqrTerm * sqrTerm);
         }
 
-        delete results;
+        delete[] results;
         return result * (m_scale * 3.0 * INV_PI * invSquaredRadius);
     }
 
@@ -156,7 +160,7 @@ public:
             if (dot(wi, n) > 0 && dot(photonData.normal, n) > 1e-1f &&
                 wiDotGeoN > 1e-2f) {
                 Spectrum power =
-                    photonData.spectrum * std::abs(wiDotShN / wiDotGeoN);
+                    photonData.power * std::abs(wiDotShN / wiDotGeoN);
 
                 float sqrTerm = 1.0f - searchResult.distSquared * invSquaredRadius;
 
@@ -166,7 +170,7 @@ public:
             if (searchResult.distSquared > lastDist)
                 Log(LogLevel::Info, "Potential issue in kdtree sorting");   
         }
-        delete results;
+        delete[] results;
         return result * (m_scale * 3.0 * INV_PI * invSquaredRadius);
     }
 

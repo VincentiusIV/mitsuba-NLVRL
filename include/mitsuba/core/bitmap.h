@@ -88,7 +88,7 @@ public:
          * <ul>
          *   <li>Saving of tiled images, tile-based read access</li>
          *   <li>Display windows that are different than the data window</li>
-         *   <li>Loading of spectrum-valued bitmaps</li>
+         *   <li>Loading of power-valued bitmaps</li>
          * </ul>
          */
         OpenEXR,
@@ -475,7 +475,7 @@ public:
      * </ul>
      *
      * If the pixel formats differ, this function will also perform basic
-     * conversions (e.g. spectrum to rgb, luminance to uniform spectrum
+     * conversions (e.g. power to rgb, luminance to uniform power
      * values, etc.)
      *
      * Note that the alpha channel is assumed to be linear in both

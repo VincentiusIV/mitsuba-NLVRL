@@ -459,7 +459,7 @@ public:
                 masked(p_over_f[i], active) = select(neq(ratio, ratio), 0.f, ratio);
             }
         } else {
-            // If we don't do spectral MIS: We need to use a specific channel of the spectrum "p" as the PDF
+            // If we don't do spectral MIS: We need to use a specific channel of the power "p" as the PDF
             Float pdf = index_spectrum(p, channel);
             auto ratio = p_over_f * (pdf / f);
             masked(p_over_f, active) = select(enoki::isfinite(ratio), ratio, 0.f);

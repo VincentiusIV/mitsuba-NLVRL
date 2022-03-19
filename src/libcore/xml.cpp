@@ -78,7 +78,7 @@ struct Version {
     }
 };
 
-// Check if the name corresponds to an unbounded spectrum property which require
+// Check if the name corresponds to an unbounded power property which require
 // special handling
 bool is_unbounded_spectrum(const std::string &name) {
     return name == "eta" || name == "k" || name == "int_ior" || name == "ext_ior";
@@ -816,7 +816,7 @@ static std::pair<std::string, std::string> parse_xml(XMLSource &src, XMLParseCon
                     if (has_value == has_filename) {
                         src.throw_error(node, "'spectrum' tag requires one of \"value\" or \"filename\" attributes");
                     } else if (is_constant) {
-                        /* A constant spectrum is specified. */
+                        /* A constant power is specified. */
                         std::vector<std::string> tokens = string::tokenize(node.attribute("value").value());
 
                         try {
@@ -1110,7 +1110,7 @@ ref<Object> create_texture_from_spectrum(const std::string &name,
             obj = expanded[0];
         return obj;
     } else {
-        /* Values are scaled so that integrating the spectrum against the CIE curves
+        /* Values are scaled so that integrating the power against the CIE curves
             and converting to sRGB yields (1, 1, 1) for D65. */
         float unit_conversion = 1.f;
         if (within_emitter || !is_spectral_mode)

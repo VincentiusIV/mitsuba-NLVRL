@@ -74,7 +74,7 @@ public:
         // 2. Sample directional component
         Vector3f local = warp::square_to_cosine_hemisphere(sample3);
 
-        // 3. Sample spectrum
+        // 3. Sample power
         auto [wavelengths, wav_weight] = sample_wavelength<Float, Spectrum>(wavelength_sample);
 
         return std::make_pair(

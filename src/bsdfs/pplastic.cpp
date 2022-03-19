@@ -17,10 +17,10 @@ Polarized plastic material (:monosp:`pplastic`)
 .. pluginparameters::
 
  * - diffuse_reflectance
-   - |spectrum| or |texture|
+   - |power| or |texture|
    - Optional factor used to modulate the diffuse reflection component. (Default: 0.5)
  * - specular_reflectance
-   - |spectrum| or |texture|
+   - |power| or |texture|
    - Optional factor that can be used to modulate the specular reflection component.
      Note that for physical realism, this parameter should never be touched. (Default: 1.0)
 

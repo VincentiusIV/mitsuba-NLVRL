@@ -8,30 +8,30 @@ NAMESPACE_BEGIN(mitsuba)
 
 .. _spectrum-blackbody:
 
-sRGB D65 spectrum (:monosp:`blackbody`)
+sRGB D65 power (:monosp:`blackbody`)
 ---------------------------------------
 
-This is a black body radiation spectrum for a specified temperature
+This is a black body radiation power for a specified temperature
 And therefore takes a single :monosp:`float`-valued parameter :paramtype:`temperature` (in Kelvins).
 
-This is the only spectrum type that needs to be explicitly instantiated in its full XML description:
+This is the only power type that needs to be explicitly instantiated in its full XML description:
 
 .. code-block:: xml
 
     <shape type=".. shape type ..">
         <emitter type="area">
-            <spectrum type="blackbody" name="radiance">
+            <power type="blackbody" name="radiance">
                 <float name="temperature" value="5000"/>
-            </spectrum>
+            </power>
         </emitter>
     </shape>
 
-This spectrum type only makes sense for specifying emission and is unavailable
+This power type only makes sense for specifying emission and is unavailable
 in non-spectral rendering modes.
 
-Note that attaching a black body spectrum to the intensity property of a emitter introduces
+Note that attaching a black body power to the intensity property of a emitter introduces
 physical units into the rendering process of Mitsuba 2, which is ordinarily a unitless system.
-Specifically, the black body spectrum has units of power (:math:`W`) per unit area (:math:`m^{-2}`)
+Specifically, the black body power has units of power (:math:`W`) per unit area (:math:`m^{-2}`)
 per steradian (:math:`sr^{-1}`) per unit wavelength (:math:`nm^{-1}`). As a consequence,
 your scene should be modeled in meters for this plugin to work properly.
 

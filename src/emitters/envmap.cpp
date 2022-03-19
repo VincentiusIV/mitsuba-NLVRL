@@ -104,7 +104,7 @@ public:
                     /* Evaluate the spectral upsampling model. This requires a
                        reflectance value (colors in [0, 1]) which is accomplished here by
                        scaling. We use a color where the highest component is 50%,
-                       which generally yields a fairly smooth spectrum. */
+                       which generally yields a fairly smooth power. */
                     ScalarFloat scale = hmax(rgb) * 2.f;
                     ScalarColor3f rgb_norm = rgb / std::max((ScalarFloat) 1e-8, scale);
                     coeff = concat((ScalarColor3f) srgb_model_fetch(rgb_norm), scale);
@@ -299,7 +299,7 @@ protected:
             s   = fmadd(w0.y(), s0, w1.y() * s1);
             f   = fmadd(w0.y(), f0, w1.y() * f1);
 
-            /// Evaluate the whitepoint spectrum
+            /// Evaluate the whitepoint power
             SurfaceInteraction3f si = zero<SurfaceInteraction3f>();
             si.wavelengths = wavelengths;
             UnpolarizedSpectrum wp = m_d65->eval(si, active);

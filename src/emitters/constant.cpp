@@ -19,7 +19,7 @@ Constant environment emitter (:monosp:`constant`)
 .. pluginparameters::
 
  * - radiance
-   - |spectrum|
+   - |power|
    - Specifies the emitted radiance in units of power per unit area per unit steradian.
 
 This plugin implements a constant environment emitter, which surrounds
@@ -61,7 +61,7 @@ public:
                                           Mask active) const override {
         MTS_MASKED_FUNCTION(ProfilerPhase::EndpointSampleRay, active);
 
-        // 1. Sample spectrum
+        // 1. Sample power
         auto [wavelengths, weight] = m_radiance->sample_spectrum(
             zero<SurfaceInteraction3f>(),
             math::sample_shifted<Wavelength>(wavelength_sample), active);

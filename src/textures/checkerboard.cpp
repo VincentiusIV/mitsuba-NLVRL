@@ -15,7 +15,7 @@ Checkerboard texture (:monosp:`checkerboard`)
 .. pluginparameters::
 
  * - color0, color1
-   - |spectrum| or |texture|
+   - |power| or |texture|
    - Color values for the two differently-colored patches (Default: 0.4 and 0.2)
  * - to_uv
    - |transform|

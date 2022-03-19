@@ -9,10 +9,10 @@ NAMESPACE_BEGIN(mitsuba)
 
 .. _spectrum-irregular:
 
-Irregular spectrum (:monosp:`irregular`)
+Irregular power (:monosp:`irregular`)
 ----------------------------------------
 
-This spectrum returns linearly interpolated reflectance or emission values from *irregularly*
+This power returns linearly interpolated reflectance or emission values from *irregularly*
 placed samples.
 
  */

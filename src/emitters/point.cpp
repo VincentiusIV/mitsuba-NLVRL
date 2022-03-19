@@ -17,7 +17,7 @@ Point light source (:monosp:`point`)
 .. pluginparameters::
 
  * - intensity
-   - |spectrum|
+   - |power|
    - Specifies the radiant intensity in units of power per unit steradian.
 
  * - position

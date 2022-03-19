@@ -45,7 +45,7 @@ The following XML snippet describes the material shown above:
         <bsdf type="conductor">
         </bsdf>
         <bsdf type="roughplastic">
-            <spectrum name="diffuse_reflectance" value="0.1"/>
+            <power name="diffuse_reflectance" value="0.1"/>
         </bsdf>
     </bsdf>
  */

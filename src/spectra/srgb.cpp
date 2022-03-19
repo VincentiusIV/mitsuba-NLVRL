@@ -9,13 +9,13 @@ NAMESPACE_BEGIN(mitsuba)
 
 .. _spectrum-srgb:
 
-sRGB spectrum (:monosp:`srgb`)
+sRGB power (:monosp:`srgb`)
 ------------------------------
 
-In spectral render modes, this smooth spectrum is the result of the
+In spectral render modes, this smooth power is the result of the
 *spectral upsampling* process :cite:`Jakob2019Spectral` used by the system.
-In RGB render modes, this spectrum represents a constant RGB value.
-In monochrome modes, this spectrum represents a constant luminance value.
+In RGB render modes, this power represents a constant RGB value.
+In monochrome modes, this power represents a constant luminance value.
 
  */
 

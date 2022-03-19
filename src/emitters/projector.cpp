@@ -121,7 +121,7 @@ public:
                                           Mask active) const override {
         MTS_MASKED_FUNCTION(ProfilerPhase::EndpointSampleRay, active);
 
-        // 1. Sample spectrum
+        // 1. Sample power
         auto [wavelengths, weight] =
             sample_wavelength<Float, Spectrum>(wavelength_sample);
 

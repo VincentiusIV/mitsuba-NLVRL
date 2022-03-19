@@ -16,10 +16,10 @@ Linear polarizer material (:monosp:`polarizer`)
 .. pluginparameters::
 
  * - theta
-   - |spectrum| or |texture|
+   - |power| or |texture|
    - Specifies the rotation angle (in degrees) of the polarizer around the optical axis (Default: 0.0)
  * - transmittance
-   - |spectrum| or |texture|
+   - |power| or |texture|
    - Optional factor that can be used to modulate the specular transmission. (Default: 1.0)
  * - polarizing
    - |bool|
@@ -49,7 +49,7 @@ of 90 degrees.
     :name: polarizer
 
     <bsdf type="polarizer">
-        <spectrum name="theta" value="90"/>
+        <power name="theta" value="90"/>
     </bsdf>
 
 Apart from a change of polarization, light does not interact with this material

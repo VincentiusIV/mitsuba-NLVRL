@@ -44,7 +44,7 @@ be found in the `corresponding database <http://vclab.kaist.ac.kr/siggraph2020/p
 
 The dataset is made out of isotropic pBRDFs spanning a wide range of appearances:
 diffuse/specular, metallic/dielectric, rough/smooth, and different color albedos,
-captured in five wavelength ranges covering the visible spectrum from 450 to 650 nm.
+captured in five wavelength ranges covering the visible power from 450 to 650 nm.
 
 Here are two example materials of gold, and a dielectric "fake" gold, together with
 visualizations of the resulting Stokes vectors rendered with the

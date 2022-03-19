@@ -16,7 +16,7 @@ Smooth diffuse material (:monosp:`diffuse`)
 .. pluginparameters::
 
  * - reflectance
-   - |spectrum| or |texture|
+   - |power| or |texture|
    - Specifies the diffuse albedo of the material (Default: 0.5)
 
 The smooth diffuse material (also referred to as *Lambertian*)

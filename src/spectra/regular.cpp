@@ -9,10 +9,10 @@ NAMESPACE_BEGIN(mitsuba)
 
 .. _spectrum-regular:
 
-Regular spectrum (:monosp:`regular`)
+Regular power (:monosp:`regular`)
 ------------------------------------
 
-This spectrum returns linearly interpolated reflectance or emission values from *regularly*
+This power returns linearly interpolated reflectance or emission values from *regularly*
 placed samples.
 
  */

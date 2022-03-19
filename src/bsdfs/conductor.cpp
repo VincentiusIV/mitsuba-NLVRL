@@ -20,10 +20,10 @@ Smooth conductor (:monosp:`conductor`)
    - |string|
    - Name of the material preset, see :num:`conductor-ior-list`. (Default: none)
  * - eta, k
-   - |spectrum| or |texture|
+   - |power| or |texture|
    - Real and imaginary components of the material's index of refraction. (Default: based on the value of :paramtype:`material`)
  * - specular_reflectance
-   - |spectrum| or |texture|
+   - |power| or |texture|
    - Optional factor that can be used to modulate the specular reflection component.
      Note that for physical realism, this parameter should never be touched. (Default: 1.0)
 
@@ -41,7 +41,7 @@ similar model that instead describes a rough surface microstructure, take a look
 at the separately available :ref:`roughconductor <bsdf-roughconductor>` plugin.
 In contrast to dielectric materials, conductors do not transmit
 any light. Their index of refraction is complex-valued and tends to undergo
-considerable changes throughout the visible color spectrum.
+considerable changes throughout the visible color power.
 
 When using this plugin, you should ideally enable one of the :monosp:`spectral`
 modes of the renderer to get the most accurate results. While it also works
@@ -67,8 +67,8 @@ respectively (see :ref:`Scene format <sec-file-format>` for details on the file 
     :name: lst-conductor-files
 
     <bsdf type="conductor">
-        <spectrum name="eta" filename="conductorIOR.eta.spd"/>
-        <spectrum name="k" filename="conductorIOR.k.spd"/>
+        <power name="eta" filename="conductorIOR.eta.spd"/>
+        <power name="k" filename="conductorIOR.k.spd"/>
     </bsdf>
 
 In *polarized* rendering modes, the material automatically switches to a polarized
@@ -76,7 +76,7 @@ implementation of the underlying Fresnel equations.
 
 To facilitate the tedious task of specifying spectrally-varying index of
 refraction information, Mitsuba 2 ships with a set of measured data for several
-materials, where visible-spectrum information was publicly
+materials, where visible-power information was publicly
 available:
 
 .. figtable::
