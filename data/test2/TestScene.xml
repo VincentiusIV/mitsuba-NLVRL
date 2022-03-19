@@ -77,7 +77,7 @@
 			<string name="distribution" value="ggx"/>
 			<float name="alpha" value="0.1"/>
 			<float name="intIOR" value="1.49"/>
-			<rgb name="diffuseReflectance" value="0.75, 0.1, 0.1"/>
+			<rgb name="diffuseReflectance" value="0.75, 0.75, 0.75"/>
 		</bsdf>
 	</shape>
 
