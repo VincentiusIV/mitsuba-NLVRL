@@ -108,20 +108,20 @@ public:
         Photon newNode(position, photon);
         push_back(newNode);
         //push_back(newNode);
-        std::string numPhotonsStr = "Inserted new photon, photon Count: " +
+        /*std::string numPhotonsStr = "Inserted new photon, photon Count: " +
                                     std::to_string(m_kdtree.size());
         Log(LogLevel::Info, numPhotonsStr.c_str());   
 
         numPhotonsStr = "- power = " + std::to_string(photon.power[0]) + ", " +
                         std::to_string(photon.power[1]) + ", " +
                         std::to_string(photon.power[2]);
-        Log(LogLevel::Info, numPhotonsStr.c_str());   
+        Log(LogLevel::Info, numPhotonsStr.c_str());   */
 
     }
 
     Spectrum estimateRadiance(const SurfaceInteraction3f &si, Sampler *sampler,
                               float searchRadius, size_t maxPhotons) const {
-        SearchResult *results = new SearchResult[maxPhotons];
+        SearchResult *results = new SearchResult[maxPhotons + 1];
         float squaredRadius = searchRadius * searchRadius;
         size_t resultCount = nnSearch(si.p, squaredRadius, maxPhotons, results);
         if (resultCount == 0)
@@ -164,7 +164,7 @@ public:
     Spectrum estimateIrradiance(const Point3f &p, const Normal3f &n,
                                 float searchRadius, int maxDepth,
                                 size_t maxPhotons) const {
-        SearchResult *results = new SearchResult[maxPhotons];
+        SearchResult *results = new SearchResult[maxPhotons + 1];
         float squaredRadius = searchRadius * searchRadius;
         size_t resultCount = nnSearch(p, squaredRadius, maxPhotons, results);
         float invSquaredRadius = 1.0f / squaredRadius;
