@@ -41,9 +41,6 @@ template <class T> constexpr std::string_view type_name() {
 
 NAMESPACE_BEGIN(mitsuba)
 
-const int k          = 3;
-const int numPhotons = 10000;
-
 template <typename Float, typename Spectrum>
 class PhotonMapper : public SamplingIntegrator<Float, Spectrum> {
 
@@ -57,10 +54,7 @@ public:
     typedef typename PhotonMap::PhotonData PhotonData;
 
     PhotonMapper(const Properties &props) : Base(props) {
-        m_globalPhotonMap    = new PhotonMap(numPhotons);
-        m_causticPhotonMap = new PhotonMap(numPhotons);
-        m_volumePhotonMap    = new PhotonMap(numPhotons);       
-        m_bre = new BeamRadianceEstimator();
+
 
         m_directSamples    = props.int_("directSamples", 16);
         m_glossySamples    = props.int_("glossySamples", 32);
@@ -68,11 +62,11 @@ public:
         m_maxDepth         = props.int_("maxDepth", 128);
         m_maxSpecularDepth = props.int_("maxSpecularDepth", 4);
         m_granularity      = props.int_("granularity", 0);
-        m_globalPhotons    = props.int_("globalPhotons", 250000);
+        m_globalPhotons    = props.int_("globalPhotons", 10000);
         m_causticPhotons   = props.int_("causticPhotons", 250000);
         m_volumePhotons    = props.int_("volumePhotons", 250000);
         m_globalLookupRadiusRelative =
-            props.float_("globalLookupRadiusRelative", 0.1f);
+            props.float_("globalLookupRadiusRelative", 0.05f);
         m_causticLookupRadiusRelative =
             props.float_("causticLookupRadiusRelative", 0.0125f);
         m_globalLookupSize    = props.int_("globalLookupSize", 120);
@@ -80,6 +74,11 @@ public:
         m_volumeLookupSize    = props.int_("volumeLookupSize", 120);
         m_gatherLocally       = props.bool_("gatherLocally", true);
         m_autoCancelGathering = props.bool_("autoCancelGathering", true);       
+
+        m_globalPhotonMap  = new PhotonMap(m_globalPhotons);
+        m_causticPhotonMap = new PhotonMap(m_causticPhotons);
+        m_volumePhotonMap  = new PhotonMap(m_volumePhotons);
+        m_bre              = new BeamRadianceEstimator();
     }
 
     void preprocess(Scene* scene, Sensor* sensor) override {
@@ -93,26 +92,50 @@ public:
         Log(LogLevel::Info, "Pre Processing done.");     
     }
 
-    Spectrum E(const Scene *scene, const SurfaceInteraction3f &si,
-               const Medium *medium, Sampler *sampler, int nSamples,
-               bool handleIndirect) const {
+    std::pair<Spectrum, Mask> sample(const Scene *scene, Sampler *sampler,
+                                     const RayDifferential3f &ray,
+                                     const Medium *medium, Float *aovs,
+                                     Mask active) const override {
+        MTS_MASKED_FUNCTION(ProfilerPhase::SamplingIntegratorSample, active);
+        Ray3f r(ray);
+        Spectrum e_value(1.0f);
+        SurfaceInteraction3f si;
 
-        static Float m_globalLookupRadius = -1, m_causticLookupRadius = -1;
-        if (m_globalLookupRadius == -1) {
-            Float sceneRadius =
-                norm(scene->bbox().center() - scene->bbox().max);
-            m_globalLookupRadius  = m_globalLookupRadiusRelative * sceneRadius;
-            m_causticLookupRadius = m_causticLookupRadiusRelative * sceneRadius;
-            std::string lookupString = "- Global Lookup Radius: " +
-                                       std::to_string(m_globalLookupRadius);
-            Log(LogLevel::Info, lookupString.c_str());
-            lookupString = "- Scene Radius: " + std::to_string(sceneRadius);
-            Log(LogLevel::Info, lookupString.c_str());
+        int depth    = 1;
+        int maxDepth = m_maxDepth == -1 ? INT_MAX : (m_maxDepth);
+
+        for (int bounce = 0; bounce < maxDepth; bounce++) {
+            si = scene->ray_intersect(r);
+            if (!si.is_valid()) {
+                // sample skybox
+                if (bounce == 0) {
+                    active = false;
+                }
+                break;
+            }
+
+            const BSDF *bsdf = si.bsdf();
+            BSDFContext bCtx(TransportMode::Radiance);
+            auto [bs, bsdfValue] =
+                bsdf->sample(bCtx, si, sampler->next_1d(), sampler->next_2d());
+            bsdfValue = si.to_world_mueller(bsdfValue, -bs.wo, si.wi);
+
+            if (has_flag(bsdf->flags(), BSDFFlags::DiffuseReflection) || has_flag(bsdf->flags(), BSDFFlags::GlossyReflection)) {
+                Float q = enoki::min(enoki::hmax(e_value), (Float) 0.95f);
+                if (sampler->next_1d() >= q) {
+                    e_value *= bsdfValue;
+                } else {
+                    e_value *= Li(r, si, scene, sampler, depth);
+                    break;                    
+                }  
+            } else {
+                e_value *= bsdfValue;
+            }
+
+            r = si.spawn_ray(si.to_world(bs.wo));
         }
 
-        Spectrum E(0.0f);
-
-        return E / nSamples;
+        return { e_value, active };
     }
 
     Spectrum Li(const RayDifferential3f &ray, const SurfaceInteraction3f &si,
@@ -197,45 +220,6 @@ public:
         return LiSurf * transmittance + LiMedium;
     }
 
-    std::pair<Spectrum, Mask> sample(const Scene *scene, Sampler *sampler,
-                                     const RayDifferential3f &ray,
-                                     const Medium *medium, Float *aovs,
-                                     Mask active) const override {
-        MTS_MASKED_FUNCTION(ProfilerPhase::SamplingIntegratorSample, active);
-        Ray3f r(ray);
-        Spectrum e_value(1.0f);
-        SurfaceInteraction3f si;
-
-        int depth = 1;
-        int maxDepth = m_maxDepth == -1 ? INT_MAX : (m_maxDepth);
-
-        for (int bounce = 0; bounce < maxDepth; bounce++) {
-            si = scene->ray_intersect(ray);
-            if (!si.is_valid()) {
-                // sample skybox
-                if (bounce == 0) {
-                    active = false;
-                }
-                break;
-            }
-
-            const BSDF *bsdf = si.bsdf();
-            BSDFContext bCtx(TransportMode::Radiance);
-            auto [bs, bsdfValue] = bsdf->sample(bCtx, si, sampler->next_1d(), sampler->next_2d());
-            bsdfValue = si.to_world_mueller(bsdfValue, -bs.wo, si.wi);
-
-            if (has_flag(bsdf->flags(), BSDFFlags::DiffuseReflection)) {
-                e_value *= Li(r, si, scene, sampler, depth) * bsdfValue;
-                break;
-            } else {
-                e_value *= bsdfValue;
-            }
-
-            r = si.spawn_ray(si.to_world(bs.wo));
-        }
-
-        return { e_value, active };
-    }
 
 
     MTS_INLINE Float index_spectrum(const UnpolarizedSpectrum &spec,
@@ -255,9 +239,6 @@ public:
 
         sampler->seed(0);
 
-        std::string numPhotonsStr =
-            "- Photon Count: " + std::to_string(numPhotons);
-        Log(LogLevel::Info, numPhotonsStr.c_str());    
         // 1. For each light source in the scene we create a set of photons
         //    and divide the overall power of the light source amongst them.       
         host_vector<ref<Emitter>, Float> emitters = scene->emitters();
@@ -276,9 +257,8 @@ public:
         Float time = sensor->shutter_open() + 0.5f * sensor->shutter_open_time();
 
         int numShot = 0;
-        int globalTarget = 10000;
 
-        while (m_globalPhotonMap->size() < globalTarget) {
+        while (m_globalPhotonMap->size() < m_globalPhotons) {
             std::string debugStr =  "- Photon Num: " + std::to_string(numShot);
             Log(LogLevel::Info, debugStr.c_str());   
             
@@ -366,7 +346,7 @@ public:
                 /* Adjoint BSDF for shading normals -- [Veach, p. 155]
                     */
                 throughput *= std::abs(
-                    (Frame3f::cos_theta(-bs.wo) * woDotGeoN) /
+                    (Frame3f::cos_theta(si.wi) * woDotGeoN) /
                     (Frame3f::cos_theta(bs.wo) * wiDotGeoN));
 
                 ray = si.spawn_ray(si.to_world(bs.wo));
