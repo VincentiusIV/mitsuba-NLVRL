@@ -9,6 +9,7 @@
 NAMESPACE_BEGIN(mitsuba)
 
 #define INV_PI 0.31830988618379067154
+#define M_PI 3.14159265358979323846
 
 template <typename Float, typename Spectrum> struct PhotonData {
     MTS_IMPORT_TYPES()
@@ -111,31 +112,53 @@ public:
                                     std::to_string(m_kdtree.size());
         Log(LogLevel::Info, numPhotonsStr.c_str());   
 
+        numPhotonsStr = "- power = " + std::to_string(photon.power[0]) + ", " +
+                        std::to_string(photon.power[1]) + ", " +
+                        std::to_string(photon.power[2]);
+        Log(LogLevel::Info, numPhotonsStr.c_str());   
+
     }
 
-    Spectrum estimateRadiance(const SurfaceInteraction3f &si,
+    Spectrum estimateRadiance(const SurfaceInteraction3f &si, Sampler *sampler,
                               float searchRadius, size_t maxPhotons) const {
-        SearchResult *results  = new SearchResult[maxPhotons]; // this is really expensive, consider a buffer per thread
+        SearchResult *results = new SearchResult[maxPhotons];
         float squaredRadius = searchRadius * searchRadius;
-        size_t resultCount  = nnSearch(si.p, squaredRadius, maxPhotons, results);
+        size_t resultCount = nnSearch(si.p, squaredRadius, maxPhotons, results);
+        if (resultCount == 0)
+            return Spectrum(0.0f);
         float invSquaredRadius = 1.0f / squaredRadius;
-        Spectrum result(0.0f);
+
+        Spectrum radiance(0.0f), bsdf_absIdotN;
         const BSDF *bsdf = si.bsdf();
+
+        float maxDist = 0;
+
         for (size_t i = 0; i < resultCount; i++) {
             const SearchResult &searchResult = results[i];
             const Photon &photon         = m_kdtree[searchResult.index];
-            const PhotonData &photonData             = photon.getData();
-            Vector3f between      = photon.getPosition() - si.p;
-            float sqrTerm = 1.0f - searchResult.distSquared * invSquaredRadius;
-            Vector3f wi = si.to_local(-photonData.direction);
-            BSDFContext bRec(TransportMode::Radiance);
-            Vector3f tempWi = si.wi;
-            result += photonData.power * bsdf->eval(bRec, si, wi) *
-                 (sqrTerm * sqrTerm);
-        }
+            const PhotonData &photonData = photon.getData();
+            if (searchResult.distSquared > maxDist)
+                maxDist = searchResult.distSquared;
 
+            Vector wi = photonData.direction;
+            float wiDotGeoN = std::abs(dot(photonData.normal, wi));
+
+            if (dot(photonData.normal, si.sh_frame.n) < 1e-1f || wiDotGeoN < 1e-2f)
+                continue;
+
+            Vector3f wiLocal = si.to_local(photonData.direction);
+            Vector3f bRecWo = wiLocal;
+            BSDFContext ctx(TransportMode::Importance);
+
+            Spectrum value = photonData.power * bsdf->eval(ctx, si, bRecWo);
+            value *= std::abs(Frame3f::cos_theta(si.wi) / (wiDotGeoN * Frame3f::cos_theta(bRecWo)));
+
+            float sqrTerm  = 1.0f - searchResult.distSquared * invSquaredRadius;
+
+            radiance += value * (sqrTerm * sqrTerm);
+        }
         delete[] results;
-        return result * (m_scale * 3.0 * INV_PI * invSquaredRadius);
+        return radiance * invSquaredRadius * 3.0f * INV_PI;
     }
 
     Spectrum estimateIrradiance(const Point3f &p, const Normal3f &n,
