@@ -62,16 +62,16 @@ public:
         m_maxDepth         = props.int_("maxDepth", 128);
         m_maxSpecularDepth = props.int_("maxSpecularDepth", 4);
         m_granularity      = props.int_("granularity", 0);
-        m_globalPhotons    = props.int_("globalPhotons", 250000);
+        m_globalPhotons    = props.int_("globalPhotons", 50000);
         m_causticPhotons   = props.int_("causticPhotons", 250000);
         m_volumePhotons    = props.int_("volumePhotons", 250000);
         m_globalLookupRadiusRelative =
             props.float_("globalLookupRadiusRelative", 0.05f);
         m_causticLookupRadiusRelative =
             props.float_("causticLookupRadiusRelative", 0.0125f);
-        m_globalLookupSize    = props.int_("globalLookupSize", 120);
-        m_causticLookupSize   = props.int_("causticLookupSize", 120);
-        m_volumeLookupSize    = props.int_("volumeLookupSize", 120);
+        m_globalLookupSize    = props.int_("globalLookupSize", 50);
+        m_causticLookupSize   = props.int_("causticLookupSize", 50);
+        m_volumeLookupSize    = props.int_("volumeLookupSize", 50);
         m_gatherLocally       = props.bool_("gatherLocally", true);
         m_autoCancelGathering = props.bool_("autoCancelGathering", true);       
 
@@ -125,42 +125,36 @@ public:
                 break;
             }
 
-            const BSDF *bsdf = si.bsdf();
+            radiance += Li(ray, si, scene, sampler, bounce);
 
-            bool isDiracDelta = has_flag(bsdf->flags(), BSDFFlags::Delta);
+            //const BSDF *bsdf = si.bsdf();
 
-            BSDFContext bCtx(TransportMode::Radiance);
-            auto [bs, bsdfValue] = bsdf->sample(bCtx, si, sampler->next_1d(), sampler->next_2d());
-            bsdfValue = si.to_world_mueller(bsdfValue, -bs.wo, si.wi);
+            //bool isDiracDelta = has_flag(bsdf->flags(), BSDFFlags::Delta);
 
-            radiance =
-                m_globalPhotonMap->estimateRadiance(
-                    si, sampler, m_globalLookupRadius, m_globalLookupSize) *
-                throughput;
-            break;
+            //BSDFContext bCtx(TransportMode::Radiance);
+            //auto [bs, bsdfValue] = bsdf->sample(bCtx, si, sampler->next_1d(), sampler->next_2d());
+            //bsdfValue = si.to_world_mueller(bsdfValue, -bs.wo, si.wi);
 
-            bool rayIsDiracDelta = !has_flag(bs.sampled_type, BSDFFlags::Diffuse);
+            //bool rayIsDiracDelta = !has_flag(bs.sampled_type, BSDFFlags::Diffuse);
 
-            if (si.shape->is_emitter()) // && not in medium
-            {
-                radiance += si.shape->emitter()->eval(si) * throughput;
-            }
+            //if (si.shape->is_emitter()) // && not in medium
+            //{
+            //    radiance += si.shape->emitter()->eval(si) * throughput;
+            //}
 
-            if (isDiracDelta) {
-                if (bs.pdf < 0)
-                    break;
-                throughput *= bsdfValue;
-            } else {
-                // radiance += estimateCausticRadiance(interaction) * throughput;
-                radiance += m_globalPhotonMap->estimateRadiance(si, sampler, m_globalLookupRadius, m_globalLookupSize) * throughput;
-                break;
-            }
+            //if (isDiracDelta) {
+            //    if (bs.pdf < 0)
+            //        break;
+            //    throughput *= bsdfValue;
+            //} else {
+            //    // radiance += estimateCausticRadiance(interaction) * throughput;
+            //    radiance += m_globalPhotonMap->estimateRadiance(si, sampler, m_globalLookupRadius, m_globalLookupSize) * throughput;
+            //    break;
+            //}
 
             if (absorb(ray, throughput, sampler, bounce)) {
                 break;
             }
-
-            r = si.spawn_ray(si.to_world(bs.wo));
         }
 
         return { radiance, active };
@@ -179,7 +173,7 @@ public:
         return false;
     }
 
-    Spectrum Li(const RayDifferential3f &ray, const SurfaceInteraction3f &si,
+    Spectrum Li(RayDifferential3f &ray, const SurfaceInteraction3f &si,
                 const Scene *scene, Sampler *sampler, int &depth) const {
         static Float m_globalLookupRadius = -1, m_causticLookupRadius = -1;
         if (m_globalLookupRadius == -1) {
@@ -272,21 +266,20 @@ public:
         SurfaceInteraction3f si;
         Interaction3f its;
         ref<Sensor> sensor = scene->sensors()[0];
-        Float time =
-            sensor->shutter_open() + 0.5f * sensor->shutter_open_time();
+        Float time = sensor->shutter_open() + 0.5f * sensor->shutter_open_time();
         int numShot = 0;
+
+
+
         while (m_globalPhotonMap->size() < m_globalPhotons) {
             std::string debugStr = "- Photon Num: " + std::to_string(++numShot);
             Log(LogLevel::Info, debugStr.c_str());
             MediumPtr medium;
             // Sample random emitter
-            auto tuple =
-                sample_emitter_direction(scene, its, sampler->next_2d(), true);
+            auto tuple = sample_emitter_direction(scene, its, sampler->next_2d(), true);
             EmitterPtr emitter = std::get<2>(tuple);
             // Sample random ray from emitter
-            auto rayColorPair =
-                emitter->sample_ray(time, sampler->next_1d(),
-                                    sampler->next_2d(), sampler->next_2d());
+            auto rayColorPair = emitter->sample_ray(time, sampler->next_1d(), sampler->next_2d(), sampler->next_2d());
             RayDifferential3f ray(rayColorPair.first);
 
             Spectrum power(1.0f / m_globalPhotons), bsdf_absIdotN;
@@ -310,13 +303,13 @@ public:
 
                 const BSDF *bsdf = si.bsdf();
 
-
                 if (has_flag(bsdf->flags(), BSDFFlags::Diffuse)) {
                     if (!isDiracDelta) {
-                        if (isTransmittedPhoton)
-                            m_causticPhotonMap->insert(si.p, PhotonData(si.n, -ray.d, power, depth));
-                        else
-                            m_globalPhotonMap->insert(si.p, PhotonData(si.n, -ray.d, power, depth));
+                        m_globalPhotonMap->insert(
+                            si.p, PhotonData(si.n, -ray.d, power, depth));
+                    } else {
+                        m_causticPhotonMap->insert(
+                            si.p, PhotonData(si.n, -ray.d, power, depth));
                     }
                 }
 

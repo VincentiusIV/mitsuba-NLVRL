@@ -124,17 +124,25 @@ public:
     Spectrum eval(const BSDFContext &ctx, const SurfaceInteraction3f &si,
                   const Vector3f &wo, Mask active) const override {
         MTS_MASKED_FUNCTION(ProfilerPhase::BSDFEvaluate, active);
+        return evalImpl(ctx, si, si.wi, wo, active);
+    }
 
+    Spectrum evalImpl(const BSDFContext &ctx, const SurfaceInteraction3f &si,
+                    const Vector3f &wi, const Vector3f &wo,
+                    Mask active) const override {
         // Evaluate nested BSDF with perturbed shading frame
         SurfaceInteraction3f perturbed_si(si);
         perturbed_si.sh_frame = frame(si, active);
-        perturbed_si.wi       = perturbed_si.to_local(si.wi);
+        perturbed_si.wi       = perturbed_si.to_local(wi);
         Vector3f perturbed_wo = perturbed_si.to_local(wo);
 
-        active &= Frame3f::cos_theta(wo) *
-                  Frame3f::cos_theta(perturbed_wo) > 0.f;
+        active &=
+            Frame3f::cos_theta(wo) * Frame3f::cos_theta(perturbed_wo) > 0.f;
 
-        return select(active, m_nested_bsdf->eval(ctx, perturbed_si, perturbed_wo, active), 0.f);
+        return select(
+            active,
+            m_nested_bsdf->eval(ctx, perturbed_si, perturbed_wo, active), 0.f);
+    
     }
 
     Float pdf(const BSDFContext &ctx, const SurfaceInteraction3f &si,

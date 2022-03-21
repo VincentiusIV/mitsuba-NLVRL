@@ -104,7 +104,12 @@ public:
     Spectrum eval(const BSDFContext &ctx, const SurfaceInteraction3f &si,
                   const Vector3f &wo, Mask active) const override {
         MTS_MASKED_FUNCTION(ProfilerPhase::BSDFEvaluate, active);
+        return evalImpl(ctx, si, si.wi, wo, active);
+    }
 
+    Spectrum evalImpl(const BSDFContext &ctx, const SurfaceInteraction3f &si,
+                  const Vector3f &wi, const Vector3f &wo,
+                  Mask active) const override {
         if (!ctx.is_enabled(BSDFFlags::DiffuseReflection))
             return 0.f;
 
@@ -116,7 +121,7 @@ public:
         UnpolarizedSpectrum value =
             m_reflectance->eval(si, active) * math::InvPi<Float> * cos_theta_o;
 
-        return select(active, unpolarized<Spectrum>(value), 0.f);
+        return select(active, unpolarized<Spectrum>(value), 0.f);        
     }
 
     Float pdf(const BSDFContext &ctx, const SurfaceInteraction3f &si,

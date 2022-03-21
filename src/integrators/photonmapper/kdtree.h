@@ -380,11 +380,9 @@ public:
 
                     /* Add the new point, remove the one that is farthest away
                      */
-                    results[resultCount] =
-                        SearchResult(pointDistSquared, index);
+                    results[resultCount] = SearchResult(pointDistSquared, index);
                     std::push_heap(results, end, SearchResultComparator());
                     std::pop_heap(results, end, SearchResultComparator());
-
 
                     /* Reduce the search radius accordingly */
                     sqrSearchRadius = results[0].distSquared;

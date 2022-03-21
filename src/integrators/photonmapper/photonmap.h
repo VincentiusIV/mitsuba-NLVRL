@@ -127,38 +127,37 @@ public:
         if (resultCount == 0)
             return Spectrum(0.0f);
         float invSquaredRadius = 1.0f / squaredRadius;
-
+        float maxDist = 0;
         Spectrum radiance(0.0f), bsdf_absIdotN;
         const BSDF *bsdf = si.bsdf();
-
-        float maxDist = 0;
+        float bsdf_pdf;
 
         for (size_t i = 0; i < resultCount; i++) {
             const SearchResult &searchResult = results[i];
             const Photon &photon         = m_kdtree[searchResult.index];
             const PhotonData &photonData = photon.getData();
-            if (searchResult.distSquared > maxDist)
-                maxDist = searchResult.distSquared;
 
             Vector wi = photonData.direction;
-            float wiDotGeoN = std::abs(dot(photonData.normal, wi));
-
-            if (dot(photonData.normal, si.sh_frame.n) < 1e-1f || wiDotGeoN < 1e-2f)
-                continue;
-
-            Vector3f wiLocal = si.to_local(photonData.direction);
-            Vector3f bRecWo = wiLocal;
-            BSDFContext ctx(TransportMode::Importance);
-
-            Spectrum value = photonData.power * bsdf->eval(ctx, si, bRecWo);
-            value *= std::abs(Frame3f::cos_theta(si.wi) / (wiDotGeoN * Frame3f::cos_theta(bRecWo)));
 
             float sqrTerm  = 1.0f - searchResult.distSquared * invSquaredRadius;
 
-            radiance += value * (sqrTerm * sqrTerm);
+            Vector3f wiLocal = si.to_local(photonData.direction);
+            BSDFContext ctx(TransportMode::Importance);
+            Vector3f wo = si.wi;
+
+            SurfaceInteraction3f perturbed_si(si);
+            perturbed_si.wi = wiLocal;
+
+
+
+            Spectrum value = bsdf->eval(ctx, perturbed_si, si.wi) * photonData.power;
+            radiance += value;
+
+
+
         }
         delete[] results;
-        return radiance * invSquaredRadius * 3.0f * INV_PI;
+        return radiance * invSquaredRadius * INV_PI;
     }
 
     Spectrum estimateIrradiance(const Point3f &p, const Normal3f &n,
