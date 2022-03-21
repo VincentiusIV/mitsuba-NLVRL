@@ -150,8 +150,8 @@ public:
 
 
 
-            Spectrum value = bsdf->eval(ctx, perturbed_si, si.wi) * photonData.power;
-            radiance += value;
+            Spectrum value = bsdf->eval(ctx, perturbed_si, Vector3f(0,0,1)) * photonData.power;
+            radiance += value * (sqrTerm * sqrTerm);
 
 
 

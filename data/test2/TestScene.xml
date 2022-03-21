@@ -6,7 +6,7 @@
 -->
 
 <scene version="0.5.0">
-	<integrator type="volpath"/>
+	<integrator type="photonmap"/>
 
 	<shape type="sphere">
 		<point name="center" x="-2.5" y="5" z="0"/>

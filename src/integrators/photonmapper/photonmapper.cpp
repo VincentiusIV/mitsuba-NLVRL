@@ -123,34 +123,32 @@ public:
             if (!si.is_valid()) {
                 active &= bounce > 0;
                 break;
+            }           
+
+            const BSDF *bsdf = si.bsdf();
+
+            bool isDiracDelta = has_flag(bsdf->flags(), BSDFFlags::Delta);
+
+            BSDFContext bCtx(TransportMode::Radiance);
+            auto [bs, bsdfValue] = bsdf->sample(bCtx, si, sampler->next_1d(), sampler->next_2d());
+            bsdfValue = si.to_world_mueller(bsdfValue, -bs.wo, si.wi);
+
+            bool rayIsDiracDelta = !has_flag(bs.sampled_type, BSDFFlags::Diffuse);
+
+            if (si.shape->is_emitter()) // && not in medium
+            {
+                radiance += si.shape->emitter()->eval(si) * throughput;
             }
 
-            radiance += Li(ray, si, scene, sampler, bounce);
-
-            //const BSDF *bsdf = si.bsdf();
-
-            //bool isDiracDelta = has_flag(bsdf->flags(), BSDFFlags::Delta);
-
-            //BSDFContext bCtx(TransportMode::Radiance);
-            //auto [bs, bsdfValue] = bsdf->sample(bCtx, si, sampler->next_1d(), sampler->next_2d());
-            //bsdfValue = si.to_world_mueller(bsdfValue, -bs.wo, si.wi);
-
-            //bool rayIsDiracDelta = !has_flag(bs.sampled_type, BSDFFlags::Diffuse);
-
-            //if (si.shape->is_emitter()) // && not in medium
-            //{
-            //    radiance += si.shape->emitter()->eval(si) * throughput;
-            //}
-
-            //if (isDiracDelta) {
-            //    if (bs.pdf < 0)
-            //        break;
-            //    throughput *= bsdfValue;
-            //} else {
-            //    // radiance += estimateCausticRadiance(interaction) * throughput;
-            //    radiance += m_globalPhotonMap->estimateRadiance(si, sampler, m_globalLookupRadius, m_globalLookupSize) * throughput;
-            //    break;
-            //}
+            if (isDiracDelta) {
+                if (bs.pdf < 0)
+                    break;
+                throughput *= bsdfValue;
+            } else {
+                // radiance += estimateCausticRadiance(interaction) * throughput;
+                radiance += m_globalPhotonMap->estimateRadiance(si, sampler, m_globalLookupRadius, m_globalLookupSize) * throughput;
+                break;
+            }
 
             if (absorb(ray, throughput, sampler, bounce)) {
                 break;
@@ -272,6 +270,8 @@ public:
 
 
         while (m_globalPhotonMap->size() < m_globalPhotons) {
+            sampler->advance();
+
             std::string debugStr = "- Photon Num: " + std::to_string(++numShot);
             Log(LogLevel::Info, debugStr.c_str());
             MediumPtr medium;
