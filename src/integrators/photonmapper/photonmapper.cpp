@@ -42,7 +42,7 @@ template <class T> constexpr std::string_view type_name() {
 NAMESPACE_BEGIN(mitsuba)
 
 const int k          = 3;
-const int numPhotons = 10000;
+const int numPhotons = 100000;
 
 template <typename Float, typename Spectrum>
 class PhotonMapper : public SamplingIntegrator<Float, Spectrum> {
@@ -119,18 +119,19 @@ public:
             if (si.is_valid()) {
                 const BSDF *bsdf = si.bsdf();
                 
+                sampler->advance();
+
                 BSDFContext bCtx(TransportMode::Radiance);
                 auto [bs, bsdf_val] = bsdf->sample(bCtx, si, sampler->next_1d(),
                                                    sampler->next_2d(), true);
                 bsdf_val = si.to_world_mueller(bsdf_val, -bs.wo, si.wi);
                 //E += m_globalPhotonMap->estimateIrradiance(si.p, si.n,
                 //         m_globalLookupRadius, depth, m_globalLookupSize) * bsdf_val;
-                E += m_globalPhotonMap->estimateRadiance(
-                         si, m_globalLookupRadius, m_globalLookupSize) * M_PI;
+                //E += m_globalPhotonMap->estimateRadiance(si, m_globalLookupRadius, m_globalLookupSize);
                 BSDFContext bRec(TransportMode::Radiance);
 
                 // indirect illum
-                Vector3f dir = frame.to_world(warp::square_to_cosine_hemisphere(sampler->next_2d()));
+                Vector3f dir = si.to_world(bs.wo);//frame.to_world(warp::square_to_cosine_hemisphere(sampler->next_2d()));
                 RayDifferential3f indirectRay = RayDifferential3f(si.p, dir, si.time);
                 SurfaceInteraction3f indirectSi = scene->ray_intersect(indirectRay);
                 ++depth;
@@ -208,11 +209,11 @@ public:
             /* 1. Diffuse indirect */
             int maxDepth = m_maxDepth == -1 ? INT_MAX : (m_maxDepth - depth);
             
-            BSDFContext ctx1(TransportMode::Radiance);
+            /*BSDFContext ctx1(TransportMode::Radiance);
             LiSurf += m_globalPhotonMap->estimateIrradiance(
                           si.p, si.sh_frame.n, m_globalLookupRadius,
                             maxDepth, m_globalLookupSize) *
-                        bsdf->eval(ctx1, si, Vector3f(0, 0, 1));
+                        bsdf->eval(ctx1, si, Vector3f(0, 0, 1));*/
             
             if (false) {
                 BSDFContext ctx2(TransportMode::Radiance);
@@ -263,9 +264,7 @@ public:
         }
 
         if (has_flag(bsdf->flags(), BSDFFlags::Smooth)) {
-            LiSurf += m_globalPhotonMap->estimateRadiance(
-                          si, m_globalLookupRadius, m_globalLookupSize) *
-                      M_PI;
+            LiSurf += m_globalPhotonMap->estimateRadiance( si, m_globalLookupRadius, m_globalLookupSize);
         }
         
         /* Sample direct compontent via BSDF sampling if this is generally
@@ -415,6 +414,8 @@ public:
         for (int index = 0; index < numPhotons; index++) {
             std::string debugStr =  "- Photon Num: " + std::to_string(index);
             Log(LogLevel::Info, debugStr.c_str());   
+
+            sampler->advance();
             
             EmitterPtr emitter;
             MediumPtr medium;
@@ -622,7 +623,12 @@ public:
             }
         }
 
-        m_globalPhotonMap->setScaleFactor(1.0f / numShot);
+        float scale = 1.0 / m_globalPhotonMap->size();
+        std::string debugStr    = "Global Photon scale: " + std::to_string(scale);
+        Log(LogLevel::Info, debugStr.c_str());  
+        debugStr = "Num shot: " + std::to_string(numShot);
+        Log(LogLevel::Info, debugStr.c_str());  
+        m_globalPhotonMap->setScaleFactor(1.0 / numShot);
         m_globalPhotonMap->build();
 
         if (m_causticPhotonMap->size() > 0) {

@@ -371,7 +371,6 @@ public:
                     results[resultCount++] =
                         SearchResult(pointDistSquared, index);
                 } else {
-                    return resultCount;
                     if (!isHeap) {
                         /* Establish the max-heap property */
                         std::make_heap(results, results + resultCount, SearchResultComparator());

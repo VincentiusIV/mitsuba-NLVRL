@@ -125,17 +125,13 @@ public:
             const SearchResult &searchResult = results[i];
             const Photon &photon         = m_kdtree[searchResult.index];
             const PhotonData &photonData             = photon.getData();
-            Vector3f between      = photon.getPosition() - si.p;
-            float sqrTerm = 1.0f - searchResult.distSquared * invSquaredRadius;
             Vector3f wi = si.to_local(-photonData.direction);
-            BSDFContext bRec(TransportMode::Radiance);
-            Vector3f tempWi = si.wi;
-            result += photonData.power * bsdf->eval(bRec, si, wi) *
-                 (sqrTerm * sqrTerm);
+            BSDFContext bRec(TransportMode::Importance);
+            result += photonData.power * bsdf->eval(bRec, si, wi);
         }
 
         delete[] results;
-        return result * (m_scale * 3.0 * INV_PI * invSquaredRadius);
+        return result * (m_scale * INV_PI * invSquaredRadius);
     }
 
     Spectrum estimateIrradiance(const Point3f &p, const Normal3f &n,
@@ -171,7 +167,7 @@ public:
                 Log(LogLevel::Info, "Potential issue in kdtree sorting");   
         }
         delete[] results;
-        return result * (m_scale * 3.0 * INV_PI * invSquaredRadius);
+        return result * (m_scale * INV_PI * invSquaredRadius);
     }
 
 protected:
