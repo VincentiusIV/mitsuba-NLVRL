@@ -174,15 +174,13 @@ public:
                 (UInt32) min(sampler->next_1d() * n_channels, n_channels - 1);
         }
         
-
         MediumPtr medium    = si.target_medium(ray.d);
         Mask active_medium = neq(medium, nullptr);
         if (any_or<true>(active_medium)) {
 
             Ray mediumRaySegment(ray, 0, si.t);
             Mask is_spectral       = active_medium;
-            MediumInteraction3f mi = medium->sample_interaction(
-                ray, sampler->next_1d(), mediumChannel, active_medium);
+            MediumInteraction3f mi = medium->sample_interaction(ray, sampler->next_1d(), mediumChannel, active_medium);
             auto [tr, pdf] = medium->eval_tr_and_pdf(mi, si, is_spectral);
             transmittance         = tr;
             mediumRaySegment.mint = ray.mint;
@@ -279,7 +277,7 @@ public:
            by the exhaustive sampling loop above. */
         bool bsdfSampleIndirect = !isDiffuse && (has_flag(bsdf->flags(), BSDFFlags::Smooth) || (hasSpecular && !exhaustiveSpecular));
 
-        if (bsdfSampleDirect || bsdfSampleIndirect) {
+        if (true) {
             if (numBSDFSamples > 1) {
                 int samples = std::max(m_directSamples, m_glossySamples);
                 for (size_t i = 0; i < samples; i++) {
@@ -289,7 +287,7 @@ public:
                 sampleArray.push_back(sampler->next_2d());
             }
 
-            for (int i = 0; i < numBSDFSamples; ++i) {
+            for (int i = 0; i < 1; ++i) {
                 /* Sample BSDF * cos(theta) */
                 BSDFContext bCtx(TransportMode::Radiance);
                 auto [bsdfSample, bsdfVal] = bsdf->sample(bCtx, si, 0, sampleArray[i]);
@@ -334,9 +332,7 @@ public:
                 }
 
                 /* Recurse */
-                if (bsdfSampleIndirect) {
-                    LiSurf += bsdfVal * Li(bsdfRay, bsdfSi, scene, sampler, depth) * weightBSDF;
-                }
+                LiSurf += bsdfVal * Li(bsdfRay, bsdfSi, scene, sampler, depth);
             }
         }
        
@@ -350,25 +346,78 @@ public:
     }
 
     std::pair<Spectrum, Mask> sample(const Scene *scene, Sampler *sampler,
-                                     const RayDifferential3f &ray,
+                                     const RayDifferential3f &_ray,
                                      const Medium *medium, Float *aovs,
                                      Mask active) const override {
         MTS_MASKED_FUNCTION(ProfilerPhase::SamplingIntegratorSample, active);
-        RayDifferential3f r(ray);
-        SurfaceInteraction3f si = scene->ray_intersect(ray);
-        Spectrum e_value(0.0f);
 
-        int depth = 1;
-        //e_value += Li(r, si, scene, sampler, depth);
+        static Float m_globalLookupRadius = -1, m_causticLookupRadius = -1;
+        if (m_globalLookupRadius == -1) {
+            Float sceneRadius =
+                norm(scene->bbox().center() - scene->bbox().max);
+            m_globalLookupRadius  = m_globalLookupRadiusRelative * sceneRadius;
+            m_causticLookupRadius = m_causticLookupRadiusRelative * sceneRadius;
+            std::string lookupString = "- Global Lookup Radius: " +
+                                       std::to_string(m_globalLookupRadius);
+            Log(LogLevel::Info, lookupString.c_str());
+            lookupString = "- Scene Radius: " + std::to_string(sceneRadius);
+            Log(LogLevel::Info, lookupString.c_str());
+        }
 
-        int maxDepth = m_maxDepth == -1 ? INT_MAX : (m_maxDepth);
-        if (si.is_valid())
-            e_value += (Li(r, si, scene, sampler, depth) +
-                        E(scene, si, medium, sampler, depth, true));
-        else
-            active = false;
 
-        return { e_value, active };
+        RayDifferential3f ray(_ray);
+        Spectrum radiance(0.0f), throughput(1.0f);
+        float eta(1.0f);
+
+        SurfaceInteraction3f si = scene->ray_intersect(ray, active);
+        Mask valid_ray = si.is_valid();
+
+        for (int depth = 1;; ++depth) {
+
+            if (si.is_valid())
+            {   
+                //if (si.shape->is_emitter() && !m_hide_emitters)
+                //    radiance += si.shape->emitter()->eval(si, active) * throughput;
+            }
+
+            active &= si.is_valid();
+
+            // Russian roulette
+            if (depth > m_rrStartDepth) {
+                Float q = min(hmax(depolarize(throughput)) * sqr(eta), .95f);
+                active &= sampler->next_1d(active) < q;
+                throughput *= rcp(q);
+            }
+
+            if ((uint32_t) depth >= (uint32_t) m_maxDepth ||
+                ((!is_cuda_array_v<Float> || m_maxDepth < 0) && none(active)))
+                break;
+
+            BSDFContext bCtx;
+            BSDFPtr bsdf = si.bsdf(ray);
+            Mask active_e = active && has_flag(bsdf->flags(), BSDFFlags::Smooth);
+            
+            // Photon Map Sampling
+            if (likely(any_or<true>(active_e))) {
+                radiance += m_causticPhotonMap->estimateRadiance(si, m_causticLookupRadius, m_causticLookupSize) * throughput;
+                radiance += m_globalPhotonMap->estimateRadiance(si, m_globalLookupRadius, m_globalLookupSize) * throughput;
+            }
+
+            auto [bs, bsdfVal] = bsdf->sample(bCtx, si, sampler->next_1d(active), sampler->next_2d(active), active);            
+            bsdfVal = si.to_world_mueller(bsdfVal, -bs.wo, si.wi);
+
+            throughput = throughput * bsdfVal;
+            active &= any(neq(depolarize(throughput), 0.f));
+            if (none_or<false>(active))
+                break;
+
+            eta *= bs.eta;
+
+            ray = si.spawn_ray(si.to_world(bs.wo));
+            si = scene->ray_intersect(ray, active);    
+        }
+        
+        return { radiance, valid_ray };
     }
 
 
@@ -442,9 +491,10 @@ public:
                 uint32_t n_channels = (uint32_t) array_size_v<Spectrum>;
                 channel = (UInt32) min(sampler->next_1d(active) * n_channels, n_channels - 1);
             }
+            ++numShot;
 
             while (throughput != Spectrum(0.0f) && (depth <= m_maxDepth || m_maxDepth < 0)) {
-                ++numShot;
+                
                 si = scene->ray_intersect(ray);
 
                  if (!si.is_valid()) {
