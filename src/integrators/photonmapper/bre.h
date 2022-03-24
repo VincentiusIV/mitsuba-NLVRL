@@ -93,10 +93,8 @@ public:
         IndexType index = 0, stackPos = 1;
         Spectrum result(0.0f);
 
-        MediumInteraction3f mi = medium->sample_interaction(
-            ray, sampler->next_1d(), channel, active);
-        auto [sigma_s, sigma_n, sigmaT] =
-            medium->get_scattering_coefficients(mi);
+        MediumInteraction3f mi = medium->sample_interaction(ray, sampler->next_1d(), channel, active);
+        auto [sigma_s, sigma_n, sigmaT] = medium->get_scattering_coefficients(mi);
         const PhaseFunction *phase = medium->phase_function();
 
         while (stackPos > 0) {
@@ -187,7 +185,7 @@ public:
 
                     PhaseFunctionContext pctx(sampler);
                     result += tr_and_pdf.first * node.photon.getData().power 
-                        * phase->eval(pctx, mi, -ray.d) 
+                        * phase->eval(pctx, mi, -ray. d) 
                         * (weight * m_scaleFactor);
                 }
             }

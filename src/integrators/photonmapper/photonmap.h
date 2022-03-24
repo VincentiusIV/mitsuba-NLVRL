@@ -124,10 +124,34 @@ public:
             const Photon &photon         = m_kdtree[searchResult.index];
             const PhotonData &photonData             = photon.getData();
             Vector3f wi = si.to_local(-photonData.direction);
+
             BSDFContext bRec;
             Spectrum bsdfVal = bsdf->eval(bRec, si, wi);
             //bsdfVal = si.to_world_mueller(bsdfVal, -wi, si.wi);
             result += photonData.power * bsdfVal;
+        }
+
+        delete[] results;
+        return result * (m_scale * INV_PI * invSquaredRadius);
+    }
+
+    Spectrum estimateRadianceVolume(const SurfaceInteraction3f& si, const MediumInteraction3f& mi, float searchRadius, size_t maxPhotons) const {
+        SearchResult *results  = new SearchResult[maxPhotons]; // this is really expensive, consider a buffer per thread
+        float squaredRadius    = searchRadius * searchRadius;
+        size_t resultCount     = nnSearch(mi.p, squaredRadius, maxPhotons, results);
+        float invSquaredRadius = 1.0f / squaredRadius;
+        Spectrum result(0.0f);
+        const BSDF *bsdf = si.bsdf();
+        for (size_t i = 0; i < resultCount; i++) {
+            const SearchResult &searchResult = results[i];
+            const Photon &photon             = m_kdtree[searchResult.index];
+            const PhotonData &photonData     = photon.getData();
+            Vector3f wi = si.to_local(-photonData.direction);
+
+            BSDFContext bRec;
+            Spectrum bsdfVal = bsdf->eval(bRec, si, wi);
+            // bsdfVal = si.to_world_mueller(bsdfVal, -wi, si.wi);
+            result += photonData.power; //* bsdfVal;
         }
 
         delete[] results;

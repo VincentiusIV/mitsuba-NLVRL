@@ -9,7 +9,7 @@
 	<integrator type="photonmap"/>
 
 	<shape type="sphere">
-		<point name="center" x="-2.5" y="5" z="0"/>
+		<point name="center" x="0" y="5" z="0"/>
 		<float name="radius" value="0.5"/>
 		<emitter type="area">
 			<rgb name="radiance" value="13.25, 14.0, 14.0"/>
@@ -22,27 +22,11 @@
 		<float name="intIOR" value="1.46"/>
 	</bsdf>
 
-	<shape type="serialized" id="Cylinder_mesh">
-		<string name="filename" value="TestScene.serialized"/>
-		<integer name="shapeIndex" value="0"/>
-
-		<ref name="bsdf" id="AurichalciteMaterial"/>
-	</shape>
-
-	<shape type="serialized" id="Torus_mesh">
-		<string name="filename" value="TestScene.serialized"/>
-		<integer name="shapeIndex" value="1"/>
-		<ref name="bsdf" id="AurichalciteMaterial"/>
-	</shape>
-
-	<shape type="serialized" id="Sphere_mesh">
-		<string name="filename" value="TestScene.serialized"/>
-		<integer name="shapeIndex" value="2"/>
-
-		<bsdf type="roughconductor">
-			<string name="distribution" value="ggx"/>
-		</bsdf>
-	</shape>
+    <shape type="obj">
+        <string name="filename" value="meshes/sphere_base.obj"/>
+        <bsdf type="diffuse">
+        </bsdf>
+    </shape>
 
 	<shape type="serialized" id="RightWall_mesh">
 		<string name="filename" value="TestScene.serialized"/>
@@ -54,6 +38,9 @@
 			<float name="intIOR" value="1.49"/>
 			<rgb name="diffuseReflectance" value="0.1, 0.75, 0.1"/>
 		</bsdf>
+		<transform name="to_world">
+            <translate x="0" y="-1" z="0"/>
+        </transform>
 	</shape>
 
 	<shape type="serialized" id="Floor_mesh">
@@ -66,6 +53,24 @@
 			<float name="intIOR" value="1.49"/>
 			<rgb name="diffuseReflectance" value="0.75, 0.75, 0.75"/>
 		</bsdf>
+		<transform name="to_world">
+            <translate x="0" y="-1" z="0"/>
+        </transform>
+	</shape>
+	
+	<shape type="serialized" id="Ceiling_mesh">
+		<string name="filename" value="TestScene.serialized"/>
+		<integer name="shapeIndex" value="4"/>
+
+		<bsdf type="roughplastic">
+			<string name="distribution" value="ggx"/>
+			<float name="alpha" value="0.1"/>
+			<float name="intIOR" value="1.49"/>
+			<rgb name="diffuseReflectance" value="0.75, 0.75, 0.75"/>
+		</bsdf>
+		<transform name="to_world">
+            <translate x="0" y="5.5" z="0"/>
+        </transform>
 	</shape>
 
 	<shape type="serialized" id="BackWall_mesh">
@@ -76,8 +81,11 @@
 			<string name="distribution" value="ggx"/>
 			<float name="alpha" value="0.1"/>
 			<float name="intIOR" value="1.49"/>
-			<rgb name="diffuseReflectance" value="0.75, 0.1, 0.1"/>
+			<rgb name="diffuseReflectance" value="0.75, 0.75, 0.75"/>
 		</bsdf>
+		<transform name="to_world">
+            <translate x="0" y="-1" z="0"/>
+        </transform>
 	</shape>
 
 	<shape type="serialized" id="LeftWall_mesh">
@@ -90,6 +98,9 @@
 			<float name="intIOR" value="1.49"/>
 			<rgb name="diffuseReflectance" value="0.1, 0.1, 0.75"/>
 		</bsdf>
+		<transform name="to_world">
+            <translate x="0" y="-1" z="0"/>
+        </transform>
 	</shape>
 
 	<sensor type="perspective">
@@ -100,7 +111,7 @@
 		<float name="nearClip" value="0.10864"/>
 		<transform name="toWorld">
 
-			<lookat target="0, 2.75, -13.864" origin="0, 2.75, -14.864" up="0, 1, 0"/>
+			<lookat target="0, 2, 100" origin="0, 2, -12" up="0, 1, 0"/>
 		</transform>
 
 		<sampler type="ldsampler">
@@ -108,8 +119,8 @@
 		</sampler>
 
 		<film type="hdrfilm">
-			<integer name="height" value="576"/>
-			<integer name="width" value="768"/>
+			<integer name="height" value="200"/>
+			<integer name="width" value="200"/>
 
 			<rfilter type="gaussian"/>
 		</film>

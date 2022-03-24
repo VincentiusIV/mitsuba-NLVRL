@@ -9,7 +9,6 @@
 #include <mitsuba/render/medium.h>
 #include <mitsuba/render/phase.h>
 
-
 NAMESPACE_BEGIN(mitsuba)
 
 template <typename Float, typename Spectrum>
