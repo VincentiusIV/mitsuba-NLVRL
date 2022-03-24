@@ -6,7 +6,7 @@
 -->
 
 <scene version="0.5.0">
-	<integrator type="photonmap"/>
+	<integrator type="volpath"/>
 
 	<shape type="sphere">
 		<point name="center" x="-2.5" y="5" z="0"/>
@@ -16,43 +16,41 @@
 		</emitter>
 	</shape>
 	
-	<shape type="sphere">
-		<point name="center" x="0" y="0" z="0"/>
-		<float name="radius" value="1.0"/>
-		<medium name="exterior" type="homogeneous">
-		</medium>
-		<medium name="interior" type="homogeneous">
-		</medium>
-	</shape>
-
 	<bsdf type="roughplastic" id="AurichalciteMaterial">
 		<string name="distribution" value="ggx"/>
 		<float name="alpha" value="0.05"/>
 		<float name="intIOR" value="1.46"/>
 	</bsdf>
 
-	<shape type="serialized" id="Cylinder_mesh">
-		<string name="filename" value="TestScene.serialized"/>
-		<integer name="shapeIndex" value="0"/>
+	<medium id="medium1" type="heterogeneous">
+        <float name="scale" value="10"/>
 
-		<ref name="bsdf" id="AurichalciteMaterial"/>
-	</shape>
+        <volume name="sigma_t" type="gridvolume">
+            <transform name="to_world">
+                <scale x="3" y="3" z="3"/>
+                <translate x="-1.5" y="-1.5" z="-1.5"/>
+            </transform>
+            <boolean name="use_grid_bbox" value="false"/>
+            <string name="filename" value="textures/smoke.vol"/>
+        </volume>
 
-	<shape type="serialized" id="Torus_mesh">
-		<string name="filename" value="TestScene.serialized"/>
-		<integer name="shapeIndex" value="1"/>
-
-		<ref name="bsdf" id="AurichalciteMaterial"/>
-	</shape>
-
-	<shape type="serialized" id="Sphere_mesh">
-		<string name="filename" value="TestScene.serialized"/>
-		<integer name="shapeIndex" value="2"/>
-
-		<bsdf type="roughconductor">
-			<string name="distribution" value="ggx"/>
-		</bsdf>
-	</shape>
+        <rgb name="albedo" value="0.1, 0.1, 0.1"/>
+        <phase type="isotropic" />
+    </medium>
+    <shape type="obj">
+        <string name="filename" value="meshes/unit_cube_centered.obj"/>
+        <bsdf type="null">
+        </bsdf>
+        <ref id="medium1" name="interior"/>
+        <transform name="to_world">
+            <scale x="3" y="3" z="3"/>
+        </transform>
+    </shape>
+    <shape type="obj">
+        <string name="filename" value="meshes/sphere_base.obj"/>
+        <bsdf type="diffuse">
+        </bsdf>
+    </shape>
 
 	<shape type="serialized" id="RightWall_mesh">
 		<string name="filename" value="TestScene.serialized"/>
@@ -64,6 +62,9 @@
 			<float name="intIOR" value="1.49"/>
 			<rgb name="diffuseReflectance" value="0.1, 0.75, 0.1"/>
 		</bsdf>
+		<transform name="to_world">
+            <translate x="0" y="-1" z="0"/>
+        </transform>
 	</shape>
 
 	<shape type="serialized" id="Floor_mesh">
@@ -76,6 +77,9 @@
 			<float name="intIOR" value="1.49"/>
 			<rgb name="diffuseReflectance" value="0.75, 0.75, 0.75"/>
 		</bsdf>
+		<transform name="to_world">
+            <translate x="0" y="-1" z="0"/>
+        </transform>
 	</shape>
 
 	<shape type="serialized" id="BackWall_mesh">
@@ -86,8 +90,11 @@
 			<string name="distribution" value="ggx"/>
 			<float name="alpha" value="0.1"/>
 			<float name="intIOR" value="1.49"/>
-			<rgb name="diffuseReflectance" value="0.75, 0.1, 0.1"/>
+			<rgb name="diffuseReflectance" value="0.75, 0.75, 0.75"/>
 		</bsdf>
+		<transform name="to_world">
+            <translate x="0" y="-1" z="0"/>
+        </transform>
 	</shape>
 
 	<shape type="serialized" id="LeftWall_mesh">
@@ -100,6 +107,9 @@
 			<float name="intIOR" value="1.49"/>
 			<rgb name="diffuseReflectance" value="0.1, 0.1, 0.75"/>
 		</bsdf>
+		<transform name="to_world">
+            <translate x="0" y="-1" z="0"/>
+        </transform>
 	</shape>
 
 	<sensor type="perspective">
@@ -110,7 +120,7 @@
 		<float name="nearClip" value="0.10864"/>
 		<transform name="toWorld">
 
-			<lookat target="0, 2.75, -13.864" origin="0, 2.75, -14.864" up="0, 1, 0"/>
+			<lookat target="0, 0, 100" origin="0, 0, -3" up="0, 1, 0"/>
 		</transform>
 
 		<sampler type="ldsampler">
@@ -118,8 +128,8 @@
 		</sampler>
 
 		<film type="hdrfilm">
-			<integer name="height" value="576"/>
-			<integer name="width" value="768"/>
+			<integer name="height" value="512"/>
+			<integer name="width" value="512"/>
 
 			<rfilter type="gaussian"/>
 		</film>

@@ -42,7 +42,7 @@ template <class T> constexpr std::string_view type_name() {
 NAMESPACE_BEGIN(mitsuba)
 
 const int k          = 3;
-const int numPhotons = 100000;
+const int numPhotons = 30000;
 
 template <typename Float, typename Spectrum>
 class PhotonMapper : public SamplingIntegrator<Float, Spectrum> {
@@ -72,7 +72,7 @@ public:
         m_causticPhotons   = props.int_("causticPhotons", 250000);
         m_volumePhotons    = props.int_("volumePhotons", 250000);
         m_globalLookupRadiusRelative =
-            props.float_("globalLookupRadiusRelative", 0.1f);
+            props.float_("globalLookupRadiusRelative", 0.05f);
         m_causticLookupRadiusRelative =
             props.float_("causticLookupRadiusRelative", 0.0125f);
         m_globalLookupSize    = props.int_("globalLookupSize", 120);
@@ -83,137 +83,127 @@ public:
     }
 
     void preprocess(Scene* scene, Sensor* sensor) override {
-        Log(LogLevel::Info, "Pre Processing...");     
         Log(LogLevel::Info, "Pre Processing Photon Map...");
 
         Sampler *sampler = sensor->sampler();
         sampler->seed(0);
 
-        std::string numPhotonsStr =
-            "- Photon Count: " + std::to_string(numPhotons);
+        std::vector<int> depthCounter;
+
+        // ------------------- Debug Info -------------------------- //
+        std::string numPhotonsStr = "- Photon Count: " + std::to_string(numPhotons);
         Log(LogLevel::Info, numPhotonsStr.c_str());
-        // 1. For each light source in the scene we create a set of photons
-        //    and divide the overall power of the light source amongst them.
         host_vector<ref<Emitter>, Float> emitters = scene->emitters();
-        std::string photonString =
-            "- Emitter Count: " + std::to_string(emitters.size());
+        std::string photonString = "- Emitter Count: " + std::to_string(emitters.size());
         Log(LogLevel::Info, photonString.c_str());
 
         for (int i = 0; i < emitters.size(); i++) {
-            std::string emitterType =
-                "- E" + std::to_string(i) + " = " + typeid(&emitters[i]).name();
+            std::string emitterType = "- E" + std::to_string(i) + " = " + typeid(&emitters[i]).name();
             Log(LogLevel::Info, emitterType.c_str());
         }
 
-        MediumInteraction3f mi;
-        SurfaceInteraction3f si;
-        Interaction3f its;
-        Float time = sensor->shutter_open() + 0.5f * sensor->shutter_open_time();
-
         int numShot = 0;
+        static int greatestDepth = 0;
 
         for (int index = 0; index < numPhotons; index++) {
             sampler->advance();
-
             EmitterPtr emitter;
             MediumPtr medium;
-            Spectrum power(1.0f);
+            Spectrum flux(1.0f), throughput(1.0f);
+            MediumInteraction3f mi;
+            SurfaceInteraction3f si;
+            Interaction3f its;
 
             // Sample random emitter
             auto tuple = sample_emitter_direction(scene, its, sampler->next_2d(), false, true);
             emitter = std::get<2>(tuple);
 
-            auto rayColorPair = emitter->sample_ray(time, sampler->next_1d(), sampler->next_2d(), sampler->next_2d());
+            auto rayColorPair = emitter->sample_ray(0.0, sampler->next_1d(), sampler->next_2d(), sampler->next_2d());
             RayDifferential3f ray(rayColorPair.first);
+            // TODO: Get flux from emitter here
+            // - somehow sample_ray always returns 0.0, while eval returns the correct radiance?
+            //flux = rayColorPair.second; 
 
-            int depth = 1, nullInteractions = 0;
-            bool delta               = false;
-            bool lastNullInteraction = false;
-
-            Spectrum throughput(1.0f);
-            Mask active             = true;
-            Mask needs_intersection = true;
-
-            UInt32 channel = 0;
-            if (is_rgb_v<Spectrum>) {
-                uint32_t n_channels = (uint32_t) array_size_v<Spectrum>;
-                channel = (UInt32) min(sampler->next_1d(active) * n_channels,
-                                       n_channels - 1);
-            }
+            float eta(1.0f);
+            int nullInteractions = 0;
+            bool delta = false, lastNullInteraction = false;
             ++numShot;
+            si          = scene->ray_intersect(ray);
+            if (!si.is_valid())
+                continue;
 
-            while (throughput != Spectrum(0.0f) && (depth <= m_maxDepth || m_maxDepth < 0)) {
+            Mask active = true;
 
-                si = scene->ray_intersect(ray);
+            for (int depth = 1;; ++depth) {
 
-                if (!si.is_valid()) {
-                    break;
-                }
-
-                const BSDF *bsdf = si.bsdf();
-
-                /* Forward the surface scattering event to the attached
-                    * * handler */
-                handleSurfaceInteraction(depth, nullInteractions, delta, si,
-                                            medium, throughput * power);
-                BSDFContext bCtx(TransportMode::Radiance);
-                auto [bs, bsdfWeight] = bsdf->sample(
-                    bCtx, si, sampler->next_1d(), sampler->next_2d());
-                bsdfWeight = si.to_world_mueller(bsdfWeight, -bs.wo, si.wi);
-                if (bsdfWeight == Spectrum(0.0f)) {
-                    Log(LogLevel::Info, "BSDF Weight is zero :(");
-                    break;
-                }
-
-                /* Prevent light leaks due to the use of shading normals
-                    * * -- [Veach, p. 158] */
-                Vector3f wi = -ray.d, wo = si.to_world(bs.wo);
-                Float wiDotGeoN = dot(si.n, wi), woDotGeoN = dot(si.n, wo);
-                if (wiDotGeoN * Frame3f::cos_theta(si.wi) <= 0 ||
-                    woDotGeoN * Frame3f::cos_theta(bs.wo) <= 0) {
-                    break;
-                }
-
-                /* Keep track of the weight, medium and relative
-                    refractive index along the path */
-                throughput *= bsdfWeight;
-                if (si.is_medium_transition())
-                    medium = si.target_medium(woDotGeoN);
-
-                if (bs.sampled_type & BSDFFlags::Null) {
-                    ++nullInteractions;
-                    lastNullInteraction = true;
-                } else {
-                    delta = bs.sampled_type & BSDFFlags::Delta;
-                    lastNullInteraction = false;
-                }
-
-                /* Adjoint BSDF for shading normals -- [Veach, p. 155]
-                    */
-                if (true) {
-                    throughput *=
-                        std::abs((Frame3f::cos_theta(-bs.wo) * woDotGeoN) /
-                                    (Frame3f::cos_theta(bs.wo) * wiDotGeoN));
-                }
-
-                handleSurfaceInteractionScattering(bs, si, ray);
-                
-
-                if (depth++ >= m_rrStartDepth) {
-                    Float q =
-                        enoki::min(enoki::hmax(throughput), (Float) 0.95f);
-                    if (sampler->next_1d() >= q)
+                if (si.is_valid()) {
+                    if (si.shape->is_emitter())
                         break;
-                    throughput /= q;
                 }
+
+                if (depth > greatestDepth)
+                    greatestDepth = depth;
+                active &= si.is_valid();
+
+                // Russian roulette
+                if (depth > m_rrStartDepth) {
+                    Float q =
+                        min(hmax(depolarize(throughput)) * sqr(eta), .95f);
+                    active &= sampler->next_1d(active) < q;
+                    throughput *= rcp(q);
+                }
+
+                if ((uint32_t) depth >= (uint32_t) m_maxDepth ||
+                    ((!is_cuda_array_v<Float> || m_maxDepth < 0) &&
+                     none(active)))
+                    break;
+
+                BSDFContext bCtx;
+                BSDFPtr bsdf = si.bsdf(ray);
+                Mask active_e =
+                    active && has_flag(bsdf->flags(), BSDFFlags::Smooth);
+
+                handleSurfaceInteraction(depth, false, si, medium, flux * throughput);
+
+                auto [bs, bsdfVal] =
+                    bsdf->sample(bCtx, si, sampler->next_1d(active),
+                                 sampler->next_2d(active), active);
+
+                bsdfVal = si.to_world_mueller(bsdfVal, -bs.wo, si.wi);
+
+                throughput = throughput * bsdfVal;
+                active &= any(neq(depolarize(throughput), 0.f));
+                if (none_or<false>(active)) {
+                    break;
+                }
+
+                eta *= bs.eta;
+
+                // For some reason, this way of bouncing causes no white splotches, at the expense of only having 2 bounces max.
+                ray.o    = si.p;
+                ray.d    = si.to_world(bs.wo);
+                ray.mint = math::RayEpsilon<Float>;
+                // wheras the correct way does, and allows photons to bounce around like they should.
+                //ray = si.spawn_ray(si.to_world(bs.wo));
+                si  = scene->ray_intersect(ray, active);
             }
         }
+
+        std::string desad = "greatest depth = " + std::to_string(greatestDepth);
+        Log(LogLevel::Info, desad.c_str());
 
         float scale          = 1.0 / m_globalPhotonMap->size();
         std::string debugStr = "Global Photon scale: " + std::to_string(scale);
         Log(LogLevel::Info, debugStr.c_str());
         debugStr = "Num shot: " + std::to_string(numShot);
         Log(LogLevel::Info, debugStr.c_str());
+
+        Log(LogLevel::Info, "Depth Counter: ");
+        for (size_t i = 0; i < depthCounter.size(); i++) {
+            debugStr = "- d" + std::to_string(i + 1) + " = " + std::to_string(depthCounter[i]);
+            Log(LogLevel::Info, debugStr.c_str());
+        }
+
         m_globalPhotonMap->setScaleFactor(1.0 / numShot);
         m_globalPhotonMap->build();
 
@@ -250,9 +240,9 @@ public:
         }
 
 
-        RayDifferential3f ray(_ray);
-        Spectrum radiance(0.0f), throughput(1.0f);
+        RayDifferential3f ray = _ray;
         float eta(1.0f);
+        Spectrum radiance(0.0f), throughput(1.0f);
 
         SurfaceInteraction3f si = scene->ray_intersect(ray, active);
         Mask valid_ray = si.is_valid();
@@ -266,6 +256,7 @@ public:
             }
 
             active &= si.is_valid();
+
 
             // Russian roulette
             if (depth > m_rrStartDepth) {
@@ -284,38 +275,27 @@ public:
             
             // Photon Map Sampling
             if (likely(any_or<true>(active_e))) {
-                radiance += m_causticPhotonMap->estimateRadiance(si, m_causticLookupRadius, m_causticLookupSize) * throughput;
-                radiance += m_globalPhotonMap->estimateRadiance(si, m_globalLookupRadius, m_globalLookupSize) * throughput;
+                radiance[active] += m_causticPhotonMap->estimateRadiance(si, m_causticLookupRadius, m_causticLookupSize) * throughput;
+                radiance[active] += m_globalPhotonMap->estimateRadiance(si, m_globalLookupRadius, m_globalLookupSize) * throughput;
             }
 
             auto [bs, bsdfVal] = bsdf->sample(bCtx, si, sampler->next_1d(active), sampler->next_2d(active), active);            
+            
             bsdfVal = si.to_world_mueller(bsdfVal, -bs.wo, si.wi);
 
             throughput = throughput * bsdfVal;
             active &= any(neq(depolarize(throughput), 0.f));
-            if (none_or<false>(active))
+            if (none_or<false>(active)) {
                 break;
+            }
 
             eta *= bs.eta;
 
-            ray = si.spawn_ray(si.to_world(bs.wo));
+            ray = si.spawn_ray(si.to_world(bs.wo));           
             si = scene->ray_intersect(ray, active);    
-        }
-        
+        }       
+
         return { radiance, valid_ray };
-    }
-
-
-    MTS_INLINE Float index_spectrum(const UnpolarizedSpectrum &spec,
-                         const UInt32 &idx) const {
-        Float m = spec[0];
-        if constexpr (is_rgb_v<Spectrum>) { // Handle RGB rendering
-            masked(m, eq(idx, 1u)) = spec[1];
-            masked(m, eq(idx, 2u)) = spec[2];
-        } else {
-            ENOKI_MARK_USED(idx);
-        }
-        return m;
     }
 
     std::tuple<DirectionSample3f, Spectrum, EmitterPtr>
@@ -357,13 +337,11 @@ public:
         return std::make_tuple(ds, spec, emitter);
     }
 
-    void handleSurfaceInteraction(int _depth, int nullInteractions, bool delta,
+    void handleSurfaceInteraction(int depth, bool delta,
                                   const SurfaceInteraction3f &si,
                                   const Medium *medium,
                                   const Spectrum &weight) const {
-        BSDFContext ctx;
         BSDFPtr bsdf       = si.bsdf();
-        int depth          = _depth - nullInteractions;
         uint32_t bsdfFlags = bsdf->flags();
         if (!(bsdfFlags & BSDFFlags::DiffuseReflection) &&
             !(bsdfFlags & BSDFFlags::GlossyReflection))
@@ -383,14 +361,6 @@ public:
             return;
         }
         m_volumePhotonMap->insert(mi.p, PhotonData(Normal3f(0.0f, 0.0f, 0.0f), -wi, weight, depth));
-    }
-
-    void handleSurfaceInteractionScattering(const BSDFSample3f &bRec,
-                                            const SurfaceInteraction3f &si,
-                                            RayDifferential3f &ray) const { 
-        ray.o    = si.p;
-        ray.d    = si.to_world(bRec.wo);
-        ray.mint = math::RayEpsilon<Float>;
     }
 
     MTS_DECLARE_CLASS()

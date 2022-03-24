@@ -49,7 +49,6 @@ MTS_VARIANT std::vector<std::string> SamplingIntegrator<Float, Spectrum>::aov_na
 }
 
 MTS_VARIANT bool SamplingIntegrator<Float, Spectrum>::render(Scene *scene, Sensor *sensor) {
-    preprocess(scene, sensor);
 
     ScopedPhase sp(ProfilerPhase::Render);
     m_stop = false;
@@ -73,6 +72,9 @@ MTS_VARIANT bool SamplingIntegrator<Float, Spectrum>::render(Scene *scene, Senso
     for (size_t i = 0; i < 5; ++i)
         channels.insert(channels.begin() + i, std::string(1, "XYZAW"[i]));
     film->prepare(channels);
+
+    preprocess(scene, sensor);
+
 
     m_render_timer.reset();
     if constexpr (!is_cuda_array_v<Float>) {

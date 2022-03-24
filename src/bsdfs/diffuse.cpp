@@ -88,7 +88,9 @@ public:
         active &= cos_theta_i > 0.f;
         if (unlikely(none_or<false>(active) ||
                      !ctx.is_enabled(BSDFFlags::DiffuseReflection)))
+            {
             return { bs, 0.f };
+       }
 
         bs.wo = warp::square_to_cosine_hemisphere(sample2);
         bs.pdf = warp::square_to_cosine_hemisphere_pdf(bs.wo);

@@ -108,9 +108,11 @@ public:
         //    std::tie(wavelength, spec_weight) = m_radiance->sample_spectrum(
         //        si, math::sample_shifted<Wavelength>(wavelength_sample), active);
         //} else {
-            wavelength = zero<Wavelength>();
-            spec_weight = m_radiance->eval(si, active);
+        wavelength = zero<Wavelength>();
+        spec_weight = m_radiance->eval(si, active);
         //}
+            if (spec_weight != Spectrum(0.0))
+                Log(LogLevel::Info, "bruh");
 
         return std::make_pair(
             Ray3f(si.p, si.to_world(local), time, wavelength),

@@ -15,7 +15,7 @@
 			<rgb name="radiance" value="13.25, 14.0, 14.0"/>
 		</emitter>
 	</shape>
-
+	
 	<bsdf type="roughplastic" id="AurichalciteMaterial">
 		<string name="distribution" value="ggx"/>
 		<float name="alpha" value="0.05"/>
@@ -32,7 +32,6 @@
 	<shape type="serialized" id="Torus_mesh">
 		<string name="filename" value="TestScene.serialized"/>
 		<integer name="shapeIndex" value="1"/>
-
 		<ref name="bsdf" id="AurichalciteMaterial"/>
 	</shape>
 
