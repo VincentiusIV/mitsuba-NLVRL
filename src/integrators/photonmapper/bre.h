@@ -169,7 +169,7 @@ public:
                         * (weight * m_scaleFactor) * invPdfSampling;
 
                 } else {
-                    Float weight = 1 / (M_PI * std::pow(node.radius, 2));
+                    Float weight = 1.0 / (M_PI * std::pow(node.radius, 2));
 
                     if (diskDistance > ray.maxt) {
                         continue; // Cannot gather it

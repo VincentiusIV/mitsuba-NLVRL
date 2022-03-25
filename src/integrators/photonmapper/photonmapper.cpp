@@ -42,7 +42,7 @@ template <class T> constexpr std::string_view type_name() {
 NAMESPACE_BEGIN(mitsuba)
 
 const int k          = 3;
-const int numPhotons = 30000;
+const int numPhotons = 100000;
 
 template <typename Float, typename Spectrum>
 class PhotonMapper : public SamplingIntegrator<Float, Spectrum> {
@@ -65,7 +65,7 @@ public:
         m_directSamples    = props.int_("directSamples", 16);
         m_glossySamples    = props.int_("glossySamples", 32);
         m_rrStartDepth     = props.int_("rrStartDepth", 5);
-        m_maxDepth         = props.int_("maxDepth", 128);
+        m_maxDepth         = props.int_("maxDepth", 512);
         m_maxSpecularDepth = props.int_("maxSpecularDepth", 4);
         m_granularity      = props.int_("granularity", 0);
         m_globalPhotons    = props.int_("globalPhotons", 250000);
@@ -135,7 +135,6 @@ public:
             //
             Mask active             = true;
             Mask needs_intersection = true;
-            Mask specular_chain     = active && !m_hide_emitters;
             UInt32 depth            = 0;
 
             UInt32 channel = 0;
@@ -145,25 +144,33 @@ public:
             }
 
             si = scene->ray_intersect(ray, active);
+            if (!si.is_valid())
+                continue;
             
             for (int bounce = 0;; ++bounce) {
-                sampler->advance();
+                ++depth;
+                if (depth >= greatestDepth)
+                    greatestDepth = depth;
 
-                active &= any(neq(depolarize(throughput), 0.f));
-                Float q         = min(hmax(depolarize(throughput)) * sqr(eta), .95f);
-                Mask perform_rr = (depth > (uint32_t) m_rrStartDepth);
-                active &= sampler->next_1d(active) < q || !perform_rr;
-                masked(throughput, perform_rr) *= rcp(detach(q));
+
+                active &= si.is_valid();
+
+                if (depth > m_rrStartDepth) {
+                    Float q = min(hmax(depolarize(throughput)) * sqr(eta), .95f);
+                    active &= sampler->next_1d(active) < q;
+                    throughput *= rcp(q);
+                }
 
                 Mask exceeded_max_depth = depth >= (uint32_t) m_maxDepth;
                 if (none(active) || all(exceeded_max_depth))
                     break;
 
                 // -------------------- RTE ----------------- //
-
-                Mask active_medium    = active && neq(medium, nullptr);
-                Mask active_surface   = active && !active_medium;
+                Mask active_medium  = active && neq(medium, nullptr);
+                Mask active_surface = active && !active_medium;
                 Mask act_null_scatter = false, act_medium_scatter = false, escaped_medium = false;
+                #pragma region RTE
+                
 
                 Mask is_spectral  = active_medium;
                 Mask not_spectral = false;
@@ -173,9 +180,9 @@ public:
                 }
 
                 if (any_or<true>(active_medium)) {
-                    mi                                                                           = medium->sample_interaction(ray, sampler->next_1d(active_medium), channel, active_medium);
+                    mi = medium->sample_interaction(ray, sampler->next_1d(active_medium), channel, active_medium);
                     masked(ray.maxt, active_medium && medium->is_homogeneous() && mi.is_valid()) = mi.t;
-                    Mask intersect                                                               = needs_intersection && active_medium;
+                    Mask intersect = needs_intersection && active_medium;
                     if (any_or<true>(intersect))
                         masked(si, intersect) = scene->ray_intersect(ray, intersect);
                     needs_intersection &= !active_medium;
@@ -186,8 +193,6 @@ public:
                         Float tr_pdf               = index_spectrum(free_flight_pdf, channel);
                         masked(throughput, is_spectral) *= select(tr_pdf > 0.f, tr / tr_pdf, 0.f);
                     }
-
-                    handleMediumInteraction(depth, nullInteractions, delta, mi, medium, -ray.d, flux * throughput);
 
                     escaped_medium = active_medium && !mi.is_valid();
                     active_medium &= mi.is_valid();
@@ -211,6 +216,7 @@ public:
                     masked(ray.o, act_null_scatter)    = mi.p;
                     masked(ray.mint, act_null_scatter) = 0.f;
                     masked(si.t, act_null_scatter)     = si.t - mi.t;
+                    //++nullInteractions;
                 }
 
                 if (any_or<true>(act_medium_scatter)) {
@@ -222,18 +228,7 @@ public:
                     PhaseFunctionContext phase_ctx(sampler);
                     auto phase = mi.medium->phase_function();
 
-                    // --------------------- Emitter sampling ---------------------
-                    /*Mask sample_emitters = mi.medium->use_emitter_sampling();
-                    valid_ray |= act_medium_scatter;
-                    specular_chain &= !act_medium_scatter;
-                    specular_chain |= act_medium_scatter && !sample_emitters;
-
-                    Mask active_e = act_medium_scatter && sample_emitters;
-                    if (any_or<true>(active_e)) {
-                        auto [emitted, ds] = sample_emitter(mi, true, scene, sampler, medium, channel, active_e);
-                        Float phase_val    = phase->eval(phase_ctx, mi, ds.d, active_e);
-                        masked(result, active_e) += throughput * phase_val * emitted;
-                    }*/
+                    handleMediumInteraction(depth, nullInteractions, delta, mi, medium, -ray.d, flux * throughput);
 
                     // ------------------ Phase function sampling -----------------
                     masked(phase, !act_medium_scatter) = nullptr;
@@ -244,36 +239,47 @@ public:
                     needs_intersection |= act_medium_scatter;
                 }
 
+                #pragma endregion RTE
+
                 // --------------------- Surface Interactions ---------------------
                 active_surface |= escaped_medium;
                 Mask intersect = active_surface && needs_intersection;
                 if (any_or<true>(intersect))
                     masked(si, intersect) = scene->ray_intersect(ray, intersect);
-
                 active_surface &= si.is_valid();
 
                 // -------------------- End RTE ----------------- //
 
                 if (any_or<true>(active_surface)) {
 
+                    if (si.shape->is_emitter())
+                        break;
+
                     BSDFContext bCtx;
                     BSDFPtr bsdf  = si.bsdf(ray);
                     Mask active_e = active_surface && has_flag(bsdf->flags(), BSDFFlags::Smooth);
 
-                    handleSurfaceInteraction(depth, delta, si, medium, flux * throughput);
+                    Spectrum photonIntensity = flux * throughput;
+                    handleSurfaceInteraction(depth, delta, si, medium, photonIntensity);
 
                     auto [bs, bsdfVal] = bsdf->sample(bCtx, si, sampler->next_1d(active_surface), sampler->next_2d(active_surface), active_surface);
                     bsdfVal            = si.to_world_mueller(bsdfVal, -bs.wo, si.wi);
 
-                    masked(throughput, active_surface) *= bsdfVal;
-                    masked(eta, active_surface) *= bs.eta;
+                    throughput = throughput  * bsdfVal;
+                    active &= any(neq(depolarize(throughput), 0.f));
+                    if (none_or<false>(active)) {
+                        break;
+                    }
+                    eta *= bs.eta;
+
+                    flux *= bsdf->eval(bCtx, si, bs.wo);
 
                     // For some reason, this way of bouncing causes no white splotches, at the expense of only having 2 bounces max.
-                    /*ray.o    = si.p;
-                    ray.d    = si.to_world(bs.wo);
-                    ray.mint = math::RayEpsilon<Float>;*/
+                    //ray.o    = si.p;
+                    //ray.d    = si.to_world(bs.wo);
+                    //ray.mint = math::RayEpsilon<Float>;
                     // wheras the correct way does, and allows photons to bounce around like they should.
-                    Ray3f bsdf_ray                = si.spawn_ray(si.to_world(bs.wo));
+                    Ray3f bsdf_ray(si.spawn_ray(si.to_world(bs.wo)));
                     masked(ray, active_surface) = bsdf_ray;
                     needs_intersection |= active_surface;
 
@@ -283,20 +289,18 @@ public:
 
                     valid_ray |= non_null_bsdf;
                     delta = non_null_bsdf && has_flag(bs.sampled_type, BSDFFlags::Delta);
-                    specular_chain |= delta;
-                    specular_chain &= !(active_surface && has_flag(bs.sampled_type, BSDFFlags::Smooth));
 
                     Mask intersect2             = active_surface && needs_intersection;
                     SurfaceInteraction3f si_new = si;
-                    if (any_or<true>(intersect2))
-                        si_new = scene->ray_intersect(ray, active);
+                    si_new = scene->ray_intersect(ray, active);
                     needs_intersection &= !intersect2;
 
                     Mask has_medium_trans            = active_surface && si.is_medium_transition();
                     masked(medium, has_medium_trans) = si.target_medium(ray.d);
 
-                    masked(si, intersect2) = si_new;
+                    si = si_new;
                 }
+
                 active &= (active_surface | active_medium);
             }
             
@@ -374,7 +378,6 @@ public:
 
         // medium = si.target_medium(ray.d);
         Mask needs_intersection = true;
-        Mask specular_chain     = active && !m_hide_emitters;
         UInt32 depth            = 0;
 
         UInt32 channel = 0;
@@ -385,6 +388,7 @@ public:
 
         for (int bounce = 0;; ++bounce) {
             sampler->advance();
+
 
             active &= any(neq(depolarize(throughput), 0.f));
             Float q         = min(hmax(depolarize(throughput)) * sqr(eta), .95f);
@@ -446,6 +450,7 @@ public:
                 masked(ray.o, act_null_scatter)    = mi.p;
                 masked(ray.mint, act_null_scatter) = 0.f;
                 masked(si.t, act_null_scatter)     = si.t - mi.t;
+               // ++nullInteractions;
             }
 
             if (any_or<true>(act_medium_scatter)) {
@@ -457,21 +462,7 @@ public:
                 PhaseFunctionContext phase_ctx(sampler);
                 auto phase = mi.medium->phase_function();
 
-                // --------------------- Emitter sampling ---------------------
-                /*Mask sample_emitters = mi.medium->use_emitter_sampling();
-                valid_ray |= act_medium_scatter;
-                specular_chain &= !act_medium_scatter;
-                specular_chain |= act_medium_scatter && !sample_emitters;
-
-                Mask active_e = act_medium_scatter && sample_emitters;
-                if (any_or<true>(active_e)) {
-                    auto [emitted, ds] = sample_emitter(mi, true, scene, sampler, medium, channel, active_e);
-                    Float phase_val    = phase->eval(phase_ctx, mi, ds.d, active_e);
-                    masked(result, active_e) += throughput * phase_val * emitted;
-                }*/
-
                 masked(radiance, active) += m_bre->query(ray, medium, si, sampler, channel, active, m_maxDepth - 1, false);
-                //masked(radiance, active) += m_volumePhotonMap->estimateRadianceVolume(si, mi, m_globalLookupRadius, m_globalLookupSize);
 
                 // ------------------ Phase function sampling -----------------
                 masked(phase, !act_medium_scatter) = nullptr;
@@ -502,10 +493,7 @@ public:
                 if (likely(any_or<true>(active_e))) {
                     radiance[active] += m_causticPhotonMap->estimateRadiance(si, m_causticLookupRadius, m_causticLookupSize) * throughput;
                     radiance[active] += m_globalPhotonMap->estimateRadiance(si, m_globalLookupRadius, m_globalLookupSize) * throughput;
-                    //break;
-                    // for correctness we should bbreak here, indirect lighting or of multiple bounces should be received from photon map
-                    // however doing so with multiple bounces in preprocess will yield a few high intensity photons (maybe cause of specular?)
-                    // and no indirect lighting.... so for now, just use this as a cheat.
+                    break;
                 }
 
                 auto [bs, bsdfVal] = bsdf->sample(bCtx, si, sampler->next_1d(active_surface), sampler->next_2d(active_surface), active_surface);
@@ -514,12 +502,7 @@ public:
                 masked(throughput, active_surface) *= bsdfVal;
                 masked(eta, active_surface) *= bs.eta;
 
-                // For some reason, this way of bouncing causes no white splotches, at the expense of only having 2 bounces max.
-                /*ray.o    = si.p;
-                ray.d    = si.to_world(bs.wo);
-                ray.mint = math::RayEpsilon<Float>;*/
-                // wheras the correct way does, and allows photons to bounce around like they should.
-                Ray3f bsdf_ray              = si.spawn_ray(si.to_world(bs.wo));
+                Ray3f bsdf_ray = si.spawn_ray(si.to_world(bs.wo));
                 masked(ray, active_surface) = bsdf_ray;
                 needs_intersection |= active_surface;
 
@@ -529,8 +512,6 @@ public:
 
                 valid_ray |= non_null_bsdf;
                 delta = non_null_bsdf && has_flag(bs.sampled_type, BSDFFlags::Delta);
-                specular_chain |= delta;
-                specular_chain &= !(active_surface && has_flag(bs.sampled_type, BSDFFlags::Smooth));
 
                 Mask intersect2             = active_surface && needs_intersection;
                 SurfaceInteraction3f si_new = si;
@@ -545,7 +526,7 @@ public:
             }
             active &= (active_surface | active_medium);
         }
-
+        radiance *= 2;
         return { radiance, valid_ray };
     }
 
@@ -594,9 +575,9 @@ public:
                                   const Spectrum &weight) const {
         BSDFPtr bsdf       = si.bsdf();
         uint32_t bsdfFlags = bsdf->flags();
-        if (!(bsdfFlags & BSDFFlags::DiffuseReflection) &&
+        /*if (!(bsdfFlags & BSDFFlags::DiffuseReflection) &&
             !(bsdfFlags & BSDFFlags::GlossyReflection))
-            return;
+            return;*/
         if (depth < m_minDepth)
             return;
         if (!delta)

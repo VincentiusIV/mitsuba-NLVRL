@@ -103,11 +103,11 @@ public:
         Photon newNode(position, photon);
         push_back(newNode);
         //push_back(newNode);
-        /*std::string numPhotonsStr = "Inserted new photon, photon Count: " +
+       /* std::string numPhotonsStr = "Inserted new photon, photon Count: " +
             std::to_string(m_kdtree.size()) + ", flux: x " +std::to_string( photon.power[0])+ ", y " +
             std::to_string(photon.power[1]) + ", z " +
             std::to_string(photon.power[2]);
-        Log(LogLevel::Info, numPhotonsStr.c_str());   */
+        Log(LogLevel::Info, numPhotonsStr.c_str()); */
 
     }
 
@@ -119,15 +119,15 @@ public:
         float invSquaredRadius = 1.0f / squaredRadius;
         Spectrum result(0.0f);
         const BSDF *bsdf = si.bsdf();
+        Spectrum bsdfVal;
         for (size_t i = 0; i < resultCount; i++) {
             const SearchResult &searchResult = results[i];
             const Photon &photon         = m_kdtree[searchResult.index];
             const PhotonData &photonData             = photon.getData();
             Vector3f wi = si.to_local(-photonData.direction);
-
             BSDFContext bRec;
-            Spectrum bsdfVal = bsdf->eval(bRec, si, wi);
-            //bsdfVal = si.to_world_mueller(bsdfVal, -wi, si.wi);
+            bsdfVal = bsdf->eval(bRec, si, wi);            
+            bsdfVal = si.to_world_mueller(bsdfVal, -wi, si.wi);
             result += photonData.power * bsdfVal;
         }
 
