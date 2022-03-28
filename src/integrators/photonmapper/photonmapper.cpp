@@ -103,6 +103,8 @@ public:
 
         Mask valid_ray = !m_hide_emitters && neq(scene->environment(), nullptr);
 
+        // 
+
         int numShot = 0;
         static int greatestDepth = 0;
 
@@ -156,9 +158,9 @@ public:
                 active &= si.is_valid();
 
                 if (depth > m_rrStartDepth) {
-                    Float q = min(hmax(depolarize(throughput)) * sqr(eta), .95f);
+                    /*Float q = min(hmax(depolarize(throughput)) * sqr(eta), .95f);
                     active &= sampler->next_1d(active) < q;
-                    throughput *= rcp(q);
+                    throughput *= rcp(q);*/
                 }
 
                 Mask exceeded_max_depth = depth >= (uint32_t) m_maxDepth;
