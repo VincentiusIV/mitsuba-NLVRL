@@ -95,7 +95,17 @@ public:
     MTS_IMPORT_BASE(MonteCarloIntegrator, m_max_depth, m_rr_depth)
     MTS_IMPORT_TYPES(Scene, Sampler, Medium, Emitter, EmitterPtr, BSDF, BSDFPtr)
 
-    PathIntegrator(const Properties &props) : Base(props) { }
+    PathIntegrator(const Properties &props) : Base(props) {
+
+        if (is_rgb_v<Spectrum>)
+            Log(LogLevel::Info, "rgb tho");
+        if (is_monochromatic_v<Spectrum>)
+            Log(LogLevel::Info, "monochromatic tho");
+        if (is_spectral_v<Spectrum>)
+            Log(LogLevel::Info, "spectral tho");
+        if (is_polarized_v<Spectrum>)
+            Log(LogLevel::Info, "polarized tho");
+    }
 
     std::pair<Spectrum, Mask> sample(const Scene *scene,
                                      Sampler *sampler,
@@ -168,7 +178,14 @@ public:
                 Float bsdf_pdf = bsdf->pdf(ctx, si, wo, active_e);
 
                 Float mis = select(ds.delta, 1.f, mis_weight(ds.pdf, bsdf_pdf));
+
                 result[active_e] += mis * throughput * bsdf_val * emitter_val;
+
+                /*std::ostringstream stream;
+                stream << "bounce: " << depth << ", result = " << result;
+                std::string str = stream.str();
+                Log(LogLevel::Info, str.c_str());*/
+
             }
 
             // ----------------------- BSDF sampling ----------------------

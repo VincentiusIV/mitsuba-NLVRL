@@ -26,8 +26,7 @@ public:
     RegularSpectrum(const Properties &props) : Texture(props) {
         ScalarVector2f wavelength_range(
             props.float_("lambda_min"),
-            props.float_("lambda_max")
-        );
+            props.float_("lambda_max"));
 
         if (props.type("values") == Properties::Type::String) {
             std::vector<std::string> values_str =

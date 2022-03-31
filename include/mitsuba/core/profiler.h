@@ -23,7 +23,7 @@ enum class ProfilerPhase : int {
     Render,                     /* Integrator::render() */
     SamplingIntegratorSample,   /* SamplingIntegrator::sample() */
     SampleEmitterRay,           /* Scene::sample_emitter_ray() */
-    SampleEmitterDirection,     /* Scene::sample_emitter_direction() */
+    SampleEmitterDirection,     /* Scene::sampleEmitter() */
     RayTest,                    /* Scene::ray_test() */
     RayIntersect,               /* Scene::ray_intersect() */
     CreateSurfaceInteraction,   /* KDTree::create_surface_interaction() */

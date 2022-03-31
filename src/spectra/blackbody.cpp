@@ -54,6 +54,7 @@ public:
     BlackBodySpectrum(const Properties &props) : Texture(props) {
         m_temperature = props.float_("temperature");
         parameters_changed();
+        Log(LogLevel::Info, "BlackBodySpectrum spectrum");
     }
 
     void parameters_changed(const std::vector<std::string> &/*keys*/ = {}) override {

@@ -102,17 +102,14 @@ public:
     inline void insert(const Point3f &position, const PhotonData &photon) {
         Photon newNode(position, photon);
         push_back(newNode);
-        //push_back(newNode);
-       /* std::string numPhotonsStr = "Inserted new photon, photon Count: " +
-            std::to_string(m_kdtree.size()) + ", flux: x " +std::to_string( photon.power[0])+ ", y " +
-            std::to_string(photon.power[1]) + ", z " +
-            std::to_string(photon.power[2]);
-        Log(LogLevel::Info, numPhotonsStr.c_str()); */
-
+        /*std::ostringstream stream;
+        stream << "Inserting photon, power = " << photon.power << ", depth:" << photon.depth;
+        std::string str = stream.str();
+        Log(LogLevel::Info, str.c_str());*/
     }
 
     Spectrum estimateRadiance(const SurfaceInteraction3f &si,
-                              float searchRadius, size_t maxPhotons) const {
+                              float searchRadius, size_t maxPhotons, bool smooth = false) const {
         SearchResult *results  = new SearchResult[maxPhotons]; // this is really expensive, consider a buffer per thread
         float squaredRadius = searchRadius * searchRadius;
         size_t resultCount  = nnSearch(si.p, squaredRadius, maxPhotons, results);
@@ -124,15 +121,33 @@ public:
             const SearchResult &searchResult = results[i];
             const Photon &photon         = m_kdtree[searchResult.index];
             const PhotonData &photonData             = photon.getData();
-            Vector3f wi = si.to_local(-photonData.direction);
-            BSDFContext bRec;
-            bsdfVal = bsdf->eval(bRec, si, wi);            
-            bsdfVal = si.to_world_mueller(bsdfVal, -wi, si.wi);
+
+            Vector3f wo = si.wi;
+            SurfaceInteraction3f mutesi(si);
+            mutesi.wi = si.to_local(-photonData.direction);
+
+            BSDFContext bRec(TransportMode::Radiance);
+            bsdfVal = bsdf->eval(bRec, si, mutesi.wi);
+            bsdfVal = si.to_world_mueller(bsdfVal, -wo, si.wi);
+
+            if (smooth) {
+                Float sqrTerm = 1.0f - searchResult.distSquared * invSquaredRadius;
+                bsdfVal *= (sqrTerm * sqrTerm);
+            }
+
             result += photonData.power * bsdfVal;
         }
 
         delete[] results;
-        return result * (m_scale * INV_PI * invSquaredRadius);
+        result *= m_scale * INV_PI * invSquaredRadius;
+        if (smooth)
+            result *= 3;
+
+        return result;
+    }
+
+    float K2(float x) const { 
+        return 3 * INV_PI * (1 - x * x) * (1 - x * x);
     }
 
     Spectrum estimateRadianceVolume(const SurfaceInteraction3f& si, const MediumInteraction3f& mi, float searchRadius, size_t maxPhotons) const {
@@ -150,7 +165,7 @@ public:
 
             BSDFContext bRec;
             Spectrum bsdfVal = bsdf->eval(bRec, si, wi);
-            // bsdfVal = si.to_world_mueller(bsdfVal, -wi, si.wi);
+            // bsdfVal = si.to_world_mueller(bsdfVal, -wo, si.wo);
             result += photonData.power; //* bsdfVal;
         }
 

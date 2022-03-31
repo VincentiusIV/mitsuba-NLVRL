@@ -26,7 +26,7 @@ public:
 
     SRGBEmitterSpectrum(const Properties &props) : Texture(props) {
         ScalarColor3f color = props.color("color");
-
+        Log(LogLevel::Info, "Using SRGBEmitterSpectrum");
         if constexpr (is_spectral_v<Spectrum>) {
             /* Evaluate the spectral upsampling model. This requires a
                reflectance value (colors in [0, 1]) which is accomplished here by

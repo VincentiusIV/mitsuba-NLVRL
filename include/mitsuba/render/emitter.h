@@ -70,6 +70,7 @@ public:
     /// Flags for all components combined.
     uint32_t flags(mask_t<Float> /*active*/ = true) const { return m_flags; }
 
+    Spectrum getUniformRadiance() const { return m_uniformRadiance; }
 
     ENOKI_CALL_SUPPORT_FRIEND()
     MTS_DECLARE_CLASS()
@@ -81,6 +82,7 @@ protected:
 protected:
     /// Combined flags for all properties of this emitter.
     uint32_t m_flags;
+    Spectrum m_uniformRadiance;
 };
 
 MTS_EXTERN_CLASS_RENDER(Emitter)

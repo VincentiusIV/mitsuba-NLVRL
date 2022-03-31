@@ -54,6 +54,7 @@ public:
                   "shape.");
 
         m_radiance = props.texture<Texture>("radiance", Texture::D65(1.f));
+        m_uniformRadiance = props.vector3f("radcolor", 1.f);
 
         m_flags = +EmitterFlags::Surface;
         if (m_radiance->is_spatially_varying())
@@ -87,6 +88,7 @@ public:
             // Radiance not spatially varying, use area-based sampling of shape
             si = SurfaceInteraction3f(ps, zero<Wavelength>());
             pdf = ps.pdf;
+
         } else {
             // Ipmortance sample texture
             std::tie(si.uv, pdf) = m_radiance->sample_position(sample2, active);
@@ -104,20 +106,15 @@ public:
         Wavelength wavelength;
         Spectrum spec_weight;
 
-        //if constexpr (is_spectral_v<Spectrum>) {
-        //    std::tie(wavelength, spec_weight) = m_radiance->sample_spectrum(
-        //        si, math::sample_shifted<Wavelength>(wavelength_sample), active);
-        //} else {
-        wavelength = zero<Wavelength>();
-        spec_weight = m_radiance->eval(si, active);
-        //}
-            if (spec_weight != Spectrum(0.0))
-                Log(LogLevel::Info, "bruh");
-
-        return std::make_pair(
-            Ray3f(si.p, si.to_world(local), time, wavelength),
-            unpolarized<Spectrum>(spec_weight) * (math::Pi<Float> / pdf)
-        );
+        if constexpr (is_spectral_v<Spectrum>) {
+            std::tie(wavelength, spec_weight) = m_radiance->sample_spectrum(
+                si, math::sample_shifted<Wavelength>(wavelength_sample), active);
+        } else {
+            wavelength = zero<Wavelength>();
+            spec_weight = m_radiance->eval(si, active);
+        }
+        
+        return std::make_pair(Ray3f(si.p, si.to_world(local), time, wavelength), unpolarized<Spectrum>(spec_weight) * (math::Pi<Float> / pdf));
     }
 
     std::pair<DirectionSample3f, Spectrum>

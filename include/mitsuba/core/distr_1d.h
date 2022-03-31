@@ -85,6 +85,10 @@ public:
 
         m_sum = ScalarFloat(sum);
         m_normalization = ScalarFloat(1.0 / sum);
+        std::ostringstream stream;
+        stream << "Discrete Distribution Normalization = " << m_normalization;
+        std::string str = stream.str();
+        Log(LogLevel::Info, str.c_str());
     }
 
     /// Return the unnormalized probability mass function
@@ -337,7 +341,6 @@ public:
 
         if (any(eq(m_valid, (uint32_t) -1)))
             Throw("ContinuousDistribution: no probability mass found!");
-
         m_integral = ScalarFloat(integral);
         m_normalization = ScalarFloat(1. / integral);
         m_interval_size = ScalarFloat(interval_size);

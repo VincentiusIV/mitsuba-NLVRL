@@ -8,11 +8,16 @@
 <scene version="0.5.0">
 	<integrator type="photonmap"/>
 
+	<bsdf type="diffuse" id="light">
+        <rgb name="reflectance" value="0.936461, 0.740433, 0.705267"/>
+    </bsdf>
+	
 	<shape type="sphere">
 		<point name="center" x="0" y="5" z="0"/>
 		<float name="radius" value="0.5"/>
-		<emitter type="area">
-			<rgb name="radiance" value="13.25, 14.0, 14.0"/>
+        <ref id="light"/>
+		<emitter type="area" id="area-emitter">
+			<rgb name="radiance" value="18.387, 10.9873, 2.75357"/>
 		</emitter>
 	</shape>
 	
@@ -119,10 +124,10 @@
 		</sampler>
 
 		<film type="hdrfilm">
-			<integer name="height" value="200"/>
-			<integer name="width" value="200"/>
-
-			<rfilter type="gaussian"/>
-		</film>
+            <integer name="width" value="400"/>
+            <integer name="height" value="400"/>
+            <rfilter type="box"/>
+            <string name="pixel_format" value="rgb"/>
+        </film>
 	</sensor>
 </scene>

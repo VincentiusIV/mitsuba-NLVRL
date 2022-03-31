@@ -82,6 +82,8 @@ MTS_VARIANT Shape<Float, Spectrum>::Shape(const Properties &props) : m_id(props.
             props2.set_float("reflectance", 0.f);
         m_bsdf = PluginManager::instance()->create_object<BSDF>(props2);
     }
+
+
 }
 
 MTS_VARIANT Shape<Float, Spectrum>::~Shape() {

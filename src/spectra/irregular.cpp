@@ -24,6 +24,7 @@ public:
 
 public:
     IrregularSpectrum(const Properties &props) : Texture(props) {
+        Log(LogLevel::Info, "IrregularSpectrum spectrum");
         if (props.type("values") == Properties::Type::String) {
             std::vector<std::string> wavelengths_str =
                 string::tokenize(props.string("wavelengths"), " ,");
