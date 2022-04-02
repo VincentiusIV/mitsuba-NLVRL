@@ -19,28 +19,9 @@
 #include "photonmap.h"
 #include "bre.h"
 
-template <class T> constexpr std::string_view type_name() {
-    using namespace std;
-#ifdef __clang__
-    string_view p = __PRETTY_FUNCTION__;
-    return string_view(p.data() + 34, p.size() - 34 - 1);
-#elif defined(__GNUC__)
-    string_view p = __PRETTY_FUNCTION__;
-#if __cplusplus < 201402
-    return string_view(p.data() + 36, p.size() - 36 - 1);
-#else
-    return string_view(p.data() + 49, p.find(';', 49) - 49);
-#endif
-#elif defined(_MSC_VER)
-    string_view p = __FUNCSIG__;
-    return string_view(p.data() + 84, p.size() - 84 - 7);
-#endif
-}
-
 NAMESPACE_BEGIN(mitsuba)
 
 const int k          = 3;
-const int numLightEmissions = 1000000;
 
 template <typename Float, typename Spectrum>
 class PhotonMapper : public SamplingIntegrator<Float, Spectrum> {
@@ -55,15 +36,17 @@ public:
     typedef typename PhotonMap::PhotonData PhotonData;
 
     PhotonMapper(const Properties &props) : Base(props) {
-        m_globalPhotonMap    = new PhotonMap(numLightEmissions);
-        m_causticPhotonMap = new PhotonMap(numLightEmissions);
-        m_volumePhotonMap    = new PhotonMap(numLightEmissions);       
-        m_bre = new BeamRadianceEstimator();
+        m_numLightEmissions = props.int_("lightEmissions", 1000000);
+
+        m_globalPhotonMap    = new PhotonMap(m_numLightEmissions);
+        m_causticPhotonMap = new PhotonMap(m_numLightEmissions);
+        m_volumePhotonMap    = new PhotonMap(m_numLightEmissions);       
+        m_bre                = new BeamRadianceEstimator();
 
         m_directSamples    = props.int_("directSamples", 16);
         m_glossySamples    = props.int_("glossySamples", 32);
         m_rrStartDepth     = props.int_("rrStartDepth", 5);
-        m_maxDepth         = props.int_("maxDepth", 512);
+        m_maxDepth         = props.int_("max_depth", 512);
         m_maxSpecularDepth = props.int_("maxSpecularDepth", 4);
         m_granularity      = props.int_("granularity", 0);
         m_globalPhotons    = props.int_("globalPhotons", 250000);
@@ -95,17 +78,11 @@ public:
 
         // ------------------- Debug Info -------------------------- //
         std::vector<int> depthCounter;
-        std::string numPhotonsStr = "- Photon Count: " + std::to_string(numLightEmissions);
+        std::string numPhotonsStr = "- Photon Count: " + std::to_string(m_numLightEmissions);
         Log(LogLevel::Info, numPhotonsStr.c_str());
         host_vector<ref<Emitter>, Float> emitters = scene->emitters();
         std::string photonString                  = "- Emitter Count: " + std::to_string(emitters.size());
         Log(LogLevel::Info, photonString.c_str());
-
-        float totalAddFlux = 0.0f;
-        for each (auto emitter in emitters) {
-            Spectrum emittance = emitter->shape()->surface_area();
-            totalAddFlux += hsum(emittance);
-        }
 
         for (int i = 0; i < emitters.size(); i++) {
             std::string emitterType = "- E" + std::to_string(i) + " = " + typeid(&emitters[i]).name();
@@ -117,7 +94,7 @@ public:
         static int greatestDepth = 0;
         ScalarFloat emitter_pdf  = 1.f / scene->emitters().size();
 
-        for (int index = 0; index < numLightEmissions; index++) {
+        for (int index = 0; index < m_numLightEmissions; index++) {
             sampler->advance();
             EmitterPtr emitter = nullptr;
             MediumPtr medium = nullptr;
@@ -129,30 +106,19 @@ public:
 
             // Sample random emitter
             emitter = sampleEmitter(scene, sampler->next_2d(), true);
-
             auto rayColorPair = emitter->sample_ray(0.0, sampler->next_1d(), sampler->next_2d(), sampler->next_2d());
             RayDifferential3f ray(rayColorPair.first);
-            Float sample(sampler->next_1d());
-            //ray.wavelengths = math::sample_shifted<Wavelength>(sample);
-            //Spectrum flux = rayColorPair.second / emitter_pdf / 100;
-            //Spectrum flux(18.387, 10.9873, 2.75357, 0);
             Spectrum flux = emitter->getUniformRadiance();
             flux *= math::Pi<float> * emitter->shape()->surface_area();
-           /* std::ostringstream stream;
-            stream << "pre sampling " << ray;
-            std::string str = stream.str();
-            Log(LogLevel::Info, str.c_str());*/
             
             float eta(1.0f);
-            int nullInteractions = 0;
-            bool delta = false, lastNullInteraction = false;
+            int nullInteractions = 0, mediumDepth = 0;
+            bool delta = false;
 
             //
             Mask active             = true;
             Mask needs_intersection = true;
-            UInt32 depth            = 1;
-
-            UInt32 channel = 0;
+            UInt32 depth            = 1,  channel = 0;
             if (is_rgb_v<Spectrum>) {
                 uint32_t n_channels = (uint32_t) array_size_v<Spectrum>;
                 channel             = (UInt32) min(sampler->next_1d(active) * n_channels, n_channels - 1);
@@ -192,6 +158,7 @@ public:
                 }
 
                 if (any_or<true>(active_medium)) {
+                    ++mediumDepth;
                     mi = medium->sample_interaction(ray, sampler->next_1d(active_medium), channel, active_medium);
                     masked(ray.maxt, active_medium && medium->is_homogeneous() && mi.is_valid()) = mi.t;
                     Mask intersect = needs_intersection && active_medium;
@@ -199,6 +166,7 @@ public:
                         masked(si, intersect) = scene->ray_intersect(ray, intersect);
                     needs_intersection &= !active_medium;
 
+                    
                     masked(mi.t, active_medium && (si.t < mi.t)) = math::Infinity<Float>;
                     if (any_or<true>(is_spectral)) {
                         auto [tr, free_flight_pdf] = medium->eval_tr_and_pdf(mi, si, is_spectral);
@@ -208,6 +176,9 @@ public:
 
                     escaped_medium = active_medium && !mi.is_valid();
                     active_medium &= mi.is_valid();
+
+                    if (any_or<true>(escaped_medium))
+                        mediumDepth = 0;
 
                     // Handle null and real scatter events
                     Mask null_scatter = sampler->next_1d(active_medium) >= index_spectrum(mi.sigma_t, channel) / index_spectrum(mi.combined_extinction, channel);
@@ -239,12 +210,12 @@ public:
                     PhaseFunctionContext phase_ctx(sampler);
                     auto phase = mi.medium->phase_function();
 
-                    handleMediumInteraction(depth, nullInteractions, delta, mi, medium, -ray.d, flux * throughput);
+                    handleMediumInteraction(depth - nullInteractions, delta, mi, medium, -ray.d, flux * throughput);
 
                     // ------------------ Phase function sampling -----------------
                     masked(phase, !act_medium_scatter) = nullptr;
                     auto [wo, phase_pdf]               = phase->sample(phase_ctx, mi, sampler->next_2d(act_medium_scatter), act_medium_scatter);
-                    Ray3f new_ray                      = mi.spawn_ray(wo);
+                    RayDifferential3f new_ray(mi.spawn_ray(wo));
                     new_ray.mint                       = 0.0f;
                     masked(ray, act_medium_scatter)    = new_ray;
                     needs_intersection |= act_medium_scatter;
@@ -293,10 +264,10 @@ public:
                     masked(nullInteractions, !non_null_bsdf) += 1;
 
                     valid_ray |= non_null_bsdf;
-                    delta = non_null_bsdf && has_flag(bs.sampled_type, BSDFFlags::Delta);
+                    delta = non_null_bsdf && (has_flag(bs.sampled_type, BSDFFlags::Transmission) || has_flag(bs.sampled_type, BSDFFlags::Reflection));
 
-                    if (any_or<true>(has_flag(bs.sampled_type, BSDFFlags::Delta)))
-                        Log(LogLevel::Info, "Delta interact");
+                    /*if (any_or<true>(has_flag(bs.sampled_type, BSDFFlags::Transmission)))
+                        Log(LogLevel::Info, "Delta interact");*/
 
                     Mask intersect2             = active_surface && needs_intersection;
                     SurfaceInteraction3f si_new = si;
@@ -321,10 +292,10 @@ public:
         std::string desad = "greatest depth = " + std::to_string(greatestDepth);
         Log(LogLevel::Info, desad.c_str());
 
-        float scale          = 1.0 / numLightEmissions;
+        float scale          = 1.0 / m_numLightEmissions;
         std::string debugStr = "Global Photon scale: " + std::to_string(scale);
         Log(LogLevel::Info, debugStr.c_str());
-        debugStr = "Num Light Emissions: " + std::to_string(numLightEmissions);
+        debugStr = "Num Light Emissions: " + std::to_string(m_numLightEmissions);
         Log(LogLevel::Info, debugStr.c_str());
 
         Log(LogLevel::Info, "Depth Counter: ");
@@ -398,6 +369,7 @@ public:
         float eta(1.0f);
         int nullInteractions = 0;
         bool delta = false, lastNullInteraction = false;
+        int photonEstimaterCount = 0;
 
         // medium = si.target_medium(ray.d);
         Mask needs_intersection = true;
@@ -485,6 +457,7 @@ public:
                 auto phase = mi.medium->phase_function();
 
                 masked(radiance, active) += m_bre->query(ray, medium, si, sampler, channel, active, m_maxDepth - 1, false) * throughput;
+                //break;
                 //masked(radiance, active) += m_volumePhotonMap->estimateRadianceVolume(si, mi, m_globalLookupRadius, m_globalLookupSize) * throughput;
                 // ------------------ Phase function sampling -----------------
                 masked(phase, !act_medium_scatter) = nullptr;
@@ -521,23 +494,21 @@ public:
                 auto [bs, bsdfVal] = bsdf->sample(bCtx, si, sampler->next_1d(active_surface), sampler->next_2d(active_surface), active_surface);
                 bsdfVal            = si.to_world_mueller(bsdfVal, -bs.wo, si.wi);
 
-                Mask active_e = active_surface && has_flag(bsdf->flags(), BSDFFlags::Smooth);
+                Mask active_e = active_surface && has_flag(bsdf->flags(), BSDFFlags::Smooth) && !has_flag(bsdf->flags(), BSDFFlags::Transmission);
                 // && !has_flag(bs.sampled_type, BSDFFlags::Reflection);
                 // Photon Map Sampling
                 if (likely(any_or<true>(active_e))) {
-                    if (depth == 0)
+                    if (photonEstimaterCount == 0)
                     {
-                        radiance[active_surface] += m_causticPhotonMap->estimateRadiance(si, m_causticLookupRadius, m_causticLookupSize) * throughput;
-
-                    } else if (depth == 1) {
+                        // direct method without final gather.                        
+                        radiance[active_surface] += m_causticPhotonMap->estimateCausticRadiance(si, m_causticLookupRadius, m_causticLookupSize) * throughput;
+                        ++photonEstimaterCount;
                         radiance[active_surface] += m_globalPhotonMap->estimateRadiance(si, m_globalLookupRadius, m_globalLookupSize) * throughput;
                         break;
+
+                    } else if (photonEstimaterCount == 1) {
+                        
                     }
-                    
-                    /*std::ostringstream stream;
-                    stream << "Sampling photon map radiance: " << radiance << ", throughput: " << throughput;
-                    std::string str = stream.str();
-                    Log(LogLevel::Info, str.c_str());*/
                 }
 
                 masked(throughput, active_surface) *= bsdfVal;
@@ -568,6 +539,7 @@ public:
             }
             active &= (active_surface | active_medium);
         }
+        // Photon map is used for both direct & indirect radiance.
         radiance *= 2;
        /* std::ostringstream stream;
         stream << "Final radiance: " << radiance;
@@ -609,14 +581,10 @@ public:
         }
     }
 
-    void handleMediumInteraction(int _depth, int nullInteractions, bool delta,
+    void handleMediumInteraction(int depth, bool delta,
                                  const MediumInteraction3f &mi,
                                  const Medium *medium, const Vector3f &wi,
                                  const Spectrum &weight) const {
-        int depth = _depth - nullInteractions;
-        if (depth < m_minDepth) {
-            return;
-        }
         m_volumePhotonMap->insert(mi.p, PhotonData(Normal3f(0.0f, 0.0f, 0.0f), -wi, weight, depth));
     }
 
@@ -639,7 +607,7 @@ private:
     PhotonMap *m_volumePhotonMap;
     BeamRadianceEstimator *m_bre;
 
-    int m_directSamples, m_glossySamples, m_rrStartDepth, m_maxDepth,
+    int m_numLightEmissions, m_directSamples, m_glossySamples, m_rrStartDepth, m_maxDepth,
         m_maxSpecularDepth, m_granularity;
     int m_minDepth = 1;
     int m_globalPhotons, m_causticPhotons, m_volumePhotons;

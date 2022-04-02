@@ -126,7 +126,7 @@ public:
             SurfaceInteraction3f mutesi(si);
             mutesi.wi = si.to_local(-photonData.direction);
 
-            BSDFContext bRec(TransportMode::Radiance);
+            BSDFContext bRec(TransportMode::Importance);
             bsdfVal = bsdf->eval(bRec, si, mutesi.wi);
             bsdfVal = si.to_world_mueller(bsdfVal, -wo, si.wi);
 
@@ -142,6 +142,38 @@ public:
         result *= m_scale * INV_PI * invSquaredRadius;
         if (smooth)
             result *= 3;
+
+        return result;
+    }
+
+    Spectrum estimateCausticRadiance(const SurfaceInteraction3f &si, float searchRadius, size_t maxPhotons) const {
+        SearchResult *results  = new SearchResult[maxPhotons]; // this is really expensive, consider a buffer per thread
+        float squaredRadius    = searchRadius * searchRadius;
+        size_t resultCount     = nnSearch(si.p, squaredRadius, maxPhotons, results);
+        float invSquaredRadius = 1.0f / squaredRadius;
+        Spectrum result(0.0f);
+        const BSDF *bsdf = si.bsdf();
+        Spectrum bsdfVal;
+        for (size_t i = 0; i < resultCount; i++) {
+            const SearchResult &searchResult = results[i];
+            const Photon &photon             = m_kdtree[searchResult.index];
+            const PhotonData &photonData     = photon.getData();
+
+            Vector3f wo = si.wi;
+            SurfaceInteraction3f mutesi(si);
+            mutesi.wi = si.to_local(-photonData.direction);
+
+            BSDFContext bRec(TransportMode::Importance);
+            bsdfVal = bsdf->eval(bRec, si, mutesi.wi);
+            bsdfVal = si.to_world_mueller(bsdfVal, -wo, si.wi);
+
+            double wp = max(0.0, 1.0f - sqrt(searchResult.distSquared * invSquaredRadius));
+
+            result += photonData.power * bsdfVal * wp;
+        }
+
+        delete[] results;
+        result *= 3.0 * m_scale * INV_PI * invSquaredRadius;
 
         return result;
     }

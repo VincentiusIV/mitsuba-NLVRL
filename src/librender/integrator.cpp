@@ -73,8 +73,10 @@ MTS_VARIANT bool SamplingIntegrator<Float, Spectrum>::render(Scene *scene, Senso
         channels.insert(channels.begin() + i, std::string(1, "XYZAW"[i]));
     film->prepare(channels);
 
+    Log(LogLevel::Info, "Starting pre process...");
     preprocess(scene, sensor);
 
+    Log(LogLevel::Info, "Pre process finished..."); 
 
     m_render_timer.reset();
     if constexpr (!is_cuda_array_v<Float>) {
