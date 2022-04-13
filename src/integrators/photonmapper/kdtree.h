@@ -358,9 +358,7 @@ public:
 
             /* Check if the current point is within the query's search radius */
             PointType between = (node.getPosition() - p);
-            float pointDistSquared = between[0] * between[0] +
-                                between[1] * between[1] +
-                                between[2] * between[2];
+            float pointDistSquared = squared_norm(between);
 
             if (pointDistSquared < sqrSearchRadius) {
                 /* Switch to a max-heap when the available search

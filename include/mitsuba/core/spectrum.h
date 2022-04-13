@@ -30,7 +30,7 @@ struct Color : enoki::StaticArrayImpl<Value_, Size_, false, Color<Value_, Size_>
 
     /// Helper alias used to implement type promotion rules
     template <typename T> using ReplaceValue = Color<T, Size_>;
-
+    
     using ArrayType = Color;
     using MaskType = enoki::Mask<Value_, Size_>;
 

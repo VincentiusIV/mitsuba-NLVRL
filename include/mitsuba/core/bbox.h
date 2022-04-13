@@ -331,6 +331,520 @@ template <typename Point_> struct BoundingBox {
         return { c, norm(c - max) };
     }
 
+    template <typename Ray, typename Float> MTS_INLINE bool rayIntersect(const Ray &ray, Float &nearT, Float &farT) const {
+
+        nearT = -std::numeric_limits<Float>::infinity();
+        farT  = std::numeric_limits<Float>::infinity();
+
+        /* For each pair of AABB planes */
+        for (int i = 0; i < 3; i++) {
+            const Float origin = ray.o[i];
+            const Float minVal = min[i], maxVal = max[i];
+
+            if (ray.d[i] == 0) {
+                /* The ray is parallel to the planes */
+                if (origin < minVal || origin > maxVal)
+                    return false;
+            } else {
+                /* Calculate intersection distances */
+                Float t1 = (minVal - origin) * ray.d_rcp[i];
+                Float t2 = (maxVal - origin) * ray.d_rcp[i];
+
+                if (t1 > t2)
+                    std::swap(t1, t2);
+
+                nearT = std::max(t1, nearT);
+                farT  = std::min(t2, farT);
+
+                if (!(nearT <= farT))
+                    return false;
+            }
+        }
+
+        return true;
+    }
+
+    template <typename Ray> MTS_INLINE auto getMinDistanceSqr(const Ray &ray) const {
+        using Float  = typename Ray::Float;
+        using Vector = typename Ray::Vector;
+    // Utility code to compute the min distance AABB
+    class MinDistanceAABB {
+    public:
+        struct Result {
+            Float sqrDistance;
+            Float lineParameter;
+        };
+
+        // Return the sqrDistance
+        Float operator()(Ray const &line, BoundingBox const &box) {
+            // Translate the line and box so that the box has center at the origin.
+            Vector boxCenter = Vector(box.center());
+            Vector boxExtent = box.extents();
+            Vector point = Vector(line.o - boxCenter);
+            Vector direction = line.d;
+
+            Result result;
+            DoQuery(point, direction, boxExtent, result);
+
+            if(result.lineParameter < 0) {
+                return box.squared_distance(line.o);
+            } else if(result.lineParameter > line.maxt) {
+                const Point p = line(line.maxt-line.mint);
+                return box.squared_distance(p);
+            } else {
+                return result.sqrDistance;
+            }
+        }
+
+    protected:
+        // Compute the distance and closest point between a line and an
+        // axis-aligned box whose center is the origin.  On input, 'point' is the
+        // line origin and 'direction' is the line direction.  On output, 'point'
+        // is the point on the box closest to the line.  The 'direction' is
+        // non-const to allow transforming the problem into the first octant.
+        void DoQuery(Vector &point, Vector &direction,
+                     Vector const &boxExtent, Result &result) {
+            result.sqrDistance = (Float) 0;
+            result.lineParameter = (Float) 0;
+
+            // Apply reflections so that direction vector has nonnegative components.
+            bool reflect[3];
+            for (
+                    int i = 0;
+                    i < 3; ++i) {
+                if (direction[i] < (Float) 0) {
+                    point[i] = -point[i];
+                    direction[i] = -direction[i];
+                    reflect[i] = true;
+                } else {
+                    reflect[i] = false;
+                }
+            }
+
+            if (direction[0] > (Float) 0) {
+                if (direction[1] > (Float) 0) {
+                    if (direction[2] > (Float) 0)  // (+,+,+)
+                    {
+                        CaseNoZeros(point, direction, boxExtent, result);
+                    } else  // (+,+,0)
+                    {
+                        Case0(0, 1, 2, point, direction, boxExtent, result);
+                    }
+                } else {
+                    if (direction[2] > (Float) 0)  // (+,0,+)
+                    {
+                        Case0(0, 2, 1, point, direction, boxExtent, result);
+                    } else  // (+,0,0)
+                    {
+                        Case00(0, 1, 2, point, direction, boxExtent, result);
+                    }
+                }
+            } else {
+                if (direction[1] > (Float) 0) {
+                    if (direction[2] > (Float) 0)  // (0,+,+)
+                    {
+                        Case0(1, 2, 0, point, direction, boxExtent, result);
+                    } else  // (0,+,0)
+                    {
+                        Case00(1, 0, 2, point, direction, boxExtent, result);
+                    }
+                } else {
+                    if (direction[2] > (Float) 0)  // (0,0,+)
+                    {
+                        Case00(2, 0, 1, point, direction, boxExtent, result);
+                    } else  // (0,0,0)
+                    {
+                        Case000(point, boxExtent, result);
+                    }
+                }
+            }
+
+            // Undo the reflections applied previously.
+            for (int i = 0; i < 3; ++i) {
+                if (reflect[i]) {
+                    point[i] = -point[i];
+                }
+            }
+        }
+
+    private:
+
+        void Face(int i0, int i1, int i2, Vector &pnt,
+                  Vector const &dir, Vector const &PmE,
+                  Vector const &boxExtent, Result &result) {
+            Vector PpE;
+            Float lenSqr, inv, tmp, param, t, delta;
+
+            PpE[i1] = pnt[i1] + boxExtent[i1];
+            PpE[i2] = pnt[i2] + boxExtent[i2];
+            if (dir[i0] * PpE[i1] >= dir[i1] * PmE[i0]) {
+                if (dir[i0] * PpE[i2] >= dir[i2] * PmE[i0]) {
+                    // v[i1] >= -e[i1], v[i2] >= -e[i2] (distance = 0)
+                    pnt[i0] = boxExtent[i0];
+                    inv = ((Float) 1) / dir[i0];
+                    pnt[i1] -= dir[i1] * PmE[i0] *
+                               inv;
+                    pnt[i2] -= dir[i2] * PmE[i0] *
+                               inv;
+                    result.lineParameter = -PmE[i0] * inv;
+                } else {
+                    // v[i1] >= -e[i1], v[i2] < -e[i2]
+                    lenSqr = dir[i0] * dir[i0] + dir[i2] * dir[i2];
+                    tmp = lenSqr * PpE[i1] - dir[i1] * (dir[i0] * PmE[i0] +
+                                                        dir[i2] * PpE[i2]);
+                    if (tmp <= ((Float) 2) *
+                               lenSqr * boxExtent[i1]
+                            ) {
+                        t = tmp / lenSqr;
+                        lenSqr += dir[i1] * dir[i1];
+                        tmp = PpE[i1] - t;
+                        delta = dir[i0] * PmE[i0] + dir[i1] * tmp + dir[i2] * PpE[i2];
+                        param = -delta / lenSqr;
+                        result.sqrDistance += PmE[i0] * PmE[i0] +
+                                              tmp * tmp
+                                              +
+                                              PpE[i2] * PpE[i2] +
+                                              delta * param;
+
+                        result.lineParameter = param;
+                        pnt[i0] = boxExtent[i0];
+                        pnt[i1] = t - boxExtent[i1];
+                        pnt[i2] = -boxExtent[i2];
+                    } else {
+                        lenSqr += dir[i1] * dir[i1];
+                        delta = dir[i0] * PmE[i0] + dir[i1] * PmE[i1] + dir[i2] * PpE[i2];
+                        param = -delta / lenSqr;
+                        result.sqrDistance += PmE[i0] * PmE[i0] + PmE[i1] * PmE[i1]
+                                              + PpE[i2] * PpE[i2] +
+                                              delta * param;
+
+                        result.lineParameter = param;
+                        pnt[i0] = boxExtent[i0];
+                        pnt[i1] = boxExtent[i1];
+                        pnt[i2] = -boxExtent[i2];
+                    }
+                }
+            } else {
+                if (dir[i0] * PpE[i2] >= dir[i2] * PmE[i0]) {
+                    // v[i1] < -e[i1], v[i2] >= -e[i2]
+                    lenSqr = dir[i0] * dir[i0] + dir[i1] * dir[i1];
+                    tmp = lenSqr * PpE[i2] - dir[i2] * (dir[i0] * PmE[i0] +
+                                                        dir[i1] * PpE[i1]);
+                    if (tmp <= ((Float) 2) *
+                               lenSqr * boxExtent[i2]
+                            ) {
+                        t = tmp / lenSqr;
+                        lenSqr += dir[i2] * dir[i2];
+                        tmp = PpE[i2] - t;
+                        delta = dir[i0] * PmE[i0] + dir[i1] * PpE[i1] + dir[i2] * tmp;
+                        param = -delta / lenSqr;
+                        result.sqrDistance += PmE[i0] * PmE[i0] + PpE[i1] * PpE[i1] +
+                                              tmp * tmp
+                                              +
+                                              delta * param;
+
+                        result.lineParameter = param;
+                        pnt[i0] = boxExtent[i0];
+                        pnt[i1] = -boxExtent[i1];
+                        pnt[i2] = t - boxExtent[i2];
+                    } else {
+                        lenSqr += dir[i2] * dir[i2];
+                        delta = dir[i0] * PmE[i0] + dir[i1] * PpE[i1] + dir[i2] * PmE[i2];
+                        param = -delta / lenSqr;
+                        result.sqrDistance += PmE[i0] * PmE[i0] + PpE[i1] * PpE[i1] +
+                                              PmE[i2] * PmE[i2] +
+                                              delta * param;
+
+                        result.
+                                lineParameter = param;
+                        pnt[i0] = boxExtent[i0];
+                        pnt[i1] = -boxExtent[i1];
+                        pnt[i2] = boxExtent[i2];
+                    }
+                } else {
+                    // v[i1] < -e[i1], v[i2] < -e[i2]
+                    lenSqr = dir[i0] * dir[i0] + dir[i2] * dir[i2];
+                    tmp = lenSqr * PpE[i1] - dir[i1] * (dir[i0] * PmE[i0] +
+                                                        dir[i2] * PpE[i2]);
+                    if (tmp >= (Float) 0) {
+                        // v[i1]-edge is closest
+                        if (tmp <= ((Float) 2) *
+                                   lenSqr * boxExtent[i1]
+                                ) {
+                            t = tmp / lenSqr;
+                            lenSqr += dir[i1] * dir[i1];
+                            tmp = PpE[i1] - t;
+                            delta = dir[i0] * PmE[i0] + dir[i1] * tmp + dir[i2] * PpE[i2];
+                            param = -delta / lenSqr;
+                            result.sqrDistance += PmE[i0] * PmE[i0] +
+                                                  tmp * tmp
+                                                  +
+                                                  PpE[i2] * PpE[i2] +
+                                                  delta * param;
+
+                            result.lineParameter = param;
+                            pnt[i0] = boxExtent[i0];
+                            pnt[i1] = t - boxExtent[i1];
+                            pnt[i2] = -boxExtent[i2];
+                        } else {
+                            lenSqr += dir[i1] * dir[i1];
+                            delta = dir[i0] * PmE[i0] + dir[i1] * PmE[i1]
+                                    + dir[i2] * PpE[i2];
+                            param = -delta / lenSqr;
+                            result.sqrDistance += PmE[i0] * PmE[i0] + PmE[i1] * PmE[i1]
+                                                  + PpE[i2] * PpE[i2] +
+                                                  delta * param;
+
+                            result.lineParameter = param;
+                            pnt[i0] = boxExtent[i0];
+                            pnt[i1] = boxExtent[i1];
+                            pnt[i2] = -boxExtent[i2];
+                        }
+                        return;
+                    }
+
+                    lenSqr = dir[i0] * dir[i0] + dir[i1] * dir[i1];
+                    tmp = lenSqr * PpE[i2] - dir[i2] * (dir[i0] * PmE[i0] +
+                                                        dir[i1] * PpE[i1]);
+                    if (tmp >= (Float) 0) {
+                        // v[i2]-edge is closest
+                        if (tmp <= ((Float) 2) *
+                                   lenSqr * boxExtent[i2]
+                                ) {
+                            t = tmp / lenSqr;
+                            lenSqr += dir[i2] * dir[i2];
+                            tmp = PpE[i2] - t;
+                            delta = dir[i0] * PmE[i0] + dir[i1] * PpE[i1] + dir[i2] * tmp;
+                            param = -delta / lenSqr;
+                            result.sqrDistance += PmE[i0] * PmE[i0] + PpE[i1] * PpE[i1] +
+                                                  tmp * tmp
+                                                  +
+                                                  delta * param;
+
+                            result.lineParameter = param;
+                            pnt[i0] = boxExtent[i0];
+                            pnt[i1] = -boxExtent[i1];
+                            pnt[i2] = t - boxExtent[i2];
+                        } else {
+                            lenSqr += dir[i2] * dir[i2];
+                            delta = dir[i0] * PmE[i0] + dir[i1] * PpE[i1]
+                                    + dir[i2] * PmE[i2];
+                            param = -delta / lenSqr;
+                            result.sqrDistance += PmE[i0] * PmE[i0] + PpE[i1] * PpE[i1]
+                                                  + PmE[i2] * PmE[i2] +
+                                                  delta * param;
+
+                            result.lineParameter = param;
+                            pnt[i0] = boxExtent[i0];
+                            pnt[i1] = -boxExtent[i1];
+                            pnt[i2] = boxExtent[i2];
+                        }
+                        return;
+                    }
+
+                    // (v[i1],v[i2])-corner is closest
+                    lenSqr += dir[i2] * dir[i2];
+                    delta = dir[i0] * PmE[i0] + dir[i1] * PpE[i1] + dir[i2] * PpE[i2];
+                    param = -delta / lenSqr;
+                    result.sqrDistance += PmE[i0] * PmE[i0] + PpE[i1] * PpE[i1]
+                                          + PpE[i2] * PpE[i2] +
+                                          delta * param;
+
+                    result.lineParameter = param;
+                    pnt[i0] = boxExtent[i0];
+                    pnt[i1] = -boxExtent[i1];
+                    pnt[i2] = -boxExtent[i2];
+                }
+            }
+        }
+
+        void CaseNoZeros(Vector &pnt, Vector const &dir,
+                         Vector const &boxExtent, Result &result) {
+            Vector PmE = pnt - boxExtent;
+            Float prodDxPy = dir[0] * PmE[1];
+            Float prodDyPx = dir[1] * PmE[0];
+            Float prodDzPx, prodDxPz, prodDzPy, prodDyPz;
+
+            if (prodDyPx >= prodDxPy) {
+                prodDzPx = dir[2] * PmE[0];
+                prodDxPz = dir[0] * PmE[2];
+                if (prodDzPx >= prodDxPz) {
+                    // line intersects x = e0
+                    Face(0, 1, 2, pnt, dir, PmE, boxExtent, result);
+                } else {
+                    // line intersects z = e2
+                    Face(2, 0, 1, pnt, dir, PmE, boxExtent, result);
+                }
+            } else {
+                prodDzPy = dir[2] * PmE[1];
+                prodDyPz = dir[1] * PmE[2];
+                if (prodDzPy >= prodDyPz) {
+                    // line intersects y = e1
+                    Face(1, 2, 0, pnt, dir, PmE, boxExtent, result);
+                } else {
+                    // line intersects z = e2
+                    Face(2, 0, 1, pnt, dir, PmE, boxExtent, result);
+                }
+            }
+        }
+
+        void Case0(int i0, int i1, int i2, Vector &pnt,
+                   Vector const &dir, Vector const &boxExtent,
+                   Result &result) {
+            Float PmE0 = pnt[i0] - boxExtent[i0];
+            Float PmE1 = pnt[i1] - boxExtent[i1];
+            Float prod0 = dir[i1] * PmE0;
+            Float prod1 = dir[i0] * PmE1;
+            Float delta, invLSqr, inv;
+
+            if (prod0 >= prod1) {
+                // line intersects P[i0] = e[i0]
+                pnt[i0] = boxExtent[i0];
+
+                Float PpE1 = pnt[i1] + boxExtent[i1];
+                delta = prod0 - dir[i0] * PpE1;
+                if (delta >= (Float) 0) {
+                    invLSqr = ((Float) 1) / (dir[i0] * dir[i0] + dir[i1] * dir[i1]);
+                    result.sqrDistance +=
+                            delta * delta
+                            *
+                            invLSqr;
+                    pnt[i1] = -boxExtent[i1];
+                    result.
+                            lineParameter = -(dir[i0] * PmE0 + dir[i1] * PpE1) * invLSqr;
+                } else {
+                    inv = ((Float) 1) / dir[i0];
+                    pnt[i1] -=
+                            prod0 * inv;
+                    result.
+                            lineParameter = -PmE0 * inv;
+                }
+            } else {
+                // line intersects P[i1] = e[i1]
+                pnt[i1] = boxExtent[i1];
+
+                Float PpE0 = pnt[i0] + boxExtent[i0];
+                delta = prod1 - dir[i1] * PpE0;
+                if (delta >= (Float) 0) {
+                    invLSqr = ((Float) 1) / (dir[i0] * dir[i0] + dir[i1] * dir[i1]);
+                    result.sqrDistance +=
+                            delta * delta
+                            *
+                            invLSqr;
+                    pnt[i0] = -boxExtent[i0];
+                    result.
+                            lineParameter = -(dir[i0] * PpE0 + dir[i1] * PmE1) * invLSqr;
+                } else {
+                    inv = ((Float) 1) / dir[i1];
+                    pnt[i0] -=
+                            prod1 * inv;
+                    result.
+                            lineParameter = -PmE1 * inv;
+                }
+            }
+
+            if (pnt[i2] < -boxExtent[i2]) {
+                delta = pnt[i2] + boxExtent[i2];
+                result.sqrDistance +=
+                        delta * delta;
+                pnt[i2] = -boxExtent[i2];
+            } else if (pnt[i2] > boxExtent[i2]) {
+                delta = pnt[i2] - boxExtent[i2];
+                result.sqrDistance +=
+                        delta * delta;
+                pnt[i2] = boxExtent[i2];
+            }
+        }
+
+        void Case00(int i0, int i1, int i2, Vector &pnt,
+                    Vector const &dir, Vector const &boxExtent,
+                    Result &result) {
+            Float delta;
+
+            result.
+                    lineParameter = (boxExtent[i0] - pnt[i0]) / dir[i0];
+
+            pnt[i0] = boxExtent[i0];
+
+            if (pnt[i1] < -boxExtent[i1]) {
+                delta = pnt[i1] + boxExtent[i1];
+                result.sqrDistance +=
+                        delta * delta;
+                pnt[i1] = -boxExtent[i1];
+            } else if (pnt[i1] > boxExtent[i1]) {
+                delta = pnt[i1] - boxExtent[i1];
+                result.sqrDistance +=
+                        delta * delta;
+                pnt[i1] = boxExtent[i1];
+            }
+
+            if (pnt[i2] < -boxExtent[i2]) {
+                delta = pnt[i2] + boxExtent[i2];
+                result.sqrDistance +=
+                        delta * delta;
+                pnt[i2] = -boxExtent[i2];
+            } else if (pnt[i2] > boxExtent[i2]) {
+                delta = pnt[i2] - boxExtent[i2];
+                result.sqrDistance +=
+                        delta * delta;
+                pnt[i2] = boxExtent[i2];
+            }
+        }
+
+        void Case000(Vector &pnt, Vector const &boxExtent,
+                     Result &result) {
+            Float delta;
+
+            if (pnt[0] < -boxExtent[0]) {
+                delta = pnt[0] + boxExtent[0];
+                result.sqrDistance +=
+                        delta * delta;
+                pnt[0] = -boxExtent[0];
+            } else if (pnt[0] > boxExtent[0]) {
+                delta = pnt[0] - boxExtent[0];
+                result.sqrDistance +=
+                        delta * delta;
+                pnt[0] = boxExtent[0];
+            }
+
+            if (pnt[1] < -boxExtent[1]) {
+                delta = pnt[1] + boxExtent[1];
+                result.sqrDistance +=
+                        delta * delta;
+                pnt[1] = -boxExtent[1];
+            } else if (pnt[1] > boxExtent[1]) {
+                delta = pnt[1] - boxExtent[1];
+                result.sqrDistance +=
+                        delta * delta;
+                pnt[1] = boxExtent[1];
+            }
+
+            if (pnt[2] < -boxExtent[2]) {
+                delta = pnt[2] + boxExtent[2];
+                result.sqrDistance +=
+                        delta * delta;
+                pnt[2] = -boxExtent[2];
+            } else if (pnt[2] > boxExtent[2]) {
+                delta = pnt[2] - boxExtent[2];
+                result.sqrDistance +=
+                        delta * delta;
+                pnt[2] = boxExtent[2];
+            }
+        }
+    };
+
+    Float _v1, _v2;
+    if(rayIntersect(ray, _v1, _v2)){
+        return 0.0f;
+    } else {
+        // This code does not handle the min distance
+        MinDistanceAABB query;
+        return query.operator()(ray, *this);
+    }
+
+}
+
+
     Point min; ///< Component-wise minimum
     Point max; ///< Component-wise maximum
 };

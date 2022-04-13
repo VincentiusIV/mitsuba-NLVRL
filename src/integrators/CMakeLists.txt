@@ -8,7 +8,7 @@ add_plugin(stokes  stokes.cpp)
 add_plugin(moment  moment.cpp)
 add_plugin(volpath  volpath.cpp)
 add_plugin(volpathmis volpathmis.cpp)
-add_plugin(vrl 	vrl.cpp)
+add_plugin(vrl 	vrl/vrl.cpp)
 add_plugin(photonmap photonmapper/photonmapper.cpp)
 
 # Register the test directory

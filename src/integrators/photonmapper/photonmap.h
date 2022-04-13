@@ -6,6 +6,7 @@
 #include <random>
 #include "kdtree.h"
 
+
 NAMESPACE_BEGIN(mitsuba)
 
 #define INV_PI 0.31830988618379067154
