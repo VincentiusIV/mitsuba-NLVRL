@@ -332,8 +332,9 @@ public:
         debugStr = "Building  VRL Map, size: " + std::to_string(m_vrlMap->size());
         Log(LogLevel::Info, debugStr.c_str());
         // If needed, an acceleration data structure is build on the fly
+         
         m_vrlMap->build(scene, m_useLightCut ? ELightCutAcceleration : ENoVRLAcceleration, sampler, m_thresholdBetterDist, m_thresholdError);
-
+        m_vrlMap->setScaleFactor(scale);
         Log(LogLevel::Info, "Pre Processing done.");
     }
 

@@ -626,5 +626,11 @@ protected:
     bool m_valid;
 };
 
+template <typename Float, typename Spectrum> std::ostream &operator<<(std::ostream &os, const VRL<Float, Spectrum> &vrl) {
+    os << "VRL";
+    os << "[" << std::endl << "  o = " << vrl.origin << "," << std::endl << "  d = " << vrl.direction << std::endl <<
+    "," << std::endl << " l = " << vrl.length << ", " << std::endl << " flux = " << vrl.flux << "]";
+    return os;
+}
 
 NAMESPACE_END(mituba)

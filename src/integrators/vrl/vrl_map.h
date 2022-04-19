@@ -32,8 +32,6 @@ public:
         m_map.reserve(nbVRL);
         m_accel = ENoVRLAcceleration;
 
-        // TODO: Random walk like photon mapper
-
         //MemoryPool memPool;
         //m_map.clear();
         //while (m_map.size() < nbVRL) {
@@ -59,11 +57,16 @@ public:
         //        weight *= p.edge(idVertex)->weight[EImportance];
         //    } // Add vpl contribution
         //    p.release(memPool);
-        //    m_shootedPath += 1;
+        //    m_scale += 1;
         //}
     }
 
     void push_back(VRL &vrl) { 
+        /*std::ostringstream stream;
+        stream << "Inserting: " << vrl;
+        std::string str = stream.str();
+        Log(LogLevel::Info, str.c_str());*/
+
         m_map.emplace_back(vrl);
     }
 
@@ -95,8 +98,10 @@ public:
     void build(const Scene *scene, EVRLAcceleration accel, Sampler *sampler, int thresholdBetterDist, Float thresholdError) {
         m_accel = accel;
         if (m_accel == ENoVRLAcceleration) {
+            Log(LogLevel::Info, "No VRL acceleration.");
             // Nothing to do
         } else if (m_accel == ELightCutAcceleration) {
+            Log(LogLevel::Info, "Building VRL lightcut acceleration.");
             m_lc = new VRLLightCut(scene, m_map, sampler, thresholdBetterDist, thresholdError);
         } else {
             Log(LogLevel::Error, "build for acceleration is not implemented");
@@ -132,13 +137,11 @@ public:
     // TODO: Fix the specific parameters for RR
 
     // returns nb_evaluation, color, nb_BBIntersection
-    std::tuple<size_t, Spectrum, size_t> query(const Ray3f &ray, const Scene *scene, Sampler *sampler, int renderScatterDepth, Float lengthOfRay,
-                                                                                    bool useUniformSampling, const EVRLRussianRoulette strategyRR, Float scaleRR, UInt32 channel) const {
+    std::tuple<size_t, Spectrum, size_t> query(const Ray3f &ray, const Scene *scene, Sampler *sampler, int renderScatterDepth, Float lengthOfRay, bool useUniformSampling, const EVRLRussianRoulette strategyRR, Float scaleRR, UInt32 channel) const {
         if (m_map.size() == 0)
             return {
                 0,
-                Spectrum(0.0), 0
-            };
+                Spectrum(0.0), 0 };
 
         Spectrum Li(0.0);
         size_t nb_evaluation     = 0;
@@ -154,11 +157,15 @@ public:
                     }
                 }
                 if (strategyRR == ENoRussianRoulette) {
-                    Spectrum contrib = vrl.getContrib(scene, useUniformSampling, ray, lengthOfRay, sampler, channel) / ((Float) m_shootedPath);
+                    Spectrum contrib = vrl.getContrib(scene, useUniformSampling, ray, lengthOfRay, sampler, channel) * m_scale;
+                    
                     if (std::isnan(contrib[0]) || std::isnan(contrib[1]) || std::isnan(contrib[2]) || std::isinf(contrib[0]) || std::isinf(contrib[1]) || std::isinf(contrib[2])) {
                         continue;
                     }
-
+                    /*std::ostringstream stream;
+                    stream << "Contrib of a vrl: " << vrl << " = " << contrib;
+                    std::string str = stream.str();
+                    Log(LogLevel::Info, str.c_str());*/
                     Li += contrib;
                     nb_evaluation += 1;
                 } else if (strategyRR == EDistanceRoulette) {
@@ -171,10 +178,11 @@ public:
                     Float min_distance_sqr = sqrt(computeMinRayToRayDistance());
                     Float rrWeight         = min(1 / (min_distance_sqr * scaleRR), 1.0);
                     if (rrWeight > sampler->next_1d()) {
-                        Spectrum contrib = (vrl.getContrib(scene, useUniformSampling, ray, lengthOfRay, sampler, channel) / rrWeight) / ((Float) m_shootedPath);
+                        Spectrum contrib = (vrl.getContrib(scene, useUniformSampling, ray, lengthOfRay, sampler, channel) / rrWeight) * m_scale;
                         if (std::isnan(contrib[0]) || std::isnan(contrib[1]) || std::isnan(contrib[2]) || std::isinf(contrib[0]) || std::isinf(contrib[1]) || std::isinf(contrib[2])) {
                             continue;
                         }
+                        Log(LogLevel::Info, "found a contrib i guess");
                         Li += contrib;
                         nb_evaluation += 1;
                     } else {
@@ -189,7 +197,7 @@ public:
             VRLPercentagePruned.incrementBase(m_map.size());*/
         } else if (m_accel == ELightCutAcceleration) {
             VRLLightCut::LCQuery query{ ray, sampler, 0 };
-            Li += m_lc->query(scene, sampler, query, nb_BBIntersection, channel) / ((Float) m_shootedPath);
+            Li += m_lc->query(scene, sampler, query, nb_BBIntersection, channel) * m_scale;
             nb_evaluation += query.nb_evaluation;
         } else {
             Log(LogLevel::Error, "query for acceleration is not implemented");
@@ -205,11 +213,13 @@ public:
         return m_map[i];
     }
 
-    const size_t getParticleCount() const { return m_shootedPath; }
+    inline void setScaleFactor(Float value) { m_scale = value; }
+
+    const size_t getParticleCount() const { return m_scale; }
 
 protected:
     std::vector<VRL> m_map;
-    size_t m_shootedPath;
+    Float m_scale = 1;
     EVRLAcceleration m_accel;
 
     VRLLightCut* m_lc;
