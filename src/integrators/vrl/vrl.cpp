@@ -318,23 +318,29 @@ public:
         } else {
             Log(LogLevel::Info, "No caustic photons");
         }
+        
+        if (m_vrlMap->size() > 0)
+        {    
+            // If needed, we can change the VRL
+            if (m_longVRL) {
+                Log(LogLevel::Info, "Transform short VRL into long...");
+                m_vrlMap->toLong(scene);
+            }
+            if (m_diceVRL > 1) {
+                Log(LogLevel::Info, "Dicing the VRL...");
+                m_vrlMap->dicingVRL(scene, sampler, m_diceVRL);
+            }
 
-        // If needed, we can change the VRL
-        if (m_longVRL) {
-            Log(LogLevel::Info, "Transform short VRL into long...");
-            m_vrlMap->toLong(scene);
-        }
-        if (m_diceVRL > 1) {
-            Log(LogLevel::Info, "Dicing the VRL...");
-            m_vrlMap->dicingVRL(scene, sampler, m_diceVRL);
+            debugStr = "Building  VRL Map, size: " + std::to_string(m_vrlMap->size());
+            Log(LogLevel::Info, debugStr.c_str());
+            // If needed, an acceleration data structure is build on the fly
+
+            m_vrlMap->setScaleFactor(scale);
+            m_vrlMap->build(scene, m_useLightCut ? ELightCutAcceleration : ENoVRLAcceleration, sampler, m_thresholdBetterDist, m_thresholdError);
+        } else {
+            Log(LogLevel::Info, "No VRLs");
         }
         
-        debugStr = "Building  VRL Map, size: " + std::to_string(m_vrlMap->size());
-        Log(LogLevel::Info, debugStr.c_str());
-        // If needed, an acceleration data structure is build on the fly
-         
-        m_vrlMap->build(scene, m_useLightCut ? ELightCutAcceleration : ENoVRLAcceleration, sampler, m_thresholdBetterDist, m_thresholdError);
-        m_vrlMap->setScaleFactor(scale);
         Log(LogLevel::Info, "Pre Processing done.");
     }
 
@@ -454,10 +460,7 @@ public:
                 PhaseFunctionContext phase_ctx(sampler);
                 auto phase = mi.medium->phase_function();
 
-                Float totalLength = norm(mi.p - ray.o);
-                auto [evaluations, color, intersections] = m_vrlMap->query(ray, scene, sampler, -1, totalLength, m_useUniformSampling, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, channel);
-                masked(radiance, active) += color * throughput;
-                break;
+                
                 // masked(radiance, active) += m_volumePhotonMap->estimateRadianceVolume(si, mi, m_globalLookupRadius, m_globalLookupSize) * throughput;
                 // ------------------ Phase function sampling -----------------
                 masked(phase, !act_medium_scatter) = nullptr;
@@ -466,6 +469,12 @@ public:
                 new_ray.mint                       = 0.0f;
                 masked(ray, act_medium_scatter)    = new_ray;
                 needs_intersection |= act_medium_scatter;
+
+                Float totalLength = norm(mi.p - ray.o);
+                auto [evaluations, color, intersections] =
+                    m_vrlMap->query(ray, scene, sampler, -1, totalLength, m_useUniformSampling, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, channel);
+                masked(radiance, active) += color * throughput;
+                break;
             }
 
 #pragma endregion

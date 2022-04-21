@@ -159,6 +159,7 @@ public:
                 if (strategyRR == ENoRussianRoulette) {
                     Spectrum contrib = vrl.getContrib(scene, useUniformSampling, ray, lengthOfRay, sampler, channel) * m_scale;
                     
+
                     if (std::isnan(contrib[0]) || std::isnan(contrib[1]) || std::isnan(contrib[2]) || std::isinf(contrib[0]) || std::isinf(contrib[1]) || std::isinf(contrib[2])) {
                         continue;
                     }

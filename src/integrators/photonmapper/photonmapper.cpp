@@ -452,7 +452,7 @@ public:
                 auto phase = mi.medium->phase_function();
 
                 masked(radiance, active) += m_bre->query(ray, medium, si, sampler, channel, active, m_maxDepth - 1, false) * throughput;
-                //break;
+                break;
                 //masked(radiance, active) += m_volumePhotonMap->estimateRadianceVolume(si, mi, m_globalLookupRadius, m_globalLookupSize) * throughput;
                 // ------------------ Phase function sampling -----------------
                 masked(phase, !act_medium_scatter) = nullptr;
