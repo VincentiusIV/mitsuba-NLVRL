@@ -62,7 +62,7 @@ public:
     }
 
     void push_back(VRL &vrl) { 
-        /*std::ostringstream stream;
+       /* std::ostringstream stream;
         stream << "Inserting: " << vrl;
         std::string str = stream.str();
         Log(LogLevel::Info, str.c_str());*/

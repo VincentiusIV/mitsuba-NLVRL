@@ -37,6 +37,7 @@ public:
         m_granularity                 = props.int_("granularity", 0);
         m_globalPhotons               = props.int_("globalPhotons", 250000);
         m_causticPhotons              = props.int_("causticPhotons", 250000);
+        m_targetVRLs = props.int_("targetVRLs", 1000);
         m_globalLookupRadiusRelative  = props.float_("globalLookupRadiusRelative", 0.05f);
         m_causticLookupRadiusRelative = props.float_("causticLookupRadiusRelative", 0.0125f);
         m_globalLookupSize            = props.int_("globalLookupSize", 120);
@@ -116,6 +117,10 @@ public:
             RayDifferential3f ray(rayColorPair.first);
             Spectrum flux = emitter->getUniformRadiance();
             flux *= math::Pi<float> * emitter->shape()->surface_area();
+            medium = emitter->medium();
+
+            if (medium != nullptr)
+                Log(LogLevel::Info, "endpiont surrounded by medium!");
 
             float eta(1.0f);
             int nullInteractions = 0, mediumDepth = 0;
@@ -162,9 +167,9 @@ public:
 
                 if (any_or<true>(active_medium)) {
                     ++mediumDepth;
-                    mi                                                                           = medium->sample_interaction(ray, sampler->next_1d(active_medium), channel, active_medium);
+                    mi = medium->sample_interaction(ray, sampler->next_1d(active_medium), channel, active_medium);
                     masked(ray.maxt, active_medium && medium->is_homogeneous() && mi.is_valid()) = mi.t;
-                    Mask intersect                                                               = needs_intersection && active_medium;
+                    Mask intersect = needs_intersection && active_medium;
                     if (any_or<true>(intersect))
                         masked(si, intersect) = scene->ray_intersect(ray, intersect);
                     needs_intersection &= !active_medium;
@@ -211,10 +216,12 @@ public:
 
                     PhaseFunctionContext phase_ctx(sampler);
                     auto phase = mi.medium->phase_function();
-
-                    VRL vrl(ray.o, mi.medium, throughput * flux, depth, channel);
-                    vrl.setEndPoint(mi.p);
-                    m_vrlMap->push_back(std::move(vrl));                    
+                    
+                    if (m_vrlMap->size() < m_targetVRLs) {
+                        VRL vrl(ray.o, mi.medium, throughput * flux, depth, channel);
+                        vrl.setEndPoint(mi.p);
+                        m_vrlMap->push_back(std::move(vrl));
+                    }
 
                     // ------------------ Phase function sampling -----------------
                     masked(phase, !act_medium_scatter) = nullptr;
@@ -335,7 +342,8 @@ public:
             Log(LogLevel::Info, debugStr.c_str());
             // If needed, an acceleration data structure is build on the fly
 
-            m_vrlMap->setScaleFactor(scale);
+            // is this correct?
+            m_vrlMap->setScaleFactor(1.0 / m_vrlMap->size());
             m_vrlMap->build(scene, m_useLightCut ? ELightCutAcceleration : ENoVRLAcceleration, sampler, m_thresholdBetterDist, m_thresholdError);
         } else {
             Log(LogLevel::Info, "No VRLs");
@@ -460,7 +468,11 @@ public:
                 PhaseFunctionContext phase_ctx(sampler);
                 auto phase = mi.medium->phase_function();
 
-                
+                Float totalLength = norm(mi.p - ray.o);
+                ray.maxt = mi.t;
+                auto [evaluations, color, intersections] = m_vrlMap->query(ray, scene, sampler, -1, totalLength, m_useUniformSampling, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, channel);
+                masked(radiance, active) += color * throughput;
+                break;
                 // masked(radiance, active) += m_volumePhotonMap->estimateRadianceVolume(si, mi, m_globalLookupRadius, m_globalLookupSize) * throughput;
                 // ------------------ Phase function sampling -----------------
                 masked(phase, !act_medium_scatter) = nullptr;
@@ -469,12 +481,6 @@ public:
                 new_ray.mint                       = 0.0f;
                 masked(ray, act_medium_scatter)    = new_ray;
                 needs_intersection |= act_medium_scatter;
-
-                Float totalLength = norm(mi.p - ray.o);
-                auto [evaluations, color, intersections] =
-                    m_vrlMap->query(ray, scene, sampler, -1, totalLength, m_useUniformSampling, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, channel);
-                masked(radiance, active) += color * throughput;
-                break;
             }
 
 #pragma endregion
@@ -634,7 +640,7 @@ private:
 
     int m_directSamples, m_glossySamples, m_maxSpecularDepth, m_granularity;
     int m_minDepth = 1;
-    int m_globalPhotons, m_causticPhotons;
+    int m_globalPhotons, m_causticPhotons, m_targetVRLs;
     float m_globalLookupRadiusRelative;
     float m_causticLookupRadiusRelative;
     float m_invEmitterSamples, m_invGlossySamples;

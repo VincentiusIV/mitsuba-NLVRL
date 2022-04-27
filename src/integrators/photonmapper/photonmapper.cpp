@@ -110,6 +110,7 @@ public:
             RayDifferential3f ray(rayColorPair.first);
             Spectrum flux = emitter->getUniformRadiance();
             flux *= math::Pi<float> * emitter->shape()->surface_area();
+            medium = emitter->medium();
             
             float eta(1.0f);
             int nullInteractions = 0, mediumDepth = 0;

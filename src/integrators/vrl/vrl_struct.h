@@ -4,6 +4,9 @@
 
 NAMESPACE_BEGIN(mitsuba)
 
+
+#define VRL_DEBUG 0
+
 template <typename Float, typename Spectrum> 
 struct VRL {
     MTS_IMPORT_TYPES(PhaseFunctionContext)
@@ -126,11 +129,11 @@ struct VRL {
         Vector3f v = r.d * r.maxt;
         Vector3f w = Vector3f(origin - r.o);
 
-        Float a = dot(u, u);
-        Float b = dot(u, v);
-        Float c = dot(v, v);
-        Float d = dot(u, w);
-        Float e = dot(v, w);
+        Float a = enoki::dot(u, u);
+        Float b = enoki::dot(u, v); // = nan
+        Float c = enoki::dot(v, v); // = inf
+        Float d = enoki::dot(u, w); 
+        Float e = enoki::dot(v, w);// = -nan
 
         Float D = a * c - b * b;
 
@@ -183,6 +186,16 @@ struct VRL {
         // finally do the division to get sc and tc
         sc = (std::abs(sN) < (Float) 0.0001 ? (Float) 0.0 : sN / sD);
         tc = (std::abs(tN) < (Float) 0.0001 ? (Float) 0.0 : tN / tD);
+
+#if VRL_DEBUG
+        std::ostringstream stome;
+        // tc = nan , r.maxt = inf, sc = nan, sN = nan, sD = nan, tN = nan, tD = nan
+        stome << "a = " << a << ", b = " << b << ", c = " << c << ", d = " << d << ", e = " << e;
+       /* stome << "direction = " << direction << "r = " << r << "tc = " << tc << ", r.maxt = " << r.maxt << ", sc = " << sc << "length = " << length << ", sN = " << sN << ", sD = " << sD
+              << ", tN = " << tN
+              << ", tD = " << tD;*/
+        Log(LogLevel::Info, stome.str().c_str());
+#endif
 
         return ClosestPointInfo {
             tc * r.maxt,
@@ -290,7 +303,13 @@ struct VRL {
             auto sampling_vrl = inverseCDF_A(sampler->next_1d(), v0Hat, v1Hat, h, sinTheta);
             // Rechange the variable from vHat to V;
             Point3f pVRL = origin + direction * (sampling_vrl.vHat + closest_point.tVRL);
+            // vHat = nan, tVRL = nan
 
+#if VRL_DEBUG
+            std::ostringstream stome;
+            stome << "o = " << origin << ", d = " << direction << ", pVRL = " << pVRL << ", vHat = " << sampling_vrl.vHat << ", tVRL = " << closest_point.tVRL;
+            Log(LogLevel::Info, stome.str().c_str());
+#endif
             // sample point on camera ray using Kulla and al. : section 4.1
 #if USE_ANISOTROPIC_SAMPLING
             const PhaseFunction *pf = m_medium->phase_function();
@@ -506,6 +525,68 @@ struct VRL {
         }
     }
 
+    Spectrum evalTransmittance(const Scene *scene, const Point3f &p1, bool p1OnSurface, const Point3f &p2, bool p2OnSurface, Float time, const Medium *medium, int &interactions,
+                               Sampler *sampler) const {
+        Vector3f d        = p2 - p1;
+        Float remaining = norm(d);
+        d /= remaining;
+
+        Float lengthFactor = p2OnSurface ? (1 - math::ShadowEpsilon<Float>) : 1;
+        Ray3f ray(p1, d, p1OnSurface ? math::Epsilon<Float> : 0, remaining * lengthFactor, time);
+        Spectrum transmittance(1.0f);
+        int maxInteractions = interactions;
+        interactions        = 0;
+
+        SurfaceInteraction3f si;
+        MediumInteraction3f mi;
+
+        Mask active = true;
+
+        while (remaining > 0) {
+            Normal3f n;
+            si = scene->ray_intersect(ray); // , its.t, its.shape, its.geoFrame.n, its.uv
+
+            bool surface = any_or<true>(si.is_valid());
+            if (surface && (interactions == maxInteractions || !(has_flag(si.bsdf()->flags(), BSDFFlags::Null)))) {
+                /* Encountered an occluder -- zero transmittance. */
+                return Spectrum(0.0f);
+            }
+
+            mi = medium->sample_interaction(ray, sampler->next_1d(), channel, active);
+            transmittance *= medium->evalTransmittance(Ray(ray, 0, std::min(its.t, remaining)), sampler);
+            auto [tr, pdf] = m_medium->eval_tr_and_pdf(mi, medium_si, active);
+            if (!surface || transmittance.isZero())
+                break;
+
+            const BSDF *bsdf = si.bsdf();
+
+            Vector wo = si.to_local(ray.d);
+            BSDFContext bCtx;
+            bCtx.type_mask = BSDFFlags::Null;
+            transmittance *= bsdf->eval(bCtx, si, wo);
+
+            if (si.is_medium_transition()) {
+                if (medium != si.target_medium(-d)) {
+                    ++mediumInconsistencies;
+                    return Spectrum(0.0f);
+                }
+                medium = si.target_medium(d);
+            }
+
+            if (++interactions > 100) { /// Just a precaution..
+                Log(LogLevel::Warn, "evalTransmittance(): round-off error issues?");
+                break;
+            }
+
+            ray.o = ray(mi.t);
+            remaining -= mi.t;
+            ray.maxt = remaining * lengthFactor;
+            ray.mint = math::Epsilon<Float>;
+        }
+
+        return transmittance;
+    }
+
     Spectrum getContrib(
             const Scene* scene,
             const bool uniformSampling,
@@ -517,11 +598,15 @@ struct VRL {
         //
         auto sampling = samplingVRL(scene, ray, sampler, uniformSampling, channel);
 
+        /*std::ostringstream stome;
+        stome << "pVRL = " << sampling.pVRL << ", pCam = " << sampling.pCam;
+        Log(LogLevel::Info, stome.str().c_str());*/
+
         // Check the visibility of the two sampled points
         Vector3f dir = sampling.pVRL - sampling.pCam;
         Float lengthPtoP = norm(dir);
         if (lengthPtoP == 0) {
-            Log(LogLevel::Warn, "0 distance VRL");
+            Log(LogLevel::Warn, "0 distance between VRL and Cam ray");
             return Spectrum(0.0);
         }
         dir /= lengthPtoP;
@@ -532,20 +617,18 @@ struct VRL {
         mediumPtoP.maxt = lengthPtoP; 
 
         int interactions = 100;
-        SurfaceInteraction3f vrlToRay_si = scene->ray_intersect(mediumPtoP);
+        /*SurfaceInteraction3f vrlToRay_si = scene->ray_intersect(mediumPtoP);
         MediumInteraction3f vrlToRay_mi  = m_medium->sample_interaction(mediumPtoP, sampler->next_1d(), channel, active);
         auto [vrlToRay_tr, vrlToRay_pdf] = m_medium->eval_tr_and_pdf(vrlToRay_mi, vrlToRay_si, active);
-        Spectrum vrlToRayTrans = vrlToRay_tr;
+        Spectrum vrlToRayTrans = vrlToRay_tr;*/
 
-        /*Spectrum vrlToRayTrans = scene->evalTransmittance(sampling.pCam, false, sampling.pVRL, false, 0, m_medium, interactions, nullptr);*/
+        Spectrum vrlToRayTrans = evalTransmittance(scene, sampling.pCam, false, sampling.pVRL, false, 0, m_medium, interactions, sampler);
 
         Ray3f mediumRay(ray.o, ray.d, 0);
         mediumRay.mint = 0;
         mediumRay.maxt = sampling.tCam;
 
-        SurfaceInteraction3f mediumRay_si = scene->ray_intersect(mediumRay);
-        MediumInteraction3f mediumRay_mi  = m_medium->sample_interaction(mediumRay, sampler->next_1d(), channel, active);
-        auto [rayTrans, mediumRay_pdf]    = m_medium->eval_tr_and_pdf(mediumRay_mi, mediumRay_si, active);
+        Spectrum rayTrans = evalTransmittance(scene, sampling.pCam, false, sampling.pVRL, false, 0, m_medium, interactions, sampler);
 
         auto vrlTrans = [&]() -> Spectrum {
             if(m_longBeams) {
@@ -562,7 +645,14 @@ struct VRL {
             }
         }();
 
-        Float fallOff = (Float) 1.0 / (lengthPtoP * lengthPtoP);
+        Float fallOff = 1.0f / (lengthPtoP * lengthPtoP);
+
+
+    #if VRL_DEBUG
+        std::ostringstream streammm;
+        streammm << "fallOff = " << fallOff << ", lengthPtoP = " << lengthPtoP;
+        Log(LogLevel::Info, streammm.str().c_str());
+    #endif
         /*MediumSamplingRecord mRec1;
         PhaseFunctionSamplingRecord psr1(mRec1, -direction, -dir);
         MediumSamplingRecord mRec2;
@@ -598,17 +688,24 @@ struct VRL {
             auto [ray_wo, ray_phase_pdf] = pf->sample(phase_ctx, ray_mi, sampler->next_2d(active), active);
             rayPF = ray_phase_pdf;
         }
+#if VRL_DEBUG
+        std::ostringstream stream;
+        stream << "Contrib VRL = [flux:" << flux << ", fallOff:" << fallOff << ", vrlTrans:" << vrlTrans << ", vrlPF:" << vrlPF << ", rayPF:" << rayPF << ", rayTrans:" << rayTrans
+               << ", vrlToRayTrans:" << vrlToRayTrans << ", sigmaSRay:" << sigmaSRay << ", sigmaSVRL:" << sigmaSVRL << ", invPDF:" << sampling.invPDF;
+        std::string str = stream.str();
+        Log(LogLevel::Info, str.c_str());
+#endif
 
         return flux
-               * fallOff
+               * fallOff // = nan
                * vrlTrans // 1.0 if short beams
                * vrlPF //Fs(theta u0)
                * rayPF //Fs(theta uv)
-               * rayTrans
-               * vrlToRayTrans
-               * sigmaSRay
+               * rayTrans // = 0
+               * vrlToRayTrans // = 0
+               * sigmaSRay 
                * sigmaSVRL
-               * sampling.invPDF;
+               * sampling.invPDF; // = nan
     }
 
 public:
