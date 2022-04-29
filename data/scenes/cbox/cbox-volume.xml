@@ -1,0 +1,58 @@
+<scene version="2.0.0">
+    <include filename="fragments/base.xml"/>
+    <include filename="fragments/bsdfs-rgb.xml"/>
+	
+	<shape type="obj">
+        <string name="filename" value="meshes/cbox_luminaire.obj"/>
+        <transform name="to_world">
+            <translate x="0" y="-0.5" z="0"/>
+        </transform>
+        <ref id="light"/>
+        <ref id="area-emitter"/>
+    </shape>
+    <shape type="obj">
+        <string name="filename" value="meshes/cbox_floor.obj"/>
+        <ref id="white"/>
+    </shape>
+    <shape type="obj">
+        <string name="filename" value="meshes/cbox_ceiling.obj"/>
+        <ref id="white"/>
+    </shape>
+    <shape type="obj">
+        <string name="filename" value="meshes/cbox_back.obj"/>
+        <ref id="white"/>
+    </shape>
+    <shape type="obj">
+        <string name="filename" value="meshes/cbox_greenwall.obj"/>
+        <ref id="green"/>
+    </shape>
+    <shape type="obj">
+        <string name="filename" value="meshes/cbox_redwall.obj"/>
+        <ref id="red"/>
+    </shape>
+
+	<emitter type="area" id="area-emitter">
+        <rgb name="radiance" value="18.387, 10.9873, 2.75357"/>
+		<vector name="radcolor" value="18.387, 10.9873, 2.75357"/>
+    </emitter>
+	
+	<medium id="medium1" type="homogeneous">
+        <float name="scale" value="0.005"/>
+        <rgb name="sigma_t" value="0.5"/>
+        <rgb name="albedo" value="1.0, 1.0, 1.0"/>
+        <phase type="isotropic" />
+    </medium>
+
+	
+	<!-- Fog -->
+	<shape type="obj">
+        <string name="filename" value="meshes/sphere_tiny.obj"/>
+        <bsdf type="null">
+        </bsdf>
+		<transform name="to_world">
+            <translate x="0.5" y="0.5" z="0.5"/>
+            <scale x="400" y="400" z="400"/>
+        </transform>
+        <ref id="medium1" name="interior"/>
+    </shape>
+</scene>

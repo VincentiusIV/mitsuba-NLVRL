@@ -1,0 +1,25 @@
+<scene version="2.0.0">
+    <include filename="fragments/base.xml"/>
+    <include filename="fragments/bsdfs-rgb.xml"/>
+    <include filename="fragments/shapes.xml"/>
+
+    <emitter type="area" id="area-emitter">
+        <rgb name="radiance" value="18.387, 10.9873, 2.75357"/>
+		<vector name="radcolor" value="18.387, 10.9873, 2.75357"/>
+    </emitter>
+	
+	<bsdf type="roughdielectric" id="dielectric">
+            <string name="int_ior" value="water"/>
+            <string name="ext_ior" value="air"/>
+	</bsdf>
+		
+	 <shape type="obj">
+        <string name="filename" value="meshes/water.obj"/>
+        <ref id="dielectric"/>
+		<transform name="to_world">
+            <translate x="1" y="-0.5" z="1"/>
+            <scale x="300" y="300" z="300"/>
+        </transform>
+    </shape>
+
+</scene>
