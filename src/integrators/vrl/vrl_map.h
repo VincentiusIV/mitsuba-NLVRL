@@ -197,6 +197,9 @@ public:
             /*VRLPercentagePruned += nbVRLPruned;
             VRLPercentagePruned.incrementBase(m_map.size());*/
         } else if (m_accel == ELightCutAcceleration) {
+            if (!std::isfinite(ray.maxt))
+                Log(LogLevel::Error, "iNFINITE maxt is not a segment...");
+
             VRLLightCut::LCQuery query{ ray, sampler, 0 };
             Li += m_lc->query(scene, sampler, query, nb_BBIntersection, channel) * m_scale;
             nb_evaluation += query.nb_evaluation;

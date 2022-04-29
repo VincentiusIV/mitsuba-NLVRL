@@ -52,7 +52,7 @@ public:
     intersect_aabb(const Ray3f &ray) const override {
         return m_aabb.ray_intersect(ray);
     }
-
+    
     void traverse(TraversalCallback *callback) override {
         callback->put_parameter("scale", m_scale);
         callback->put_object("albedo", m_albedo.get());

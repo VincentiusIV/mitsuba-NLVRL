@@ -14,6 +14,7 @@ NAMESPACE_BEGIN(mitsuba)
 #define VERBOSE_UPPERBOUND_PROBLEM 0
 #define COMPUTE_DISTANCE_PRECISE 1
 #define DEBUG_UPPER_BOUND 0
+#define DEBUG_VRL_LC 1
 
 //StatsCounter VRLLightcutNbEval("VRL", "Lightcut nb eval: ", EAverage);
 //StatsCounter VRLBoundProblem("VRL", "Lightcut bound issue", EPercentage);
@@ -180,6 +181,12 @@ public:
                                         m_root->represent.getContrib(scene, false, query.ray, query.ray.maxt, query.sampler, channel) });
         Spectrum Li = refiningCut.top().estimate;
 
+#if DEBUG_VRL_LC
+        /*std::ostringstream stome;
+        stome << "estimate: " << Li;
+        Log(LogLevel::Info, stome.str().c_str());*/
+#endif
+
         // Starting to dive inside the light tree
         while (!refiningCut.empty()) {
             // + Get node with largest error
@@ -222,10 +229,10 @@ public:
                         query.nb_evaluation += 1;
                         estimate = child_cluster->represent.getContrib(scene, false, query.ray, query.ray.maxt, query.sampler, channel);
                     }
-                    /*if (!estimate.isValid()) {
+                    if (std::isnan(estimate[0]) || std::isnan(estimate[1]) || std::isnan(estimate[2])) {
                         Log(LogLevel::Warn, "Invalid sample!");
                         estimate = Spectrum(0.f);
-                    }*/
+                    }
                     childrenEstimates += estimate;
                     Li += estimate;
                     if (!child_cluster->isLeaf) {
@@ -255,6 +262,15 @@ public:
 
         /*VRLLightcutNbEval += query.nb_evaluation;
         VRLLightcutNbEval.incrementBase();*/
+
+#if DEBUG_VRL_LC
+        if (std::isnan(Li[0]) || std::isnan(Li[1]) || std::isnan(Li[2])) {
+            std::ostringstream stome;
+            stome << "NaN Li: " << Li;
+            Log(LogLevel::Info, stome.str().c_str());
+        }
+
+#endif
 
         return Li;
     }
@@ -330,18 +346,19 @@ private:
             Ray3f rayOtoPonCluster(r.o, r.d, 0);
             rayOtoPonCluster.mint = 0; 
             rayOtoPonCluster.maxt = min_length; 
-            if (true) {
-                SurfaceInteraction3f ray_si = scene->ray_intersect(rayOtoPonCluster);
-                MediumInteraction3f ray_mi  = medium->sample_interaction(rayOtoPonCluster, sampler->next_1d(), channel, active);
-                auto [ray_tr, ray_pdf]      = medium->eval_tr_and_pdf(ray_mi, ray_si, active);
-                transmittance               = ray_tr;
 
-                auto [sigma_s, sigma_n, sigma_t] = medium->get_scattering_coefficients(ray_mi, active);
+            SurfaceInteraction3f ray_si = scene->ray_intersect(rayOtoPonCluster);
+            MediumInteraction3f ray_mi  = medium->sample_interaction(rayOtoPonCluster, sampler->next_1d(), channel, active);
+            auto [ray_tr, ray_pdf]      = medium->eval_tr_and_pdf(ray_mi, ray_si, active);
+            transmittance               = ray_tr;
 
-                material *= sigma_s * sigma_s;
-            }
+            auto [sigma_s, sigma_n, sigma_t] = medium->get_scattering_coefficients(ray_mi, active);
+
+            material *= sigma_s;
+            material *= sigma_s;
+
         } else {
-            //SAssert(false);
+            Log(LogLevel::Error, "Heterogeneous Lightcut not implemented");
         }
 
         // TODO: This is a very loose upper bound for the moment

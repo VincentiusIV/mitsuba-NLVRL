@@ -138,8 +138,8 @@ public:
             si = scene->ray_intersect(ray, active);
             if (!si.is_valid())
                 continue;
-            Mask has_medium_trans            = si.is_valid() && si.is_medium_transition();
-            masked(medium, has_medium_trans) = si.target_medium(ray.d);
+            /*Mask has_medium_trans            = si.is_valid() && si.is_medium_transition();
+            masked(medium, has_medium_trans) = si.target_medium(ray.d);*/
 
             for (int bounce = 0;; ++bounce) {
                 active &= any(neq(depolarize(throughput), 0.f));
@@ -217,12 +217,14 @@ public:
                     PhaseFunctionContext phase_ctx(sampler);
                     auto phase = mi.medium->phase_function();
                     
-                    if (m_vrlMap->size() < m_targetVRLs) {
-                        VRL vrl(ray.o, mi.medium, throughput * flux, depth, channel);
-                        vrl.setEndPoint(mi.p);
-                        m_vrlMap->push_back(std::move(vrl));
+                                        
+                    if (any_or<true>(act_medium_scatter)) {
+                        if (m_vrlMap->size() < m_targetVRLs) {
+                            VRL vrl(ray.o, mi.medium, throughput * flux, depth);
+                            vrl.setEndPoint(mi.p);
+                            m_vrlMap->push_back(std::move(vrl));
+                        }
                     }
-
                     // ------------------ Phase function sampling -----------------
                     masked(phase, !act_medium_scatter) = nullptr;
                     auto [wo, phase_pdf]               = phase->sample(phase_ctx, mi, sampler->next_2d(act_medium_scatter), act_medium_scatter);
@@ -352,7 +354,7 @@ public:
         Log(LogLevel::Info, "Pre Processing done.");
     }
 
-    std::pair<Spectrum, Mask> sample(const Scene *scene, Sampler *sampler, const RayDifferential3f &_ray, const Medium *medium, Float *aovs, Mask active) const override {
+    std::pair<Spectrum, Mask> sample(const Scene *scene, Sampler *sampler, const RayDifferential3f &_ray, const Medium *_medium, Float *aovs, Mask active) const override {
         MTS_MASKED_FUNCTION(ProfilerPhase::SamplingIntegratorSample, active);
 
         static Float m_globalLookupRadius = -1, m_causticLookupRadius = -1;
@@ -367,7 +369,7 @@ public:
         }
 
         Ray3f ray(_ray);
-
+        MediumPtr medium = _medium;
         Spectrum radiance(0.0f), throughput(1.0f);
 
         MediumInteraction3f mi  = zero<MediumInteraction3f>();
@@ -468,11 +470,17 @@ public:
                 PhaseFunctionContext phase_ctx(sampler);
                 auto phase = mi.medium->phase_function();
 
-                Float totalLength = norm(mi.p - ray.o);
-                ray.maxt = mi.t;
-                auto [evaluations, color, intersections] = m_vrlMap->query(ray, scene, sampler, -1, totalLength, m_useUniformSampling, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, channel);
-                masked(radiance, active) += color * throughput;
-                break;
+                if (any_or<true>(act_medium_scatter)) {
+                    Float totalLength = norm(mi.p - ray.o);
+                    Ray3f cameraRay(ray);
+                    cameraRay.maxt = mi.t;
+                    auto [evaluations, color, intersections] =
+                        m_vrlMap->query(cameraRay, scene, sampler, -1, totalLength, m_useUniformSampling, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, channel);
+                    masked(radiance, active) += color * throughput;
+
+                    if (medium->is_homogeneous())
+                        break;
+                }
                 // masked(radiance, active) += m_volumePhotonMap->estimateRadianceVolume(si, mi, m_globalLookupRadius, m_globalLookupSize) * throughput;
                 // ------------------ Phase function sampling -----------------
                 masked(phase, !act_medium_scatter) = nullptr;

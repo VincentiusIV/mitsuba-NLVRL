@@ -399,7 +399,7 @@ struct MediumInteraction : Interaction<Float_, Spectrum_> {
 
     /// mint used when sampling the given distance "t".
     Float mint;
-
+    
     //! @}
     // =============================================================
 

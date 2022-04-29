@@ -6,6 +6,7 @@ NAMESPACE_BEGIN(mitsuba)
 
 
 #define VRL_DEBUG 0
+#define OLD_MITSUBA 1
 
 template <typename Float, typename Spectrum> 
 struct VRL {
@@ -22,11 +23,10 @@ struct VRL {
         m_scatterDepth = -1;
         flux = Spectrum(0.0);
         m_valid = false;
-        m_channel = 0;
     }
 
-    VRL(const Point3f &p, const Medium *m, const Spectrum &f, int curDepth, UInt32 channel) :
-            origin(p), m_medium(m), flux(f), m_scatterDepth(curDepth), m_channel(channel) {
+    VRL(const Point3f &p, const Medium *m, const Spectrum &f, int curDepth) :
+            origin(p), m_medium(m), flux(f), m_scatterDepth(curDepth) {
         direction = Vector3f(0,0,0);
         length = 0;
 
@@ -51,10 +51,9 @@ struct VRL {
                 _ray.maxt = dist;
                 // auto [tr, pdf] = m_medium->eval_tr_and_pdf();
                 Mask active = true;
-                SurfaceInteraction3f si = scene->ray_intersect(_ray);
-                MediumInteraction3f mi  = m_medium->sample_interaction(_ray, sampler->next_1d(), m_channel, active);
-                auto [tr, pdf] = m_medium->eval_tr_and_pdf(mi, si, active);
-                return tr;
+                uint32_t n_channels = (uint32_t) array_size_v<Spectrum>;
+                uint32_t channel    = (UInt32) min(sampler->next_1d(active) * n_channels, n_channels - 1);
+                return evalMediumTransmittance(m_medium, _ray, sampler, channel, active);
             }
         };
 
@@ -454,15 +453,15 @@ struct VRL {
                     MediumInteraction3f vrl_mi   = m_medium->sample_interaction(mediumVRL, sampler->next_1d(), channel, active);
                     auto [vrl_tr, vrl_pdf]       = m_medium->eval_tr_and_pdf(vrl_mi, vrl_si, active);
                     sigmaSVRL                    = vrl_mi.sigma_s;
-                    auto [vrl_wo, vrl_phase_pdf] = pf->sample(phase_ctx, vrl_mi, sampler->next_2d(active), active);
-                    vrlPF                        = vrl_phase_pdf;
+                    //auto [vrl_wo, vrl_phase_pdf] = pf->sample(phase_ctx, vrl_mi, sampler->next_2d(active), active);
+                    vrlPF                        = pf->eval(phase_ctx, vrl_mi, -dir);
 
                     SurfaceInteraction3f ray_si  = scene->ray_intersect(ray);
                     MediumInteraction3f ray_mi   = m_medium->sample_interaction(ray, sampler->next_1d(), channel, active);
                     auto [ray_tr, ray_pdf]       = m_medium->eval_tr_and_pdf(ray_mi, ray_si, active);
                     sigmaSRay                    = ray_mi.sigma_s;
-                    auto [ray_wo, ray_phase_pdf] = pf->sample(phase_ctx, ray_mi, sampler->next_2d(active), active);
-                    rayPF                        = ray_phase_pdf;
+                    //auto [ray_wo, ray_phase_pdf] = pf->sample(phase_ctx, ray_mi, sampler->next_2d(active), active);
+                    rayPF                        = pf->eval(phase_ctx, ray_mi, dir);
                     
                     phaseFunctions[i] = vrlPF * rayPF;
                 }
@@ -525,49 +524,61 @@ struct VRL {
         }
     }
 
-    Spectrum evalTransmittance(const Scene *scene, const Point3f &p1, bool p1OnSurface, const Point3f &p2, bool p2OnSurface, Float time, const Medium *medium, int &interactions,
-                               Sampler *sampler) const {
+    Spectrum evalTransmittance(const Scene *scene, const Point3f &p1, bool p1OnSurface, const Point3f &p2, bool p2OnSurface, Float time, const Medium *medium, int &interactions, Sampler *sampler,
+                               UInt32 channel) const {
         Vector3f d        = p2 - p1;
         Float remaining = norm(d);
         d /= remaining;
 
         Float lengthFactor = p2OnSurface ? (1 - math::ShadowEpsilon<Float>) : 1;
-        Ray3f ray(p1, d, p1OnSurface ? math::Epsilon<Float> : 0, remaining * lengthFactor, time);
+        Ray3f ray(p1, d, time);
+        ray.mint = p1OnSurface ? math::Epsilon<Float> : 0;
+        ray.maxt = remaining * lengthFactor;
+
         Spectrum transmittance(1.0f);
         int maxInteractions = interactions;
         interactions        = 0;
 
         SurfaceInteraction3f si;
-        MediumInteraction3f mi;
 
-        Mask active = true;
+        Mask active_surface = true;
 
         while (remaining > 0) {
-            Normal3f n;
             si = scene->ray_intersect(ray); // , its.t, its.shape, its.geoFrame.n, its.uv
 
-            bool surface = any_or<true>(si.is_valid());
-            if (surface && (interactions == maxInteractions || !(has_flag(si.bsdf()->flags(), BSDFFlags::Null)))) {
+            active_surface &= si.is_valid();
+            if (none(active_surface))
+                break;
+            if (any_or<true>(active_surface) && (interactions == maxInteractions || !(has_flag(si.bsdf()->flags(), BSDFFlags::Null)))) {
                 /* Encountered an occluder -- zero transmittance. */
                 return Spectrum(0.0f);
             }
 
-            mi = medium->sample_interaction(ray, sampler->next_1d(), channel, active);
-            transmittance *= medium->evalTransmittance(Ray(ray, 0, std::min(its.t, remaining)), sampler);
-            auto [tr, pdf] = m_medium->eval_tr_and_pdf(mi, medium_si, active);
-            if (!surface || transmittance.isZero())
+            if (medium) {
+                /*mi             = medium->sample_interaction(ray, sampler->next_1d(), channel, active_surface);
+                auto [tr, pdf] = medium->eval_tr_and_pdf(mi, si, active_surface);
+                transmittance *= tr;*/
+
+                Ray3f r(ray);
+                r.mint = 0;
+                r.maxt         = enoki::min(si.t, remaining);
+                transmittance *= evalMediumTransmittance(medium, r, sampler, channel, active_surface);                
+            }
+
+            if (transmittance == Spectrum(0.0f))
                 break;
 
             const BSDF *bsdf = si.bsdf();
 
             Vector wo = si.to_local(ray.d);
             BSDFContext bCtx;
-            bCtx.type_mask = BSDFFlags::Null;
+            bCtx.type_mask = bCtx.type_mask & BSDFFlags::Null;
             transmittance *= bsdf->eval(bCtx, si, wo);
 
             if (si.is_medium_transition()) {
                 if (medium != si.target_medium(-d)) {
-                    ++mediumInconsistencies;
+                    //++mediumInconsistencies;
+                    //Log(LogLevel::Warn, "medium inconsistency?");
                     return Spectrum(0.0f);
                 }
                 medium = si.target_medium(d);
@@ -578,13 +589,53 @@ struct VRL {
                 break;
             }
 
-            ray.o = ray(mi.t);
-            remaining -= mi.t;
+            ray.o += ray(si.t);
+            remaining -= si.t;
             ray.maxt = remaining * lengthFactor;
             ray.mint = math::Epsilon<Float>;
         }
 
         return transmittance;
+    }
+
+    static Spectrum evalMediumTransmittance(const Medium *medium, const Ray3f &ray, Sampler *sampler, UInt32 channel, Mask active) {
+        auto [hit, mint, maxt] = medium->intersect_aabb(ray);
+        hit &= (enoki::isfinite(mint) || enoki::isfinite(maxt));
+        active &= hit;
+        masked(mint, !active) = 0.f;
+        masked(maxt, !active) = math::Infinity<Float>;
+        if (none(hit))
+            return Spectrum(1.0f);
+        mint = std::max(mint, ray.mint);
+        maxt = std::min(maxt, ray.maxt);
+
+        int nSamples = 2; /// XXX make configurable
+        Float result = 0;
+
+        for (int i = 0; i < nSamples; ++i) {
+            Float t = mint;
+            Ray3f r(ray);
+            while (true) {
+                MediumInteraction3f mi = medium->sample_interaction(r, sampler->next_1d(), channel, active);
+                t += mi.t;
+                if (t >= maxt || !mi.is_valid()) {
+                    result += 1;
+                    break;
+                }
+
+                
+                auto combined_extinction = medium->get_combined_extinction(mi, active);
+                Float m                    = mi.sigma_t[0] * combined_extinction[0];
+                masked(m, eq(channel, 1u)) = mi.sigma_t[1] * combined_extinction[1];
+                masked(m, eq(channel, 2u)) = mi.sigma_t[2] * combined_extinction[2];
+
+                r.o = ray(t);
+
+                if (m > sampler->next_1d())
+                    break;
+            }
+        }
+        return Spectrum(result / nSamples);
     }
 
     Spectrum getContrib(
@@ -616,30 +667,51 @@ struct VRL {
         mediumPtoP.mint = 0;
         mediumPtoP.maxt = lengthPtoP; 
 
-        int interactions = 100;
-        /*SurfaceInteraction3f vrlToRay_si = scene->ray_intersect(mediumPtoP);
-        MediumInteraction3f vrlToRay_mi  = m_medium->sample_interaction(mediumPtoP, sampler->next_1d(), channel, active);
-        auto [vrlToRay_tr, vrlToRay_pdf] = m_medium->eval_tr_and_pdf(vrlToRay_mi, vrlToRay_si, active);
-        Spectrum vrlToRayTrans = vrlToRay_tr;*/
-
-        Spectrum vrlToRayTrans = evalTransmittance(scene, sampling.pCam, false, sampling.pVRL, false, 0, m_medium, interactions, sampler);
-
         Ray3f mediumRay(ray.o, ray.d, 0);
-        mediumRay.mint = 0;
-        mediumRay.maxt = sampling.tCam;
+        mediumRay.mint   = 0;
+        mediumRay.maxt   = sampling.tCam;
 
-        Spectrum rayTrans = evalTransmittance(scene, sampling.pCam, false, sampling.pVRL, false, 0, m_medium, interactions, sampler);
+        int interactions = 100;
 
+        SurfaceInteraction3f si = scene->ray_intersect(mediumPtoP);
+        MediumInteraction3f mi  = m_medium->sample_interaction(mediumPtoP, sampler->next_1d(), channel, active);
+
+        if (!mi.is_valid())
+            return Spectrum(0.0);
+        
+#if OLD_MITSUBA
+        Spectrum vrlToRayTrans= evalTransmittance(scene, sampling.pCam, false, sampling.pVRL, false, 0, m_medium, interactions, sampler, channel);
+        Spectrum rayTrans = evalMediumTransmittance(m_medium, mediumRay, sampler, channel, active);
+#else
+        auto [vrlToRay_tr, vrlToRay_pdf] = m_medium->eval_tr_and_pdf(mi, si, active);
+        Spectrum vrlToRayTrans = vrlToRay_tr;
+
+        SurfaceInteraction3f mediumRay_si = scene->ray_intersect(mediumRay);
+        MediumInteraction3f mediumRay_mi = m_medium->sample_interaction(mediumRay, sampler->next_1d(), channel, active);
+        auto [mediumRay_tr, mediumRay_pdf] = m_medium->eval_tr_and_pdf(mi, si, active);
+        Spectrum rayTrans = mediumRay_tr;
+
+        if (!mediumRay_mi.is_valid())
+            return Spectrum(0.0);
+#endif
         auto vrlTrans = [&]() -> Spectrum {
             if(m_longBeams) {
                 Ray3f mediumVRL(origin, direction, 0);
                 mediumVRL.mint = 0;
                 mediumVRL.maxt = sampling.tVRL;
 
-                SurfaceInteraction3f medium_si = scene->ray_intersect(mediumVRL); 
-                MediumInteraction3f mi = m_medium->sample_interaction(mediumVRL, sampler->next_1d(), channel, active);
-                auto [tr, pdf]         = m_medium->eval_tr_and_pdf(mi, medium_si, active);
+#if OLD_MITSUBA
+                
+                return evalMediumTransmittance(m_medium, mediumVRL, sampler, channel, active);
+#else
+                SurfaceInteraction3f medium_si = scene->ray_intersect(mediumVRL);
+                MediumInteraction3f mi         = m_medium->sample_interaction(mediumVRL, sampler->next_1d(), channel, active);
+
+                if (!mediumRay_mi.is_valid())
+                    return Spectrum(1.f);
+                auto [tr, pdf]                 = m_medium->eval_tr_and_pdf(mi, medium_si, active);
                 return tr;
+#endif
             } else {
                 return Spectrum(1.f);
             }
@@ -652,22 +724,18 @@ struct VRL {
         std::ostringstream streammm;
         streammm << "fallOff = " << fallOff << ", lengthPtoP = " << lengthPtoP;
         Log(LogLevel::Info, streammm.str().c_str());
-    #endif
-        /*MediumSamplingRecord mRec1;
-        PhaseFunctionSamplingRecord psr1(mRec1, -direction, -dir);
-        MediumSamplingRecord mRec2;
-        PhaseFunctionSamplingRecord psr2(mRec2, -ray.d, dir);*/
+    #endif 
 
         MediumInteraction3f mi1, mi2;
-        PhaseFunctionContext phase_ctx(sampler);
 
         const PhaseFunction *pf = m_medium->phase_function();
-        Float vrlPF = 1.0;
-        Float rayPF = 1.0;
+        PhaseFunctionContext pCtx1(sampler), pCtx2(sampler);
+        Float vrlPF = 1.0; // wi = -direction, wo = -dir
+        Float rayPF = 1.0; // wi = -ray.d, wo = dir
 
         Spectrum sigmaSRay, sigmaSVRL;
         if (m_medium->is_homogeneous()) {
-            auto [sigma_s, sigma_n, sigma_t] = m_medium->get_scattering_coefficients(vrlToRay_mi);
+            auto [sigma_s, sigma_n, sigma_t] = m_medium->get_scattering_coefficients(mi);
             sigmaSRay = sigma_s;
             sigmaSVRL = sigma_s;
         } else {
@@ -678,15 +746,13 @@ struct VRL {
             MediumInteraction3f vrl_mi = m_medium->sample_interaction(mediumVRL, sampler->next_1d(), channel, active);
             auto [vrl_tr, vrl_pdf] = m_medium->eval_tr_and_pdf(vrl_mi, vrl_si, active);
             sigmaSVRL = vrl_mi.sigma_s;
-            auto [vrl_wo, vrl_phase_pdf]    = pf->sample(phase_ctx, vrl_mi, sampler->next_2d(active), active);
-            vrlPF = vrl_phase_pdf;    
+            vrlPF = pf->eval(pCtx1, vrl_mi, -dir);
 
             SurfaceInteraction3f ray_si = scene->ray_intersect(mediumRay);
-            MediumInteraction3f ray_mi  = m_medium->sample_interaction(mediumRay, sampler->next_1d(), channel, active);
-            auto [ray_tr, ray_pdf]              = m_medium->eval_tr_and_pdf(ray_mi, ray_si, active);
-            sigmaSRay                   = ray_mi.sigma_s;
-            auto [ray_wo, ray_phase_pdf] = pf->sample(phase_ctx, ray_mi, sampler->next_2d(active), active);
-            rayPF = ray_phase_pdf;
+            MediumInteraction3f ray_mi = m_medium->sample_interaction(mediumRay, sampler->next_1d(), channel, active);
+            auto [ray_tr, ray_pdf]     = m_medium->eval_tr_and_pdf(ray_mi, ray_si, active);
+            sigmaSRay                  = ray_mi.sigma_s;
+            rayPF = pf->eval(pCtx2, ray_mi, dir);
         }
 #if VRL_DEBUG
         std::ostringstream stream;
@@ -716,7 +782,6 @@ public:
     Spectrum flux;
 
 protected:
-    UInt32 m_channel;
     bool m_longBeams;
     const Medium *m_medium;
     int m_scatterDepth;
