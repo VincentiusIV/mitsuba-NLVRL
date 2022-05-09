@@ -1,23 +1,22 @@
-#include <random>
-#include <enoki/stl.h>
 #include <enoki/fwd.h>
-#include <mitsuba/core/ray.h>
+#include <enoki/stl.h>
 #include <mitsuba/core/properties.h>
+#include <mitsuba/core/ray.h>
 #include <mitsuba/render/bsdf.h>
 #include <mitsuba/render/emitter.h>
 #include <mitsuba/render/integrator.h>
-#include <mitsuba/render/records.h>
 #include <mitsuba/render/medium.h>
 #include <mitsuba/render/phase.h>
+#include <mitsuba/render/records.h>
+#include <random>
 
 #include "../photonmapper/photonmap.h"
-#include "vrl_struct.h"
 #include "vrl_map.h"
+#include "vrl_struct.h"
 
 NAMESPACE_BEGIN(mitsuba)
 
-template <typename Float, typename Spectrum>
-class VRLIntegrator : public SamplingIntegrator<Float, Spectrum> {
+template <typename Float, typename Spectrum> class VRLIntegrator : public SamplingIntegrator<Float, Spectrum> {
 public:
     MTS_IMPORT_BASE(SamplingIntegrator, m_hide_emitters)
     MTS_IMPORT_TYPES(PhaseFunctionContext)
@@ -28,24 +27,24 @@ public:
     typedef PhotonMap<Float, Spectrum> PhotonMap;
     typedef typename PhotonMap::PhotonData PhotonData;
 
-    VRLIntegrator(const Properties &props) : Base(props) { 
-        m_numLightEmissions = props.int_("lightEmissions", 1000000);
-        m_maxDepth = props.int_("max_depth", 512);
+    VRLIntegrator(const Properties &props) : Base(props) {
+        m_numLightEmissions           = props.int_("lightEmissions", 1000000);
+        m_maxDepth                    = props.int_("max_depth", 512);
         m_directSamples               = props.int_("directSamples", 16);
         m_glossySamples               = props.int_("glossySamples", 32);
         m_maxSpecularDepth            = props.int_("maxSpecularDepth", 4);
         m_granularity                 = props.int_("granularity", 0);
         m_globalPhotons               = props.int_("globalPhotons", 250000);
         m_causticPhotons              = props.int_("causticPhotons", 250000);
-        m_targetVRLs = props.int_("targetVRLs", 1000);
+        m_targetVRLs                  = props.int_("targetVRLs", 1000);
         m_globalLookupRadiusRelative  = props.float_("globalLookupRadiusRelative", 0.05f);
         m_causticLookupRadiusRelative = props.float_("causticLookupRadiusRelative", 0.0125f);
         m_globalLookupSize            = props.int_("globalLookupSize", 120);
         m_causticLookupSize           = props.int_("causticLookupSize", 120);
         m_gatherLocally               = props.bool_("gatherLocally", true);
-        m_autoCancelGathering         = props.bool_("autoCancelGathering", true);       
+        m_autoCancelGathering         = props.bool_("autoCancelGathering", true);
 
-        m_nbParticules  = props.int_("nbParticules", 50);
+        m_nbParticules = props.int_("nbParticules", 50);
         m_rrDepth      = props.int_("rrDepth", 5);
         /* Maximum number of passes to render. -1 renders until the process is stopped. */
         m_useLightCut = props.bool_("useLightCut", false);
@@ -67,7 +66,6 @@ public:
         m_vrlMap = new VRLMap(m_nbParticules);
     }
 
-    
     void preprocess(Scene *scene, Sensor *sensor) override {
         Log(LogLevel::Info, "Pre Processing Photon Map...");
 
@@ -167,9 +165,9 @@ public:
 
                 if (any_or<true>(active_medium)) {
                     ++mediumDepth;
-                    mi = medium->sample_interaction(ray, sampler->next_1d(active_medium), channel, active_medium);
+                    mi                                                                           = medium->sample_interaction(ray, sampler->next_1d(active_medium), channel, active_medium);
                     masked(ray.maxt, active_medium && medium->is_homogeneous() && mi.is_valid()) = mi.t;
-                    Mask intersect = needs_intersection && active_medium;
+                    Mask intersect                                                               = needs_intersection && active_medium;
                     if (any_or<true>(intersect))
                         masked(si, intersect) = scene->ray_intersect(ray, intersect);
                     needs_intersection &= !active_medium;
@@ -216,15 +214,13 @@ public:
 
                     PhaseFunctionContext phase_ctx(sampler);
                     auto phase = mi.medium->phase_function();
-                    
-                                        
-                    if (any_or<true>(act_medium_scatter)) {
-                        if (m_vrlMap->size() < m_targetVRLs) {
-                            VRL vrl(ray.o, mi.medium, throughput * flux, depth);
-                            vrl.setEndPoint(mi.p);
-                            m_vrlMap->push_back(std::move(vrl));
-                        }
+
+                    if (m_vrlMap->size() < m_targetVRLs) {
+                        VRL vrl(ray.o, medium, throughput * flux, depth, channel);
+                        vrl.setEndPoint(mi.p);
+                        m_vrlMap->push_back(std::move(vrl));
                     }
+
                     // ------------------ Phase function sampling -----------------
                     masked(phase, !act_medium_scatter) = nullptr;
                     auto [wo, phase_pdf]               = phase->sample(phase_ctx, mi, sampler->next_2d(act_medium_scatter), act_medium_scatter);
@@ -327,9 +323,8 @@ public:
         } else {
             Log(LogLevel::Info, "No caustic photons");
         }
-        
-        if (m_vrlMap->size() > 0)
-        {    
+
+        if (m_vrlMap->size() > 0) {
             // If needed, we can change the VRL
             if (m_longVRL) {
                 Log(LogLevel::Info, "Transform short VRL into long...");
@@ -350,7 +345,7 @@ public:
         } else {
             Log(LogLevel::Info, "No VRLs");
         }
-        
+
         Log(LogLevel::Info, "Pre Processing done.");
     }
 
@@ -369,7 +364,9 @@ public:
         }
 
         Ray3f ray(_ray);
+
         MediumPtr medium = _medium;
+
         Spectrum radiance(0.0f), throughput(1.0f);
 
         MediumInteraction3f mi  = zero<MediumInteraction3f>();
@@ -470,17 +467,12 @@ public:
                 PhaseFunctionContext phase_ctx(sampler);
                 auto phase = mi.medium->phase_function();
 
-                if (any_or<true>(act_medium_scatter)) {
-                    Float totalLength = norm(mi.p - ray.o);
-                    Ray3f cameraRay(ray);
-                    cameraRay.maxt = mi.t;
-                    auto [evaluations, color, intersections] =
-                        m_vrlMap->query(cameraRay, scene, sampler, -1, totalLength, m_useUniformSampling, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, channel);
-                    masked(radiance, active) += color * throughput;
-
-                    if (medium->is_homogeneous())
-                        break;
-                }
+                Float totalLength = norm(mi.p - ray.o);
+                ray.maxt          = mi.t;
+                auto [evaluations, color, intersections] =
+                    m_vrlMap->query(ray, scene, sampler, -1, totalLength, m_useUniformSampling, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, channel);
+                masked(radiance, active) += color * throughput;
+                break;
                 // masked(radiance, active) += m_volumePhotonMap->estimateRadianceVolume(si, mi, m_globalLookupRadius, m_globalLookupSize) * throughput;
                 // ------------------ Phase function sampling -----------------
                 masked(phase, !act_medium_scatter) = nullptr;
@@ -636,7 +628,7 @@ private:
     float m_thresholdError;
 
     // Internal
-    VRLMap* m_vrlMap;
+    VRLMap *m_vrlMap;
 
     // For counting the number of iteration
     std::vector<Float> percentage_nbVRLEval;

@@ -1,5 +1,5 @@
 <scene version="2.0.0">
-    <default name="spp" value="64"/>
+    <default name="spp" value="256"/>
     <default name="res" value="256"/>
     <default name="max_depth" value="6"/>
 
@@ -11,8 +11,8 @@
 	-->
 	<integrator type="vrl">
 		<integer name="lightEmissions" value="1000000"/>
-		<integer name="targetVRLs" value="100"/>
-		<boolean name="useUniformSampling" value="true"/>
+		<integer name="targetVRLs" value="1000"/>
+		<boolean name="useUniformSampling" value="false"/>
 		<boolean name="useLightCut" value="false"/>
     </integrator>
 

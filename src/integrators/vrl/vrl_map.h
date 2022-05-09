@@ -2,17 +2,14 @@
 
 #include <fstream>
 
-#include <enoki/stl.h>
-#include <enoki/fwd.h>
 #include "vrl_lightcut.h"
 #include "vrl_struct.h"
+#include <enoki/fwd.h>
+#include <enoki/stl.h>
 
 NAMESPACE_BEGIN(mitsuba)
 
-enum EVRLAcceleration { 
-    ENoVRLAcceleration, 
-    ELightCutAcceleration 
-};
+enum EVRLAcceleration { ENoVRLAcceleration, ELightCutAcceleration };
 
 enum EVRLRussianRoulette {
     ENoRussianRoulette,
@@ -32,9 +29,9 @@ public:
         m_map.reserve(nbVRL);
         m_accel = ENoVRLAcceleration;
 
-        //MemoryPool memPool;
-        //m_map.clear();
-        //while (m_map.size() < nbVRL) {
+        // MemoryPool memPool;
+        // m_map.clear();
+        // while (m_map.size() < nbVRL) {
         //    Path p;
         //    p.initialize(scene, 0.f, EImportance, memPool);
         //    p.randomWalk(scene, sensorSampler, maxDepth, rrDepth, EImportance, memPool);
@@ -61,11 +58,11 @@ public:
         //}
     }
 
-    void push_back(VRL &vrl) { 
-       /* std::ostringstream stream;
-        stream << "Inserting: " << vrl;
-        std::string str = stream.str();
-        Log(LogLevel::Info, str.c_str());*/
+    void push_back(VRL &vrl) {
+        /* std::ostringstream stream;
+         stream << "Inserting: " << vrl;
+         std::string str = stream.str();
+         Log(LogLevel::Info, str.c_str());*/
 
         m_map.emplace_back(vrl);
     }
@@ -137,15 +134,17 @@ public:
     // TODO: Fix the specific parameters for RR
 
     // returns nb_evaluation, color, nb_BBIntersection
-    std::tuple<size_t, Spectrum, size_t> query(const Ray3f &ray, const Scene *scene, Sampler *sampler, int renderScatterDepth, Float lengthOfRay, bool useUniformSampling, const EVRLRussianRoulette strategyRR, Float scaleRR, UInt32 channel) const {
+    std::tuple<size_t, Spectrum, size_t> query(const Ray3f &ray, const Scene *scene, Sampler *sampler, int renderScatterDepth, Float lengthOfRay, bool useUniformSampling,
+                                               const EVRLRussianRoulette strategyRR, Float scaleRR, UInt32 channel) const {
         if (m_map.size() == 0)
-            return {
-                0,
-                Spectrum(0.0), 0 };
+            return { 0, Spectrum(0.0), 0 };
 
         Spectrum Li(0.0);
         size_t nb_evaluation     = 0;
         size_t nb_BBIntersection = 0;
+        if (!std::isfinite(ray.maxt))
+            Log(LogLevel::Error, "ray with infinite maxt is not a ray segment...");
+
         if (m_accel == ENoVRLAcceleration) {
             size_t nbVRLPruned = 0;
             for (const VRL &vrl : m_map) {
@@ -158,9 +157,9 @@ public:
                 }
                 if (strategyRR == ENoRussianRoulette) {
                     Spectrum contrib = vrl.getContrib(scene, useUniformSampling, ray, lengthOfRay, sampler, channel) * m_scale;
-                    
 
                     if (std::isnan(contrib[0]) || std::isnan(contrib[1]) || std::isnan(contrib[2]) || std::isinf(contrib[0]) || std::isinf(contrib[1]) || std::isinf(contrib[2])) {
+                        Log(LogLevel::Info, "NaN contrib...");
                         continue;
                     }
                     /*std::ostringstream stream;
@@ -197,9 +196,6 @@ public:
             /*VRLPercentagePruned += nbVRLPruned;
             VRLPercentagePruned.incrementBase(m_map.size());*/
         } else if (m_accel == ELightCutAcceleration) {
-            if (!std::isfinite(ray.maxt))
-                Log(LogLevel::Error, "iNFINITE maxt is not a segment...");
-
             VRLLightCut::LCQuery query{ ray, sampler, 0 };
             Li += m_lc->query(scene, sampler, query, nb_BBIntersection, channel) * m_scale;
             nb_evaluation += query.nb_evaluation;
@@ -226,7 +222,7 @@ protected:
     Float m_scale = 1;
     EVRLAcceleration m_accel;
 
-    VRLLightCut* m_lc;
+    VRLLightCut *m_lc;
 };
 
 NAMESPACE_END(mitsuba)
