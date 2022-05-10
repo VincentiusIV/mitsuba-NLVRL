@@ -132,13 +132,13 @@ public:
                 uint32_t n_channels = (uint32_t) array_size_v<Spectrum>;
                 channel             = (UInt32) min(sampler->next_1d(active) * n_channels, n_channels - 1);
             }
+            bool lastScatter = false;
 
-            si = scene->ray_intersect(ray, active);
+            /*si = scene->ray_intersect(ray, active);
             if (!si.is_valid())
                 continue;
-            Mask has_medium_trans            = si.is_valid() && si.is_medium_transition();
-            masked(medium, has_medium_trans) = si.target_medium(ray.d);
-
+            Mask has_medium_trans             = si.is_valid() && si.is_medium_transition();
+            masked(medium, has_medium_trans) = si.target_medium(ray.d);*/
             for (int bounce = 0;; ++bounce) {
                 active &= any(neq(depolarize(throughput), 0.f));
                 Float q         = min(hmax(depolarize(throughput)) * sqr(eta), .95f);
@@ -349,7 +349,7 @@ public:
         Log(LogLevel::Info, "Pre Processing done.");
     }
 
-    std::pair<Spectrum, Mask> sample(const Scene *scene, Sampler *sampler, const RayDifferential3f &_ray, const Medium *medium, Float *aovs, Mask active) const override {
+    std::pair<Spectrum, Mask> sample(const Scene *scene, Sampler *sampler, const RayDifferential3f &_ray, const Medium *_medium, Float *aovs, Mask active) const override {
         MTS_MASKED_FUNCTION(ProfilerPhase::SamplingIntegratorSample, active);
 
         static Float m_globalLookupRadius = -1, m_causticLookupRadius = -1;
@@ -364,7 +364,7 @@ public:
         }
 
         Ray3f ray(_ray);
-
+        MediumPtr medium = _medium;
         Spectrum radiance(0.0f), throughput(1.0f);
 
         MediumInteraction3f mi  = zero<MediumInteraction3f>();
@@ -383,6 +383,8 @@ public:
         // medium = si.target_medium(ray.d);
         Mask needs_intersection = true;
         UInt32 depth            = 0;
+
+        Mask lastScatter = false;
 
         UInt32 channel = 0;
         if (is_rgb_v<Spectrum>) {
@@ -451,6 +453,7 @@ public:
             act_medium_scatter &= active;
 
             if (any_or<true>(act_null_scatter)) {
+                lastScatter = false;
                 masked(ray.o, act_null_scatter)    = mi.p;
                 masked(ray.mint, act_null_scatter) = 0.f;
                 masked(si.t, act_null_scatter)     = si.t - mi.t;
@@ -464,13 +467,18 @@ public:
 
                 PhaseFunctionContext phase_ctx(sampler);
                 auto phase = mi.medium->phase_function();
+                if (lastScatter && any_or<true>(act_medium_scatter)) {
+                    Float totalLength = norm(mi.p - ray.o);
+                    Ray3f cameraRay(ray);
+                    cameraRay.maxt = mi.t;
+                    auto [evaluations, color, intersections] =
+                        m_vrlMap->query(cameraRay, scene, sampler, -1, totalLength, m_useUniformSampling, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, channel);
+                    masked(radiance, active) += color * throughput;
 
-                Float totalLength = norm(mi.p - ray.o);
-                ray.maxt          = mi.t;
-                auto [evaluations, color, intersections] =
-                    m_vrlMap->query(ray, scene, sampler, -1, totalLength, m_useUniformSampling, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, channel);
-                masked(radiance, active) += color * throughput;
-                break;
+                    if (medium->is_homogeneous())
+                        break;
+                }
+                lastScatter = true;
                 // masked(radiance, active) += m_volumePhotonMap->estimateRadianceVolume(si, mi, m_globalLookupRadius, m_globalLookupSize) * throughput;
                 // ------------------ Phase function sampling -----------------
                 masked(phase, !act_medium_scatter) = nullptr;
@@ -544,6 +552,7 @@ public:
 
                 Mask has_medium_trans            = active_surface && si.is_medium_transition();
                 masked(medium, has_medium_trans) = si.target_medium(ray.d);
+                lastScatter  = neq(medium, nullptr) && medium->is_homogeneous();
 
                 masked(si, intersect2) = si_new;
             }
