@@ -4,7 +4,7 @@
 
 NAMESPACE_BEGIN(mitsuba)
 
-#define VRL_DEBUG 0
+#define VRL_DEBUG 1
 
 template <typename Float, typename Spectrum> struct VRL {
     MTS_IMPORT_TYPES(PhaseFunctionContext)
@@ -174,16 +174,6 @@ template <typename Float, typename Spectrum> struct VRL {
         sc = (std::abs(sN) < (Float) 0.0001 ? (Float) 0.0 : sN / sD);
         tc = (std::abs(tN) < (Float) 0.0001 ? (Float) 0.0 : tN / tD);
 
-#if VRL_DEBUG
-        std::ostringstream stome;
-        // tc = nan , r.maxt = inf, sc = nan, sN = nan, sD = nan, tN = nan, tD = nan
-        stome << "a = " << a << ", b = " << b << ", c = " << c << ", d = " << d << ", e = " << e;
-        /* stome << "direction = " << direction << "r = " << r << "tc = " << tc << ", r.maxt = " << r.maxt << ", sc = " << sc << "length = " << length << ", sN = " << sN << ", sD = " << sD
-               << ", tN = " << tN
-               << ", tD = " << tD;*/
-        Log(LogLevel::Info, stome.str().c_str());
-#endif
-
         return ClosestPointInfo{ tc * r.maxt, sc * length };
     }
 
@@ -207,6 +197,11 @@ template <typename Float, typename Spectrum> struct VRL {
 #define USE_PEAK_SAMPLING 0
 #define USE_ANISOTROPIC_SAMPLING 1
     SamplingInfo samplingVRL(const Scene *scene, const Ray3f &ray, Sampler *sampler, bool uniformSampling, UInt32 channel) const {
+
+        if (std::isinf(ray.maxt)) {
+            Log(LogLevel::Error, "Cannot sample a point on an infinite ray!");
+        }
+
         if (uniformSampling) {
             return sampleMC(ray, sampler);
         } else {
@@ -218,8 +213,10 @@ template <typename Float, typename Spectrum> struct VRL {
             }();
 
             // prevent degenerative cases when VRL/sensor are very close
-            if (h == 0.0)
+            if (h == 0.0) {
+                Log(LogLevel::Warn, "VRL/sensor very close");
                 return SamplingInfo::invalid();
+            }
             h = sqrt(h);
 
             // Code from sampling VRL points
@@ -269,12 +266,6 @@ template <typename Float, typename Spectrum> struct VRL {
             // Rechange the variable from vHat to V;
             Point3f pVRL = origin + direction * (sampling_vrl.vHat + closest_point.tVRL);
             // vHat = nan, tVRL = nan
-
-#if VRL_DEBUG
-            std::ostringstream stome;
-            stome << "o = " << origin << ", d = " << direction << ", pVRL = " << pVRL << ", vHat = " << sampling_vrl.vHat << ", tVRL = " << closest_point.tVRL;
-            Log(LogLevel::Info, stome.str().c_str());
-#endif
             // sample point on camera ray using Kulla and al. : section 4.1
 #if USE_ANISOTROPIC_SAMPLING
             const PhaseFunction *pf = m_medium->phase_function();
@@ -547,6 +538,15 @@ template <typename Float, typename Spectrum> struct VRL {
             Log(LogLevel::Warn, "0 distance between VRL and Cam ray");
             return Spectrum(0.0);
         }
+
+        if (std::isnan(sampling.invPDF)) {
+#if VRL_DEBUG
+            Log(LogLevel::Warn, "invalid VRL/sensor sample");
+#endif
+            return Spectrum(0.0);        
+            
+        }
+
         dir /= lengthPtoP;
 
         Mask active = true;
@@ -590,11 +590,6 @@ template <typename Float, typename Spectrum> struct VRL {
 
         Float fallOff = 1.0f / (lengthPtoP * lengthPtoP);
 
-#if VRL_DEBUG
-        std::ostringstream streammm;
-        streammm << "fallOff = " << fallOff << ", lengthPtoP = " << lengthPtoP;
-        Log(LogLevel::Info, streammm.str().c_str());
-#endif
         /*MediumSamplingRecord mRec1;
         PhaseFunctionSamplingRecord psr1(mRec1, -direction, -dir);
         MediumSamplingRecord mRec2;
@@ -630,21 +625,26 @@ template <typename Float, typename Spectrum> struct VRL {
             auto [ray_wo, ray_phase_pdf] = pf->sample(phase_ctx2, ray_mi, sampler->next_2d(active), active);
             rayPF                        = pf->eval(phase_ctx2, ray_mi, ray_wo, active);*/
         }
-#if VRL_DEBUG
-        std::ostringstream stream;
-        stream << "Contrib VRL = [flux:" << flux << ", fallOff:" << fallOff << ", vrlTrans:" << vrlTrans << ", vrlPF:" << vrlPF << ", rayPF:" << rayPF << ", rayTrans:" << rayTrans
-               << ", vrlToRayTrans:" << vrlToRayTrans << ", sigmaSRay:" << sigmaSRay << ", sigmaSVRL:" << sigmaSVRL << ", invPDF:" << sampling.invPDF;
-        std::string str = stream.str();
-        Log(LogLevel::Info, str.c_str());
-#endif
 
-        return flux * fallOff                             // = nan
-               * vrlTrans                                 // 1.0 if short beams
-               * vrlPF                                    // Fs(theta u0)
-               * rayPF                                    // Fs(theta uv)
-               * rayTrans                                 // = 0
-               * vrlToRayTrans                            // = 0
-               * sigmaSRay * sigmaSVRL * sampling.invPDF; // = nan
+        Spectrum result = flux * fallOff                             // = nan
+                          * vrlTrans                                 // 1.0 if short beams
+                          * vrlPF                                    // Fs(theta u0)
+                          * rayPF                                    // Fs(theta uv)
+                          * rayTrans                                 // = 0
+                          * vrlToRayTrans                            // = 0
+                          * sigmaSRay * sigmaSVRL * sampling.invPDF; // = nan
+        if (std::isnan(result[0]) || std::isnan(result[1]) || std::isnan(result[2]) || std::isinf(result[0]) || std::isinf(result[1]) || std::isinf(result[2])) {
+#if VRL_DEBUG
+            std::ostringstream stream;
+            stream << "Invalid Contrib VRL = [flux:" << flux << ", fallOff:" << fallOff << ", vrlTrans:" << vrlTrans << ", vrlPF:" << vrlPF << ", rayPF:" << rayPF << ", rayTrans:" << rayTrans
+                   << ", vrlToRayTrans:" << vrlToRayTrans << ", sigmaSRay:" << sigmaSRay << ", sigmaSVRL:" << sigmaSVRL << ", invPDF:" << sampling.invPDF;
+            std::string str = stream.str();
+            Log(LogLevel::Info, str.c_str());
+#endif
+        }
+
+
+        return result;
     }
 
 public:
