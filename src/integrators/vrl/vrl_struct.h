@@ -414,7 +414,7 @@ template <typename Float, typename Spectrum> struct VRL {
                     auto [ray_tr, ray_pdf]       = m_medium->eval_tr_and_pdf(ray_mi, ray_si, active);
                     sigmaSRay                    = ray_mi.sigma_s;
                     auto [ray_wo, ray_phase_pdf] = pf->sample(phase_ctx2, ray_mi, sampler->next_2d(active), active);
-                    rayPF                        = pf->eval(phase_ctx2, ray_mi, ray_wo, active);
+                    rayPF = pf->eval(phase_ctx2, ray_mi, ray_wo, active);
 
                     phaseFunctions[i] = vrlPF * rayPF;
                 }
@@ -500,7 +500,7 @@ template <typename Float, typename Spectrum> struct VRL {
 
             mi = medium->sample_interaction(ray, sampler->next_1d(), channel, active);
             transmittance *= medium->evalTransmittance(Ray(ray, 0, std::min(its.t, remaining)), sampler);
-            auto [tr, pdf] = m_medium->eval_tr_and_pdf(mi, medium_si, active);
+            auto [tr, pdf] = m_medium->eval_tr_and_pdf(mi, vrl_si, active);
             if (!surface || transmittance.isZero())
                 break;
 
@@ -534,9 +534,6 @@ template <typename Float, typename Spectrum> struct VRL {
     }
 
     Spectrum getContrib(const Scene *scene, const bool uniformSampling, const Ray3f &ray, Float lengthOfRay, Sampler *sampler, UInt32 channel) const {
-        //
-        // sample VRL & camera ray uniformly
-        //
         auto sampling = samplingVRL(scene, ray, sampler, uniformSampling, channel);
 
         /*std::ostringstream stome;
@@ -560,32 +557,31 @@ template <typename Float, typename Spectrum> struct VRL {
         int interactions = 100;
         SurfaceInteraction3f vrlToRay_si = scene->ray_intersect(mediumPtoP);
         MediumInteraction3f vrlToRay_mi  = m_medium->sample_interaction(mediumPtoP, sampler->next_1d(), channel, active);
-
         auto [vrlToRay_tr, vrlToRay_pdf] = m_medium->eval_tr_and_pdf(vrlToRay_mi, vrlToRay_si, active);
-        Spectrum vrlToRayTrans = vrlToRay_mi.is_valid() ? vrlToRay_tr : Spectrum(1.0f);
+        Spectrum vrlToRayTrans = vrlToRay_tr;
 
         //Spectrum vrlToRayTrans = evalTransmittance(scene, sampling.pCam, false, sampling.pVRL, false, 0, m_medium, interactions, sampler);
 
-        Ray3f cameraRay(ray.o, ray.d, 0);
-        cameraRay.mint = 0;
-        cameraRay.maxt = sampling.tCam;
+        Ray3f mediumRay(ray.o, ray.d, 0);
+        mediumRay.mint = 0;
+        mediumRay.maxt = sampling.tCam;
 
-        SurfaceInteraction3f ray_si = scene->ray_intersect(cameraRay);
-        MediumInteraction3f ray_mi  = m_medium->sample_interaction(cameraRay, sampler->next_1d(), channel, active);
+        SurfaceInteraction3f ray_si = scene->ray_intersect(mediumRay);
+        MediumInteraction3f ray_mi  = m_medium->sample_interaction(mediumRay, sampler->next_1d(), channel, active);
         auto [ray_tr, ray_pdf]      = m_medium->eval_tr_and_pdf(ray_mi, ray_si, active);
-        Spectrum rayTrans           = ray_mi.is_valid() ? ray_tr : Spectrum(1.0f);
+        Spectrum rayTrans = ray_tr;
 
         //Spectrum rayTrans = evalTransmittance(scene, sampling.pCam, false, sampling.pVRL, false, 0, m_medium, interactions, sampler);
 
         auto vrlTrans = [&]() -> Spectrum {
             if (m_longBeams) {
-                Ray3f mediumVRL(origin, direction, 0);
-                mediumVRL.mint = 0;
-                mediumVRL.maxt = sampling.tVRL;
+                Ray3f vrl(origin, direction, 0);
+                vrl.mint = 0;
+                vrl.maxt = sampling.tVRL;
 
-                SurfaceInteraction3f medium_si = scene->ray_intersect(mediumVRL);
-                MediumInteraction3f mi         = m_medium->sample_interaction(mediumVRL, sampler->next_1d(), channel, active);
-                auto [tr, pdf]                 = m_medium->eval_tr_and_pdf(mi, medium_si, active);
+                SurfaceInteraction3f vrl_si = scene->ray_intersect(vrl);
+                MediumInteraction3f vrl_mi         = m_medium->sample_interaction(vrl, sampler->next_1d(), channel, active);
+                auto [tr, pdf]                 = m_medium->eval_tr_and_pdf(vrl_mi, vrl_si, active);
                 return tr;
             } else {
                 return Spectrum(1.f);
@@ -599,6 +595,10 @@ template <typename Float, typename Spectrum> struct VRL {
         streammm << "fallOff = " << fallOff << ", lengthPtoP = " << lengthPtoP;
         Log(LogLevel::Info, streammm.str().c_str());
 #endif
+        /*MediumSamplingRecord mRec1;
+        PhaseFunctionSamplingRecord psr1(mRec1, -direction, -dir);
+        MediumSamplingRecord mRec2;
+        PhaseFunctionSamplingRecord psr2(mRec2, -ray.d, dir);*/
 
         MediumInteraction3f mi1, mi2;
         PhaseFunctionContext phase_ctx1(sampler), phase_ctx2(sampler);
@@ -616,19 +616,19 @@ template <typename Float, typename Spectrum> struct VRL {
             Ray3f mediumVRL(origin, direction, 0);
             mediumVRL.mint               = 0;
             mediumVRL.maxt               = sampling.tVRL;
-            SurfaceInteraction3f vrl_si  = scene->ray_intersect(mediumVRL);
+            /*SurfaceInteraction3f vrl_si  = scene->ray_intersect(mediumVRL);
             MediumInteraction3f vrl_mi   = m_medium->sample_interaction(mediumVRL, sampler->next_1d(), channel, active);
             auto [vrl_tr, vrl_pdf]       = m_medium->eval_tr_and_pdf(vrl_mi, vrl_si, active);
             sigmaSVRL                    = vrl_mi.sigma_s;
             auto [vrl_wo, vrl_phase_pdf] = pf->sample(phase_ctx1, vrl_mi, sampler->next_2d(active), active);
             vrlPF                        = pf->eval(phase_ctx1, vrl_mi, vrl_wo, active);
 
-            SurfaceInteraction3f ray_si  = scene->ray_intersect(cameraRay);
-            MediumInteraction3f ray_mi   = m_medium->sample_interaction(cameraRay, sampler->next_1d(), channel, active);
+            SurfaceInteraction3f ray_si  = scene->ray_intersect(mediumRay);
+            MediumInteraction3f ray_mi   = m_medium->sample_interaction(mediumRay, sampler->next_1d(), channel, active);
             auto [ray_tr, ray_pdf]       = m_medium->eval_tr_and_pdf(ray_mi, ray_si, active);
             sigmaSRay                    = ray_mi.sigma_s;
             auto [ray_wo, ray_phase_pdf] = pf->sample(phase_ctx2, ray_mi, sampler->next_2d(active), active);
-            rayPF                        = pf->eval(phase_ctx2, ray_mi, ray_wo, active);
+            rayPF                        = pf->eval(phase_ctx2, ray_mi, ray_wo, active);*/
         }
 #if VRL_DEBUG
         std::ostringstream stream;

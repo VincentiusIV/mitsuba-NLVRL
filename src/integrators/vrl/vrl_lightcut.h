@@ -1,11 +1,11 @@
 #pragma once
 
-#include <mitsuba/core/bbox.h>
-#include <enoki/stl.h>
 #include <enoki/fwd.h>
+#include <enoki/stl.h>
+#include <mitsuba/core/bbox.h>
 
-#include "vrl_struct.h"
 #include "kd_tree.h"
+#include "vrl_struct.h"
 
 #include <queue>
 
@@ -16,15 +16,14 @@ NAMESPACE_BEGIN(mitsuba)
 #define DEBUG_UPPER_BOUND 0
 #define DEBUG_VRL_LC 1
 
-//StatsCounter VRLLightcutNbEval("VRL", "Lightcut nb eval: ", EAverage);
-//StatsCounter VRLBoundProblem("VRL", "Lightcut bound issue", EPercentage);
-//StatsCounter VRLBetterDistance("VRL", "Better distance computation", EPercentage);
-//StatsCounter VRLUpperBoundDistance("VRL", "Average upperbound distance", EAverage);
-//StatsCounter VRLDebugUpperBoundDistance("VRL", "Debug: Average upperbound distance", EAverage);
-//StatsCounter VRLDebugPDFBound("VRL", "Debug: PDF bound ratio", EAverage);
+// StatsCounter VRLLightcutNbEval("VRL", "Lightcut nb eval: ", EAverage);
+// StatsCounter VRLBoundProblem("VRL", "Lightcut bound issue", EPercentage);
+// StatsCounter VRLBetterDistance("VRL", "Better distance computation", EPercentage);
+// StatsCounter VRLUpperBoundDistance("VRL", "Average upperbound distance", EAverage);
+// StatsCounter VRLDebugUpperBoundDistance("VRL", "Debug: Average upperbound distance", EAverage);
+// StatsCounter VRLDebugPDFBound("VRL", "Debug: PDF bound ratio", EAverage);
 
-template <typename Float, typename Spectrum> 
-class VRLLightCut {
+template <typename Float, typename Spectrum> class VRLLightCut {
 public:
     MTS_IMPORT_TYPES()
     MTS_IMPORT_OBJECT_TYPES()
@@ -33,11 +32,11 @@ public:
 
     // Node structure
     struct Node {
-        Node* parent = nullptr;
-        Node* children[2] = {nullptr, nullptr};
-        bool isLeaf = true;
+        Node *parent      = nullptr;
+        Node *children[2] = { nullptr, nullptr };
+        bool isLeaf       = true;
         // Node information for omnidirectional
-        bool isSame[2] = {false, false};
+        bool isSame[2] = { false, false };
 
         BoundingBox<Point3f> aabb; //< AABB of the cluster
 
@@ -45,13 +44,13 @@ public:
         Float maxVRLLenght;
 
         // For better computation of the upper bound
-        std::vector<Node*> nodes;
+        std::vector<Node *> nodes;
 
         // Used for efficient clustering
-        KdNode<Float, Spectrum, Node>* kdnode = nullptr;
-        bool valid = true;
+        KdNode<Float, Spectrum, Node> *kdnode = nullptr;
+        bool valid                            = true;
 
-        Node(const VRL& _vrl): represent(_vrl) {
+        Node(const VRL &_vrl) : represent(_vrl) {
             aabb.expand(represent.origin);
             aabb.expand(represent.origin + represent.direction * represent.length);
 
@@ -61,8 +60,10 @@ public:
         }
 
         ~Node() {
-            if(children[0]) delete children[0];
-            if(children[1]) delete children[1];
+            if (children[0])
+                delete children[0];
+            if (children[1])
+                delete children[1];
         }
 
         struct DistanceResult {
@@ -70,42 +71,39 @@ public:
             bool n1_aabb;
         };
 
-        DistanceResult dist(const Node* n2) const {
-            const Node* n1 = this;
-            Float total = hmax(n1->represent.flux + n2->represent.flux);
-            auto aabb = n1->aabb;
+        DistanceResult dist(const Node *n2) const {
+            const Node *n1 = this;
+            Float total    = hmax(n1->represent.flux + n2->represent.flux);
+            auto aabb      = n1->aabb;
             aabb.expand(n2->aabb);
             auto diag = norm(aabb.extents());
 
-            return DistanceResult {
-                    diag*total,
-                    true
-            };
+            return DistanceResult{ diag * total, true };
         };
 
-        Node(Node* n1, Node* n2, Float v, bool n1_merge) {
-            if(n1_merge) {
+        Node(Node *n1, Node *n2, Float v, bool n1_merge) {
+            if (n1_merge) {
                 aabb = n1->aabb;
                 aabb.expand(n2->aabb);
             } else {
                 aabb = n2->aabb;
                 aabb.expand(n1->aabb);
             }
-            isLeaf = false;
+            isLeaf       = false;
             maxVRLLenght = std::max(n1->maxVRLLenght, n2->maxVRLLenght);
 
             // Update the node representation
             children[0] = n1;
             children[1] = n2;
-            n1->parent = this;
-            n2->parent = this;
+            n1->parent  = this;
+            n2->parent  = this;
 
             // Keep the nodes list to a certain point
             // TODO: Not memory efficient
-            for(auto n: n1->nodes) {
+            for (auto n : n1->nodes) {
                 nodes.push_back(n);
             }
-            for(auto n: n2->nodes) {
+            for (auto n : n2->nodes) {
                 nodes.push_back(n);
             }
 
@@ -113,37 +111,35 @@ public:
             Float leftWM  = (hmax(n1->represent.flux) * n1->represent.length) / 1000;
             Float rightWM = (hmax(n2->represent.flux) * n2->represent.length) / 1000;
             Float totalWM = leftWM + rightWM;
-            Float ratio = leftWM/totalWM;
-            int index = v < ratio? 0 : 1;
+            Float ratio   = leftWM / totalWM;
+            int index     = v < ratio ? 0 : 1;
 
             // Update the VRL, scale it flux and mark which child is representative
             represent = children[index]->represent; // Make a copy of the VRL
-            ratio = children[1-index]->represent.length / children[index]->represent.length;
-            represent.flux +=  children[1-index]->represent.flux * ratio;
-            isSame[index] = true;
-            isSame[1-index] = false;
+            ratio     = children[1 - index]->represent.length / children[index]->represent.length;
+            represent.flux += children[1 - index]->represent.flux * ratio;
+            isSame[index]     = true;
+            isSame[1 - index] = false;
         }
     };
 
 public:
-
-    VRLLightCut(const Scene* scene, const std::vector<VRL> &vrls, Sampler* sampler, int thresholdBetterDist, Float thresholdError):
-            m_thresholdBetterDist(thresholdBetterDist), m_errorRatio(thresholdError)
-    {
-        std::vector<Node*> nodes;
+    VRLLightCut(const Scene *scene, const std::vector<VRL> &vrls, Sampler *sampler, int thresholdBetterDist, Float thresholdError)
+        : m_thresholdBetterDist(thresholdBetterDist), m_errorRatio(thresholdError) {
+        std::vector<Node *> nodes;
         nodes.reserve(vrls.size());
-        for(const VRL& vrl: vrls) {
+        for (const VRL &vrl : vrls) {
             nodes.push_back(new Node(vrl));
         }
 
-        if(vrls.size() < 1024) {
+        if (vrls.size() < 1024) {
             m_root = buildLightTree(nodes, sampler, true, true);
         } else {
             m_root = buildTreeKDAlternate(nodes, sampler);
         }
 
         // This strategy is too slow.
-        //m_root = buildTreeStable(scene, nodes, sampler);
+        // m_root = buildTreeStable(scene, nodes, sampler);
     }
 
     /// Release all memory
@@ -156,11 +152,11 @@ public:
     /// Compute the beam radiance estimate for the given ray segment and medium
     struct LCQuery {
         const Ray3f ray;
-        Sampler* sampler;
+        Sampler *sampler;
         size_t nb_evaluation;
     };
 
-    Spectrum query(const Scene *scene, Sampler* sampler, LCQuery &query, size_t &nb_BBIntersection, UInt32 channel) const {
+    Spectrum query(const Scene *scene, Sampler *sampler, LCQuery &query, size_t &nb_BBIntersection, UInt32 channel) const {
         if (m_root == nullptr)
             return Spectrum(0.f);
 
@@ -245,8 +241,8 @@ public:
             // We should never or rarely go to this condition
             if (current_element.bound < 100) {
                 // Make it up to 100
-                //VRLUpperBoundDistance += (current_element.bound / hmax(childrenEstimates)); // Get clamped...
-                //VRLUpperBoundDistance.incrementBase();
+                // VRLUpperBoundDistance += (current_element.bound / hmax(childrenEstimates)); // Get clamped...
+                // VRLUpperBoundDistance.incrementBase();
             }
 
             // To be able to check the bound
@@ -281,19 +277,18 @@ public:
     };
 
 private:
-    std::string getObjRec(Node* n, int level, int& nb_box) const {
-        if(level == 0) {
+    std::string getObjRec(Node *n, int level, int &nb_box) const {
+        if (level == 0) {
             std::stringstream ss;
-            ss << "o AABB" << nb_box << "\n"
-               << n->aabb.getObj(nb_box*8);
+            ss << "o AABB" << nb_box << "\n" << n->aabb.getObj(nb_box * 8);
             nb_box += 1;
             return ss.str();
         } else {
             std::string t;
-            if(n->children[0]) {
+            if (n->children[0]) {
                 t += getObjRec(n->children[0], level - 1, nb_box);
             }
-            if(n->children[1]) {
+            if (n->children[1]) {
                 t += getObjRec(n->children[1], level - 1, nb_box);
             }
             return t;
@@ -301,18 +296,18 @@ private:
     };
 
     // Method to get the upper bound for a given cluster
-    Float getClusterUpperBound(const Scene* scene, Sampler* sampler, const Node &cluster, const Ray3f &r, UInt32 channel, size_t &BBIntersection) const {
+    Float getClusterUpperBound(const Scene *scene, Sampler *sampler, const Node &cluster, const Ray3f &r, UInt32 channel, size_t &BBIntersection) const {
         const Medium *medium = cluster.represent.getMedium();
 
         // Find closest distance between camera ray and the cluster
         // TODO: Need to reimplement this case when we have a small number of VRL (for performance reasons)
-        Float min_length     = 0.0;
+        Float min_length       = 0.0;
         Point3f min_aabb_point = Point3f(0.0);
         if (cluster.nodes.size() > m_thresholdBetterDist) {
             min_length = cluster.aabb.getMinDistanceSqr(r);
 
             // increment number of bounding volume intersection counter
-            //nb_BBIntersection++;
+            // nb_BBIntersection++;
 
         } else {
 #if COMPUTE_DISTANCE_PRECISE
@@ -329,7 +324,7 @@ private:
 #endif
         };
 
-        //VRLBetterDistance.incrementBase();
+        // VRLBetterDistance.incrementBase();
 
         // Do not need to continue
         if (min_length < 0.0001) {
@@ -344,8 +339,8 @@ private:
         if (medium->is_homogeneous()) {
             // TODO: For example, the direction does not matter when homogenous media is used.
             Ray3f rayOtoPonCluster(r.o, r.d, 0);
-            rayOtoPonCluster.mint = 0; 
-            rayOtoPonCluster.maxt = min_length; 
+            rayOtoPonCluster.mint = 0;
+            rayOtoPonCluster.maxt = min_length;
 
             SurfaceInteraction3f ray_si = scene->ray_intersect(rayOtoPonCluster);
             MediumInteraction3f ray_mi  = medium->sample_interaction(rayOtoPonCluster, sampler->next_1d(), channel, active);
@@ -435,7 +430,7 @@ private:
         }
 
         if (multithread) {
-           std::mutex mutexPair;
+            std::mutex mutexPair;
 #if defined(MTS_OPENMP)
 #pragma omp parallel for schedule(dynamic)
 #endif
@@ -577,7 +572,7 @@ private:
 #pragma omp parallel for schedule(dynamic)
 #endif
         for (size_t i = 0; i < finalParition.size(); i++) {
-            Sampler* new_sampler = nullptr;
+            Sampler *new_sampler = nullptr;
             {
                 std::lock_guard<std::mutex> guard(mutexMiniTree);
                 new_sampler = sampler->clone();
@@ -706,8 +701,8 @@ private:
     }
 
 protected:
-    Node *m_root = nullptr;
-    Float m_errorRatio = 0.1;
+    Node *m_root              = nullptr;
+    Float m_errorRatio        = 0.1;
     int m_thresholdBetterDist = 8;
 };
 

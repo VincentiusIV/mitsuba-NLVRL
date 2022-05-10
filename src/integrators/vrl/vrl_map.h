@@ -142,9 +142,6 @@ public:
         Spectrum Li(0.0);
         size_t nb_evaluation     = 0;
         size_t nb_BBIntersection = 0;
-        if (!std::isfinite(ray.maxt))
-            Log(LogLevel::Error, "ray with infinite maxt is not a ray segment...");
-
         if (m_accel == ENoVRLAcceleration) {
             size_t nbVRLPruned = 0;
             for (const VRL &vrl : m_map) {
@@ -159,7 +156,6 @@ public:
                     Spectrum contrib = vrl.getContrib(scene, useUniformSampling, ray, lengthOfRay, sampler, channel) * m_scale;
 
                     if (std::isnan(contrib[0]) || std::isnan(contrib[1]) || std::isnan(contrib[2]) || std::isinf(contrib[0]) || std::isinf(contrib[1]) || std::isinf(contrib[2])) {
-                        Log(LogLevel::Info, "NaN contrib...");
                         continue;
                     }
                     /*std::ostringstream stream;

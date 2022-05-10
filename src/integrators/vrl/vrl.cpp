@@ -136,8 +136,8 @@ public:
             si = scene->ray_intersect(ray, active);
             if (!si.is_valid())
                 continue;
-            /*Mask has_medium_trans            = si.is_valid() && si.is_medium_transition();
-            masked(medium, has_medium_trans) = si.target_medium(ray.d);*/
+            Mask has_medium_trans            = si.is_valid() && si.is_medium_transition();
+            masked(medium, has_medium_trans) = si.target_medium(ray.d);
 
             for (int bounce = 0;; ++bounce) {
                 active &= any(neq(depolarize(throughput), 0.f));
@@ -216,7 +216,7 @@ public:
                     auto phase = mi.medium->phase_function();
 
                     if (m_vrlMap->size() < m_targetVRLs) {
-                        VRL vrl(ray.o, medium, throughput * flux, depth, channel);
+                        VRL vrl(ray.o, mi.medium, throughput * flux, depth, channel);
                         vrl.setEndPoint(mi.p);
                         m_vrlMap->push_back(std::move(vrl));
                     }
@@ -349,7 +349,7 @@ public:
         Log(LogLevel::Info, "Pre Processing done.");
     }
 
-    std::pair<Spectrum, Mask> sample(const Scene *scene, Sampler *sampler, const RayDifferential3f &_ray, const Medium *_medium, Float *aovs, Mask active) const override {
+    std::pair<Spectrum, Mask> sample(const Scene *scene, Sampler *sampler, const RayDifferential3f &_ray, const Medium *medium, Float *aovs, Mask active) const override {
         MTS_MASKED_FUNCTION(ProfilerPhase::SamplingIntegratorSample, active);
 
         static Float m_globalLookupRadius = -1, m_causticLookupRadius = -1;
@@ -364,8 +364,6 @@ public:
         }
 
         Ray3f ray(_ray);
-
-        MediumPtr medium = _medium;
 
         Spectrum radiance(0.0f), throughput(1.0f);
 
