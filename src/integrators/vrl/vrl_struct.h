@@ -46,12 +46,8 @@ template <typename Float, typename Spectrum> struct VRL {
             } else {
                 auto _ray = ray;
                 _ray.maxt = dist;
-                // auto [tr, pdf] = m_medium->eval_tr_and_pdf();
                 Mask active             = true;
-                SurfaceInteraction3f si = scene->ray_intersect(_ray);
-                MediumInteraction3f mi  = m_medium->sample_interaction(_ray, sampler->next_1d(), m_channel, active);
-                auto [tr, pdf]          = m_medium->eval_tr_and_pdf(mi, si, active);
-                return tr;
+                return evalMediumTransmittance(m_medium, _ray, sampler, m_channel, active);
             }
         };
 
