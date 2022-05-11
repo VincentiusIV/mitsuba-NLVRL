@@ -26,7 +26,7 @@ public:
         m_scale = props.float_("scale", 1.0f);
         m_has_spectral_extinction = props.bool_("has_spectral_extinction", true);
 
-        m_max_density = m_scale * m_sigmat->max();
+        m_inv_max_density = 1.0f / ( m_scale * m_sigmat->max());
         m_aabb        = m_sigmat->bbox();
     }
 
@@ -35,7 +35,7 @@ public:
                             Mask active) const override {
         // TODO: This could be a spectral quantity (at least in RGB mode)
         MTS_MASKED_FUNCTION(ProfilerPhase::MediumEvaluate, active);
-        return m_max_density;
+        return m_inv_max_density;
     }
 
     std::tuple<UnpolarizedSpectrum, UnpolarizedSpectrum, UnpolarizedSpectrum>
@@ -76,7 +76,6 @@ private:
     ScalarFloat m_scale;
 
     ScalarBoundingBox3f m_aabb;
-    ScalarFloat m_max_density;
 };
 
 MTS_IMPLEMENT_CLASS_VARIANT(HeterogeneousMedium, Medium)

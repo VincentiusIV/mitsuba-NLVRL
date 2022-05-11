@@ -1,7 +1,7 @@
 <scene version="2.0.0">
     <include filename="fragments/bsdfs-rgb.xml"/>
 	
-    <default name="spp" value="64"/>
+    <default name="spp" value="128"/>
     <default name="res" value="256"/>
     <default name="max_depth" value="6"/>
     <default name="cbox_size" value="0.005"/>
@@ -35,7 +35,7 @@
 	<shape type="obj">
         <string name="filename" value="meshes/cbox_luminaire.obj"/>
         <transform name="to_world">
-            <translate x="$cbox_x" y="-200.5" z="$cbox_z"/>
+            <translate x="$cbox_x" y="-250.5" z="$cbox_z"/>
 			<scale value="$cbox_size"/>
         </transform>
         <ref id="light"/>

@@ -199,6 +199,8 @@ public:
             Log(LogLevel::Error, "query for acceleration is not implemented");
         }
 
+
+        Li*= 10;
         return { nb_evaluation, Li, nb_BBIntersection };
     }
 

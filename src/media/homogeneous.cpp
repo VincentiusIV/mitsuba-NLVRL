@@ -22,8 +22,8 @@ public:
         m_is_homogeneous = true;
         m_albedo = props.volume<Volume>("albedo", 0.75f);
         m_sigmat = props.volume<Volume>("sigma_t", 1.f);
-
         m_scale = props.float_("scale", 1.0f);
+        m_inv_max_density             = 1.0f / (m_scale * m_sigmat->max());
         m_has_spectral_extinction = props.bool_("has_spectral_extinction", true);
     }
 
@@ -73,7 +73,6 @@ public:
     MTS_DECLARE_CLASS()
 private:
     ref<Volume> m_sigmat, m_albedo;
-    ScalarFloat m_scale;
 };
 
 MTS_IMPLEMENT_CLASS_VARIANT(HomogeneousMedium, Medium)

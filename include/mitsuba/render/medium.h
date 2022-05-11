@@ -84,6 +84,10 @@ public:
         return m_has_spectral_extinction;
     }
 
+    MTS_INLINE ScalarFloat inv_max_density() const { return m_inv_max_density; }
+
+    MTS_INLINE ScalarFloat scale() const { return m_scale; }
+
     /// Return a string identifier
     std::string id() const override { return m_id; }
 
@@ -100,7 +104,8 @@ protected:
 protected:
     ref<PhaseFunction> m_phase_function;
     bool m_sample_emitters, m_is_homogeneous, m_has_spectral_extinction;
-
+    ScalarFloat m_inv_max_density;
+    ScalarFloat m_scale;
     /// Identifier (if available)
     std::string m_id;
 };
@@ -123,7 +128,8 @@ ENOKI_CALL_SUPPORT_TEMPLATE_BEGIN(mitsuba::Medium)
     ENOKI_CALL_SUPPORT_METHOD(sample_interaction)
     ENOKI_CALL_SUPPORT_METHOD(eval_tr_and_pdf)
     ENOKI_CALL_SUPPORT_METHOD(get_scattering_coefficients)
-ENOKI_CALL_SUPPORT_TEMPLATE_END(mitsuba::Medium)
+    ENOKI_CALL_SUPPORT_METHOD(eval_sigma_s)
+    ENOKI_CALL_SUPPORT_TEMPLATE_END(mitsuba::Medium)
 
 //! @}
 // -----------------------------------------------------------------------

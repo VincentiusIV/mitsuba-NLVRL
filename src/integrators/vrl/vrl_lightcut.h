@@ -132,7 +132,8 @@ public:
             nodes.push_back(new Node(vrl));
         }
 
-        if (vrls.size() < 1024) {
+        //if (vrls.size() < 1024) {
+        if (true){  
             m_root = buildLightTree(nodes, sampler, true, true);
         } else {
             m_root = buildTreeKDAlternate(nodes, sampler);

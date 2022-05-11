@@ -86,7 +86,7 @@ Medium<Float, Spectrum>::eval_tr_and_pdf(const MediumInteraction3f &mi,
     UnpolarizedSpectrum tr  = exp(-t * mi.combined_extinction);
     UnpolarizedSpectrum pdf = select(si.t < mi.t, tr, tr * mi.combined_extinction);
     return { tr, pdf };
-}
+} 
 
 MTS_IMPLEMENT_CLASS_VARIANT(Medium, Object, "medium")
 MTS_INSTANTIATE_CLASS(Medium)

@@ -201,6 +201,7 @@ public:
                 act_medium_scatter &= active;
 
                 if (any_or<true>(act_null_scatter)) {
+                    lastScatter                        = false;
                     masked(ray.o, act_null_scatter)    = mi.p;
                     masked(ray.mint, act_null_scatter) = 0.f;
                     masked(si.t, act_null_scatter)     = si.t - mi.t;
@@ -215,8 +216,9 @@ public:
                     PhaseFunctionContext phase_ctx(sampler);
                     auto phase = mi.medium->phase_function();
 
-                    if (m_vrlMap->size() < m_targetVRLs) {
-                        VRL vrl(ray.o, mi.medium, throughput * flux, depth, channel);
+                    lastScatter = true;
+                    if (lastScatter && m_vrlMap->size() < m_targetVRLs) {
+                        VRL vrl(ray.o, medium, throughput * flux, depth, channel);
                         vrl.setEndPoint(mi.p);
                         m_vrlMap->push_back(std::move(vrl));
                     }
@@ -466,7 +468,8 @@ public:
                     masked(throughput, not_spectral && act_medium_scatter) *= mi.sigma_s / mi.sigma_t;
 
                 PhaseFunctionContext phase_ctx(sampler);
-                auto phase = mi.medium->phase_function();
+                auto phase  = mi.medium->phase_function();
+                lastScatter = true;
                 if (lastScatter && any_or<true>(act_medium_scatter)) {
                     Float totalLength = norm(mi.p - ray.o);
                     Ray3f cameraRay(ray);
@@ -474,11 +477,8 @@ public:
                     auto [evaluations, color, intersections] =
                         m_vrlMap->query(cameraRay, scene, sampler, -1, totalLength, m_useUniformSampling, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, channel);
                     masked(radiance, active) += color * throughput;
-
-                    if (medium->is_homogeneous())
-                        break;
+                    break;
                 }
-                lastScatter = true;
                 // masked(radiance, active) += m_volumePhotonMap->estimateRadianceVolume(si, mi, m_globalLookupRadius, m_globalLookupSize) * throughput;
                 // ------------------ Phase function sampling -----------------
                 masked(phase, !act_medium_scatter) = nullptr;
