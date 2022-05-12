@@ -200,7 +200,7 @@ public:
         }
 
 
-        Li*= 10;
+        //Li*= 100;
         return { nb_evaluation, Li, nb_BBIntersection };
     }
 

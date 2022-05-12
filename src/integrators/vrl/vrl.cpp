@@ -132,6 +132,7 @@ public:
                 uint32_t n_channels = (uint32_t) array_size_v<Spectrum>;
                 channel             = (UInt32) min(sampler->next_1d(active) * n_channels, n_channels - 1);
             }
+            bool lastScatter = false;
 
             /*si = scene->ray_intersect(ray, active);
             if (!si.is_valid())
@@ -184,6 +185,12 @@ public:
                     if (any_or<true>(escaped_medium))
                         mediumDepth = 0;
 
+                    if (m_vrlMap->size() < m_targetVRLs) {
+                        VRL vrl(ray.o, medium, throughput * flux, depth, channel);
+                        vrl.setEndPoint(mi.p);
+                        m_vrlMap->push_back(std::move(vrl));
+                    }
+
                     // Handle null and real scatter events
                     Mask null_scatter = sampler->next_1d(active_medium) >= index_spectrum(mi.sigma_t, channel) / index_spectrum(mi.combined_extinction, channel);
 
@@ -200,6 +207,7 @@ public:
                 act_medium_scatter &= active;
 
                 if (any_or<true>(act_null_scatter)) {
+                    lastScatter                        = true;
                     masked(ray.o, act_null_scatter)    = mi.p;
                     masked(ray.mint, act_null_scatter) = 0.f;
                     masked(si.t, act_null_scatter)     = si.t - mi.t;
@@ -213,13 +221,8 @@ public:
 
                     PhaseFunctionContext phase_ctx(sampler);
                     auto phase = mi.medium->phase_function();
-
-                    if (m_vrlMap->size() < m_targetVRLs) {
-                        VRL vrl(ray.o, medium, throughput * flux, depth, channel);
-                        vrl.setEndPoint(mi.p);
-                        m_vrlMap->push_back(std::move(vrl));
-                    }
-
+                    lastScatter = true;
+                    
                     // ------------------ Phase function sampling -----------------
                     masked(phase, !act_medium_scatter) = nullptr;
                     auto [wo, phase_pdf]               = phase->sample(phase_ctx, mi, sampler->next_2d(act_medium_scatter), act_medium_scatter);
@@ -234,8 +237,10 @@ public:
                 // --------------------- Surface Interactions ---------------------
                 active_surface |= escaped_medium;
                 Mask intersect = active_surface && needs_intersection;
-                if (any_or<true>(intersect))
+                if (any_or<true>(intersect)) {
+                    lastScatter = false;
                     masked(si, intersect) = scene->ray_intersect(ray, intersect);
+                }
                 active_surface &= si.is_valid();
 
                 // -------------------- End RTE ----------------- //
@@ -461,19 +466,19 @@ public:
                 if (any_or<true>(not_spectral))
                     masked(throughput, not_spectral && act_medium_scatter) *= mi.sigma_s / mi.sigma_t;
 
-                PhaseFunctionContext phase_ctx(sampler);
-                auto phase  = mi.medium->phase_function();
+
                 if (any_or<true>(act_medium_scatter)) {
                     Float totalLength = norm(mi.p - ray.o);
                     Ray3f cameraRay(ray);
                     cameraRay.maxt = mi.t;
-                    break;
                     auto [evaluations, color, intersections] =
                         m_vrlMap->query(cameraRay, scene, sampler, -1, totalLength, m_useUniformSampling, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, channel);
                     masked(radiance, active) += color * throughput;
+                    break;
                 }
-                // masked(radiance, active) += m_volumePhotonMap->estimateRadianceVolume(si, mi, m_globalLookupRadius, m_globalLookupSize) * throughput;
                 // ------------------ Phase function sampling -----------------
+                PhaseFunctionContext phase_ctx(sampler);
+                auto phase = mi.medium->phase_function();
                 masked(phase, !act_medium_scatter) = nullptr;
                 auto [wo, phase_pdf]               = phase->sample(phase_ctx, mi, sampler->next_2d(act_medium_scatter), act_medium_scatter);
                 Ray3f new_ray                      = mi.spawn_ray(wo);

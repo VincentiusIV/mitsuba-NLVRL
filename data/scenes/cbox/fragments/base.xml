@@ -11,7 +11,7 @@
 	-->
 	<integrator type="vrl">
 		<integer name="lightEmissions" value="1000000"/>
-		<integer name="targetVRLs" value="1000"/>
+		<integer name="targetVRLs" value="10000"/>
 		<boolean name="useUniformSampling" value="false"/>
 		<boolean name="useLightCut" value="true"/>
     </integrator>
