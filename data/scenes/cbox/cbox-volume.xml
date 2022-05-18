@@ -1,6 +1,31 @@
 <scene version="2.0.0">
-    <include filename="fragments/base.xml"/>
     <include filename="fragments/bsdfs-rgb.xml"/>
+	
+	<default name="spp" value="16"/>
+    <default name="res" value="256"/>
+    <default name="max_depth" value="6"/>
+	
+    <sensor type="perspective">
+        <string name="fov_axis" value="smaller"/>
+        <float name="near_clip" value="10"/>
+        <float name="far_clip" value="2800"/>
+        <float name="focus_distance" value="1000"/>
+        <float name="fov" value="39.3077"/>
+        <transform name="to_world">
+            <lookat origin="278, 273, -800"
+                    target="278, 273, -799"
+                    up    ="  0,   1,    0"/>
+        </transform>
+        <sampler type="independent">  <!-- ldsampler -->
+            <integer name="sample_count" value="$spp"/>
+        </sampler>
+        <film type="hdrfilm">
+            <integer name="width" value="$res"/>
+            <integer name="height" value="$res"/>
+            <rfilter type="box"/>
+            <string name="pixel_format" value="rgb"/>
+        </film>
+    </sensor>
 	
 	<shape type="obj">
         <string name="filename" value="meshes/cbox_luminaire.obj"/>
@@ -46,12 +71,12 @@
 	
 	<!-- Fog -->
 	<shape type="obj">
-        <string name="filename" value="meshes/sphere_tiny.obj"/>
+        <string name="filename" value="meshes/unit_cube_centered.obj"/>
         <bsdf type="null">
         </bsdf>
 		<transform name="to_world">
-            <translate x="0.5" y="0.5" z="0.5"/>
-            <scale x="400" y="400" z="400"/>
+            <translate x=".5" y=".50" z=".5"/>
+            <scale x="550" y="550" z="550"/>
         </transform>
         <ref id="medium1" name="interior"/>
     </shape>

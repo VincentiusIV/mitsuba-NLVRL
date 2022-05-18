@@ -1,7 +1,6 @@
 <scene version="2.0.0">
     <include filename="hetero-scene.xml"/>
 
-
 	<integrator type="vrl">
 		<integer name="lightEmissions" value="1000000"/>
 		<integer name="targetVRLs" value="1000"/>
@@ -9,6 +8,4 @@
 		<boolean name="useLightCut" value="false"/>
     </integrator>
 	
-		
-    
 </scene>

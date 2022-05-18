@@ -1,7 +1,7 @@
 <scene version="2.0.0">
     <include filename="fragments/bsdfs-rgb.xml"/>
 	
-    <default name="spp" value="64"/>
+    <default name="spp" value="16"/>
     <default name="res" value="256"/>
     <default name="max_depth" value="6"/>
     <default name="cbox_size" value="0.005"/>
@@ -47,47 +47,6 @@
 		<vector name="radcolor" value="18.387, 10.9873, 2.75357"/>
     </emitter>
 	
-	<shape type="obj">
-        <string name="filename" value="meshes/cbox_floor.obj"/>
-        <ref id="white"/>
-			<transform name="to_world">
-            <translate x="$cbox_x" y="$cbox_y" z="$cbox_z"/>
-			<scale value="$cbox_size"/>
-        </transform>
-    </shape>
-    <shape type="obj">
-        <string name="filename" value="meshes/cbox_ceiling.obj"/>
-        <ref id="white"/>
-		<transform name="to_world">
-            <translate x="$cbox_x" y="$cbox_y" z="$cbox_z"/>
-			<scale value="$cbox_size"/>
-        </transform>
-    </shape>
-    <shape type="obj">
-        <string name="filename" value="meshes/cbox_back.obj"/>
-        <ref id="white"/>
-		<transform name="to_world">
-            <translate x="$cbox_x" y="$cbox_y" z="$cbox_z"/>
-			<scale value="$cbox_size"/>
-        </transform>
-    </shape>
-    <shape type="obj">
-        <string name="filename" value="meshes/cbox_greenwall.obj"/>
-        <ref id="green"/>
-		<transform name="to_world">
-            <translate x="$cbox_x" y="$cbox_y" z="$cbox_z"/>
-			<scale value="$cbox_size"/>
-        </transform>
-    </shape>
-    <shape type="obj">
-        <string name="filename" value="meshes/cbox_redwall.obj"/>
-        <ref id="red"/>
-		<transform name="to_world">
-            <translate x="$cbox_x" y="$cbox_y" z="$cbox_z"/>
-			<scale value="$cbox_size"/>
-        </transform>
-    </shape>
-
 	
 	<medium id="medium1" type="heterogeneous">
         <float name="scale" value="8"/>
@@ -114,11 +73,5 @@
         </transform>
     </shape>
 	
-    <shape type="obj">
-        <string name="filename" value="meshes/sphere_base.obj"/>
-        <bsdf type="diffuse">
-        </bsdf>
-		<transform name="to_world">
-        </transform>
-    </shape>
+
 </scene>

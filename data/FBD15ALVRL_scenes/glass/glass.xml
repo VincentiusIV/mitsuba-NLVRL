@@ -1,0 +1,152 @@
+<?xml version='1.0' encoding='utf-8'?>
+
+<scene version="0.6.0">
+    <integrator type="vrl">
+        <!-- Number of passes of the integrator. -->
+        <integer name="maxPasses" value="2000"/>
+
+        <!-- Short VRLs as opposed to infinitely long VRLs? (The latter are 
+             not fully tested) -->
+        <boolean name="shortVrls" value="true"/>
+        <!-- Target number of VRLs per pass -->
+        <integer name="vrlTargetNum" value="300"/>
+
+        <!-- Maximum depth of particles traced to generate the VRLs. -->
+        <integer name="maxParticleDepth" value="-1"/>
+        <!-- Depth at which a nonzero Russian Roulette stopping probability 
+             gets forced for specular chains. -->
+        <integer name="specularForcedRRdepth" value="300"/>
+        <!-- Initial specular throughput for Russian Roulette decisions -->
+        <float name="initialSpecularThroughput" value="100"/>
+
+        <!-- Number of samples for VRL volume to volume transport. -->
+        <integer name="volVolSamples" value="2"/>
+        <!-- Number of samples for VRL volume to surface transport.
+             Note: there is no volume to surface transport in this scene! -->
+        <integer name="volSurfSamples" value="0"/>
+
+        <!-- Perform an initial global clustering (that will be used as a 
+             starting point for later local refinement if requested)? -->
+        <boolean name="globalCluster" value="false"/>
+        <!-- VRL undersampling for initial global cluster before per-slice 
+             refinement (Positive number N for a '1 in N' undersampling, 1 
+             to disable an initial global clustering, -1 for adaptive 
+             refinement). -->
+        <float name="globalUndersampling" value="1"/>
+
+        <!-- Perform a local refinement/clustering of VRLs? -->
+        <boolean name="localRefinement" value="true"/>
+        <!-- VRL undersampling of local clusters. Positive number N for a 
+             fixed '1 in N' undersampling, -1 for adaptive splitting into 
+             the optimal number of clusters. -->
+        <float name="localUndersampling" value="-1"/>
+        <!-- VRL undersampling for VRLs that had zero-contributions during 
+             preprocessing (and thus had no information available). -->
+        <float name="fallBackUndersampling" value="5"/>
+        <!-- Target number of slices (each slice gets its own local VRL 
+             clustering if 'localRefinement' is active) -->
+        <integer name="targetNumSlices" value="100"/>
+        <!-- Target pixel undersampling when sampling within a slice. -->
+        <float name="targetPixelUndersampling" value="50"/>
+        <!-- How much geometric curvature to take into account when 
+             grouping pixels into slices. -->
+        <float name="sliceCurvatureFactor" value="0.3"/>
+
+        <!-- Use information of this many neighbouring slices when 
+             determining VRL clustering for the current slice. -->
+        <integer name="neighbourCount" value="0"/>
+        <!-- Weight of those neighbours -->
+        <float name="neighbourWeight" value="0"/>
+    </integrator>
+
+    <sensor type="perspective">
+        <float name="focusDistance" value="0.306692"/>
+        <float name="fov" value="11.5"/>
+        <string name="fovAxis" value="x"/>
+        <transform name="toWorld">
+            <lookat target="-0.382909, -0.0835237, 0.26495"
+                origin="0.402541, 0.217099, -0.276062"
+                up="-0.247576, 0.953743, 0.170528"/>
+        </transform>
+
+        <sampler type="independent">
+            <!-- Currently no AA with 1spp for determinism -->
+            <integer name="sampleCount" value="1"/>
+        </sampler>
+
+        <film type="hdrfilm">
+            <boolean name="banner" value="false"/>
+            <integer name="height" value="360"/>
+            <integer name="width" value="240"/>
+            <rfilter type="box"/>
+        </film>
+    </sensor>
+
+    <emitter type="envmap" id="theEnvMap">
+        <string name="filename" value="../envmap.exr"/>
+        <float name="scale" value="16"/>
+    </emitter>
+
+    <!-- World units are in meters -->
+
+    <!-- Grapefruit Juice. Parameters from:
+
+         Novák J., Nowrouzezahrai D., Dachsbacher C., Jarosz W.:
+         Virtual ray lights for rendering scenes with participating media. 
+         ACM Transactions on Graphics (Proceedings of ACM SIGGRAPH 2012) 31,
+         4 (July 2012).
+
+         Note: we simply use these parameters (which originally correspond 
+         to a phase function with g=0.6) with an isotropic phase function 
+         without any (similarity-theory based) correction to the scattering 
+         density.
+    -->
+    <medium type="homogeneous" id="grapefruitJuiceIsotropic">
+        <float name="mediumSamplingWeight" value="1"/>
+        <float name="scale" value="100"/>
+        <rgb name="sigmaS" value="0.45, 0.32, 0.23"/>
+        <rgb name="sigmaA" value="0.41, 0.95, 4.73"/>
+    </medium>
+
+    <!-- Very mildly absorbing glass to suppress very long internally 
+         reflecting paths and give it a slight green tint. -->
+    <medium type="homogeneous" id="absorbingGlass">
+        <rgb name="sigmaS" value="0,  0,  0"/>
+        <rgb name="sigmaA" value="10,  8,  10"/>
+    </medium>
+
+    <shape type="obj" id="glass">
+        <string name="filename" value="glass.obj"/>
+
+        <bsdf type="dielectric">
+            <float name="intIOR" value="1.52"/>
+            <float name="extIOR" value="1.0"/>
+        </bsdf>
+
+        <ref name="interior" id="absorbingGlass"/>
+    </shape>
+
+    <shape type="obj" id="liquidSurface">
+        <string name="filename" value="liquidSurface.obj"/>
+
+        <bsdf type="dielectric">
+            <float name="intIOR" value="1.34"/>
+            <float name="extIOR" value="1.0"/>
+        </bsdf>
+
+        <ref name="interior" id="grapefruitJuiceIsotropic"/>
+    </shape>
+
+    <shape type="obj" id="glassLiquidInterface">
+        <string name="filename" value="glassLiquidInterface.obj"/>
+
+        <bsdf type="dielectric">
+            <float name="intIOR" value="1.52"/>
+            <float name="extIOR" value="1.34"/>
+        </bsdf>
+
+        <ref name="interior" id="absorbingGlass"/>
+
+        <ref name="exterior" id="grapefruitJuiceIsotropic"/>
+    </shape>
+</scene>
