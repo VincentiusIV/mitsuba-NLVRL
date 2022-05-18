@@ -59,7 +59,7 @@ public:
         //}
     }
 
-    void push_back(VRL &vrl) {
+    void push_back(VRL &vrl, bool scatterOrSurface) {
         if (size() >= m_maxSize)
             return;
         if (vrl.getMedium() == nullptr)
@@ -67,7 +67,11 @@ public:
         if (vrl.flux == Spectrum(0.0))
             return;
         /*std::ostringstream stream;
-        stream << "Inserting: " << vrl;
+        if (scatterOrSurface)
+            stream << "Insert from scatter:" << vrl;
+        else
+            stream << "Insert from surface:" << vrl;
+                
         std::string str = stream.str();
         Log(LogLevel::Info, str.c_str());*/
         m_map.emplace_back(vrl);
@@ -140,72 +144,74 @@ public:
     // TODO: Fix the specific parameters for RR
 
     // returns nb_evaluation, color, nb_BBIntersection
-    std::tuple<size_t, Spectrum, size_t> query(const Ray3f &ray, const Scene *scene, Sampler *sampler, int renderScatterDepth, Float lengthOfRay, bool useUniformSampling,
-                                               const EVRLRussianRoulette strategyRR, Float scaleRR, UInt32 channel) const {
+    std::tuple<size_t, Spectrum, size_t> query(const Ray3f &ray, const Scene *scene, Sampler *sampler, int renderScatterDepth, Float lengthOfRay, bool useUniformSampling, const EVRLRussianRoulette strategyRR, Float scaleRR, UInt32 samples, UInt32 channel) const {
         if (m_map.size() == 0)
             return { 0, Spectrum(0.0), 0 };
 
         Spectrum Li(0.0);
         size_t nb_evaluation     = 0;
         size_t nb_BBIntersection = 0;
-        if (m_accel == ENoVRLAcceleration) {
-            size_t nbVRLPruned = 0;
-            for (const VRL &vrl : m_map) {
 
-                // filter ray by scatterdepth, set to -1 (default) for no filtering
-                if (renderScatterDepth != -1) {
-                    if (vrl.getScatterDepth() != renderScatterDepth) {
-                        continue;
+        for (size_t i = 0; i < samples; i++) {
+            if (m_accel == ENoVRLAcceleration) {
+                size_t nbVRLPruned = 0;
+                for (const VRL &vrl : m_map) {
+
+                    // filter ray by scatterdepth, set to -1 (default) for no filtering
+                    if (renderScatterDepth != -1) {
+                        if (vrl.getScatterDepth() != renderScatterDepth) {
+                            continue;
+                        }
                     }
-                }
-                if (strategyRR == ENoRussianRoulette) {
-                    Spectrum contrib = vrl.getContrib(scene, useUniformSampling, ray, lengthOfRay, sampler, channel) * m_scale;
+                    if (strategyRR == ENoRussianRoulette) {
+                        Spectrum contrib = vrl.getContrib(scene, useUniformSampling, ray, lengthOfRay, sampler, channel) * m_scale;
 
-                    if (std::isnan(contrib[0]) || std::isnan(contrib[1]) || std::isnan(contrib[2]) || std::isinf(contrib[0]) || std::isinf(contrib[1]) || std::isinf(contrib[2])) {
-                        continue;
-                    }
-                    /*std::ostringstream stream;
-                    stream << "Contrib of a vrl: " << vrl << " = " << contrib;
-                    std::string str = stream.str();
-                    Log(LogLevel::Info, str.c_str());*/
-                    Li += contrib;
-                    nb_evaluation += 1;
-                } else if (strategyRR == EDistanceRoulette) {
-                    auto computeMinRayToRayDistance = [&]() -> Float {
-                        auto res = vrl.findClosetPoint(ray);
-                        return enoki::squared_norm((ray.o + ray.d * res.tCam) - (vrl.origin + vrl.direction * res.tVRL));
-                    };
-
-                    // Minimal survival rate of 5%
-                    Float min_distance_sqr = sqrt(computeMinRayToRayDistance());
-                    Float rrWeight         = min(1 / (min_distance_sqr * scaleRR), 1.0);
-                    if (rrWeight > sampler->next_1d()) {
-                        Spectrum contrib = (vrl.getContrib(scene, useUniformSampling, ray, lengthOfRay, sampler, channel) / rrWeight) * m_scale;
                         if (std::isnan(contrib[0]) || std::isnan(contrib[1]) || std::isnan(contrib[2]) || std::isinf(contrib[0]) || std::isinf(contrib[1]) || std::isinf(contrib[2])) {
                             continue;
                         }
-                        Log(LogLevel::Info, "found a contrib i guess");
+                        /*std::ostringstream stream;
+                        stream << "Contrib of a vrl: " << vrl << " = " << contrib;
+                        std::string str = stream.str();
+                        Log(LogLevel::Info, str.c_str());*/
                         Li += contrib;
                         nb_evaluation += 1;
+                    } else if (strategyRR == EDistanceRoulette) {
+                        auto computeMinRayToRayDistance = [&]() -> Float {
+                            auto res = vrl.findClosetPoint(ray);
+                            return enoki::squared_norm((ray.o + ray.d * res.tCam) - (vrl.origin + vrl.direction * res.tVRL));
+                        };
+
+                        // Minimal survival rate of 5%
+                        Float min_distance_sqr = sqrt(computeMinRayToRayDistance());
+                        Float rrWeight         = min(1 / (min_distance_sqr * scaleRR), 1.0);
+                        if (rrWeight > sampler->next_1d()) {
+                            Spectrum contrib = (vrl.getContrib(scene, useUniformSampling, ray, lengthOfRay, sampler, channel) / rrWeight) * m_scale;
+                            if (std::isnan(contrib[0]) || std::isnan(contrib[1]) || std::isnan(contrib[2]) || std::isinf(contrib[0]) || std::isinf(contrib[1]) || std::isinf(contrib[2])) {
+                                continue;
+                            }
+                            Log(LogLevel::Info, "found a contrib i guess");
+                            Li += contrib;
+                            nb_evaluation += 1;
+                        } else {
+                            nbVRLPruned += 1;
+                        }
                     } else {
-                        nbVRLPruned += 1;
+                        Log(LogLevel::Error, "This russian roulette scheme is not implemented");
                     }
-                } else {
-                    Log(LogLevel::Error, "This russian roulette scheme is not implemented");
                 }
+
+                /*VRLPercentagePruned += nbVRLPruned;
+                VRLPercentagePruned.incrementBase(m_map.size());*/
+            } else if (m_accel == ELightCutAcceleration) {
+                VRLLightCut::LCQuery query{ ray, sampler, 0 };
+                Li += m_lc->query(scene, sampler, query, nb_BBIntersection, channel) * m_scale;
+                nb_evaluation += query.nb_evaluation;
+            } else {
+                Log(LogLevel::Error, "query for acceleration is not implemented");
             }
-
-            /*VRLPercentagePruned += nbVRLPruned;
-            VRLPercentagePruned.incrementBase(m_map.size());*/
-        } else if (m_accel == ELightCutAcceleration) {
-            VRLLightCut::LCQuery query{ ray, sampler, 0 };
-            Li += m_lc->query(scene, sampler, query, nb_BBIntersection, channel) * m_scale;
-            nb_evaluation += query.nb_evaluation;
-        } else {
-            Log(LogLevel::Error, "query for acceleration is not implemented");
         }
-
-       
+        
+        Li /= samples;
 
         return { nb_evaluation, Li, nb_BBIntersection };
     }
