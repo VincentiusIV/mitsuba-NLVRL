@@ -27,6 +27,7 @@ public:
 
     VRLMap(size_t nbVRL) {
         m_map.reserve(nbVRL);
+        m_maxSize = nbVRL;
         m_accel = ENoVRLAcceleration;
 
         // MemoryPool memPool;
@@ -59,11 +60,16 @@ public:
     }
 
     void push_back(VRL &vrl) {
-        /* std::ostringstream stream;
-         stream << "Inserting: " << vrl;
-         std::string str = stream.str();
-         Log(LogLevel::Info, str.c_str());*/
-
+        if (size() >= m_maxSize)
+            return;
+        if (vrl.getMedium() == nullptr)
+            return;
+        if (vrl.flux == Spectrum(0.0))
+            return;
+        /*std::ostringstream stream;
+        stream << "Inserting: " << vrl;
+        std::string str = stream.str();
+        Log(LogLevel::Info, str.c_str());*/
         m_map.emplace_back(vrl);
     }
 
@@ -199,8 +205,8 @@ public:
             Log(LogLevel::Error, "query for acceleration is not implemented");
         }
 
+       
 
-        //Li*= 100;
         return { nb_evaluation, Li, nb_BBIntersection };
     }
 
@@ -218,6 +224,7 @@ public:
 protected:
     std::vector<VRL> m_map;
     Float m_scale = 1;
+    size_t m_maxSize;
     EVRLAcceleration m_accel;
 
     VRLLightCut *m_lc;

@@ -28,6 +28,8 @@ public:
         m_max_density = m_scale * m_sigmat->max();;
         m_inv_max_density = 1.0f / ( m_scale * m_sigmat->max());
         m_aabb        = m_sigmat->bbox();
+
+        Log(LogLevel::Info, to_string().c_str());
     }
 
     UnpolarizedSpectrum
@@ -66,6 +68,10 @@ public:
             << "  albedo  = " << string::indent(m_albedo) << std::endl
             << "  sigma_t = " << string::indent(m_sigmat) << std::endl
             << "  scale   = " << string::indent(m_scale) << std::endl
+            << " max_density = " << string::indent(m_max_density) << std::endl
+            << " inv_max_density = " << string::indent(m_inv_max_density) << std::endl
+            << " has_spectral_extinction = " << string::indent(m_has_spectral_extinction) << std::endl
+            
             << "]";
         return oss.str();
     }
