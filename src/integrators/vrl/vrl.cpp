@@ -200,15 +200,15 @@ public:
                 }
 
                 if (any_or<true>(act_medium_scatter)) {
-                    tempVRL.setEndPoint(mi.p);
-                    m_vrlMap->push_back(std::move(tempVRL), true);
-                    tempVRL = VRL(mi.p, medium, throughput * flux, depth, channel);
+
 
                     if (any_or<true>(is_spectral))
                         masked(throughput, is_spectral && act_medium_scatter) *= mi.sigma_s * index_spectrum(mi.combined_extinction, channel) / index_spectrum(mi.sigma_t, channel);
                     if (any_or<true>(not_spectral))
                         masked(throughput, not_spectral && act_medium_scatter) *= mi.sigma_s / mi.sigma_t;
-
+                    tempVRL.setEndPoint(mi.p);
+                    m_vrlMap->push_back(std::move(tempVRL), true);
+                    tempVRL = VRL(mi.p, medium, throughput * flux, depth, channel);
                     PhaseFunctionContext phase_ctx(sampler);
                     auto phase = mi.medium->phase_function();
                     // ------------------ Phase function sampling -----------------
@@ -373,7 +373,9 @@ public:
 
         if (medium == nullptr && si.is_medium_transition()) {
             // Do the next intersection to found a "valid" camera segment
-            _ray.mint += si.t + math::Epsilon<Float>; // Add Epsilon to be sure
+            Ray3f mediumRay(si.spawn_ray(_ray.d));
+            _ray = mediumRay; 
+            //_ray.mint += si.t + math::Epsilon<Float>; // Add Epsilon to be sure
 
             // Update the medium
             medium = si.target_medium(_ray.d);
@@ -383,7 +385,10 @@ public:
             // Update the intersection
             si = scene->ray_intersect(_ray, active);
             if (!si.is_valid())
+            {
+                //Log(LogLevel::Warn, "no intersection after the first?");
                 return { Spectrum(0.0), valid_ray };
+            }
         }
 
         if (medium == nullptr) {
@@ -391,7 +396,7 @@ public:
         }
 
         // Compute the long estimator
-        // This will reduce the lenght of the sensor query (better)
+        // This will reduce the lenght of the sensor query (better)        
         Float totalLength = norm(si.p - _ray.o);
         Ray3f mediumRaySegment(_ray.o, _ray.d,  ray.time);
         mediumRaySegment.mint = 0.0f;
@@ -399,12 +404,14 @@ public:
         mi = medium->sample_interaction(ray, sampler->next_1d(active), channel, active);
         if (mi.is_valid()) {
             mediumRaySegment.maxt = mi.t;
+
+            auto [evaluations, color, intersections] =
+                m_vrlMap->query(mediumRaySegment, scene, sampler, -1, totalLength, m_useUniformSampling, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
+            Li += color;
+            percentage_evaluation += evaluations / (Float) m_vrlMap->size();
+            percentage_BBIntersection += intersections / (Float) m_vrlMap->size();
         }
-        auto [evaluations, color, intersections] =
-            m_vrlMap->query(mediumRaySegment, scene, sampler, -1, totalLength, m_useUniformSampling, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
-        Li += color;
-        percentage_evaluation += evaluations / (Float) m_vrlMap->size();
-        percentage_BBIntersection += intersections / (Float) m_vrlMap->size();
+
 
         return { Li, valid_ray };
     }

@@ -632,10 +632,8 @@ template <typename Float, typename Spectrum> struct VRL {
         Float vrlPF             = pf->eval(phase_ctx1, mi1, -dir);
         Float rayPF             = pf->eval(phase_ctx2, mi2, dir);
 
-
-
-        mi1.p = mediumVRL(mediumVRL.maxt);
-        mi2.p = mediumRay(mediumRay.maxt);
+        mi1.p = sampling.pVRL;
+        mi2.p = sampling.pCam;
 
         auto [sigmaSVRL, sigmaNVRL, sigmaTVRL] = m_medium->get_scattering_coefficients(mi1, active);
         auto [sigmaSRay, sigmaNRay, sigmaTRay] = m_medium->get_scattering_coefficients(mi2, active);
