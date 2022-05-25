@@ -5,7 +5,7 @@
 #include <mitsuba/core/math.h>
 #include <random>
 #include "kdtree.h"
-
+#include "../vrl/vrl_struct.h"
 
 NAMESPACE_BEGIN(mitsuba)
 
@@ -183,23 +183,32 @@ public:
         return 3 * INV_PI * (1 - x * x) * (1 - x * x);
     }
 
-    Spectrum estimateRadianceVolume(const SurfaceInteraction3f& si, const MediumInteraction3f& mi, float searchRadius, size_t maxPhotons) const {
+    Spectrum estimateRadianceVolume(const MediumInteraction3f& mi, const Medium* medium, Sampler* sampler, const Ray3f &ray, UInt32 channel, float searchRadius, size_t maxPhotons) const {
         SearchResult *results  = new SearchResult[maxPhotons]; // this is really expensive, consider a buffer per thread
         float squaredRadius    = searchRadius * searchRadius;
         size_t resultCount     = nnSearch(mi.p, squaredRadius, maxPhotons, results);
         float invSquaredRadius = 1.0f / squaredRadius;
+
         Spectrum result(0.0f);
-        const BSDF *bsdf = si.bsdf();
+        
+        Vector3f N(0.0f);
         for (size_t i = 0; i < resultCount; i++) {
             const SearchResult &searchResult = results[i];
             const Photon &photon             = m_kdtree[searchResult.index];
             const PhotonData &photonData     = photon.getData();
-            Vector3f wi = si.to_local(-photonData.direction);
 
-            BSDFContext bRec;
-            Spectrum bsdfVal = bsdf->eval(bRec, si, wi);
-            // bsdfVal = si.to_world_mueller(bsdfVal, -wo, si.wo);
-            result += photonData.power; //* bsdfVal;
+            float weight  = 1.0f;
+            Float sqrTerm = 1.0f - searchResult.distSquared * invSquaredRadius;
+            weight *= sqrTerm;
+            Mask active = true;
+
+            Vector3f dir = photon.getPosition() - mi.p;
+            Float length = norm(dir);
+            Ray3f rayToPhoton(mi.p, dir, 0.0f);
+            rayToPhoton.mint = 0.0f;
+            rayToPhoton.maxt = length;
+            Spectrum tr      = medium->evalMediumTransmittance(rayToPhoton, sampler, channel, active);
+            result += photonData.power * weight * tr;
         }
 
         delete[] results;

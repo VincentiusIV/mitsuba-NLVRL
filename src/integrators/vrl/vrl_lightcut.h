@@ -76,7 +76,7 @@ public:
             Float total    = hmax(n1->represent.flux + n2->represent.flux);
             auto aabb      = n1->aabb;
             aabb.expand(n2->aabb);
-            auto diag = norm(aabb.extents());
+            auto diag = squared_norm(aabb.extents());
 
             return DistanceResult{ diag * total, true };
         };
@@ -132,15 +132,14 @@ public:
             nodes.push_back(new Node(vrl));
         }
 
-        //if (vrls.size() < 1024) {
-        if (true){  
+        if (true/*vrls.size() < 1024*/) {
             m_root = buildLightTree(nodes, sampler, true, true);
         } else {
             m_root = buildTreeKDAlternate(nodes, sampler);
         }
 
-        // This strategy is too slow.
-        // m_root = buildTreeStable(scene, nodes, sampler);
+            // This strategy is too slow.
+         //m_root = buildTreeStable(scene, nodes, sampler);
     }
 
     /// Release all memory
@@ -316,12 +315,12 @@ private:
             min_length = std::numeric_limits<Float>::max();
             for (Node *n : cluster.nodes) {
                 min_length = min(min_length, sqrDistanceVRL(r, n->represent));
-            }
-            min_length = sqrt(min_length);
+            }            
+            min_length = safe_sqrt(min_length);
 #else
             DCPQuery query;
             min_length = query.operator()(r, cluster.aabb);
-            min_length = math::safe_sqrt(min_length);
+            min_length = safe_sqrt(min_length);
 #endif
         };
 
@@ -343,13 +342,11 @@ private:
             rayOtoPonCluster.mint = 0;
             rayOtoPonCluster.maxt = min_length;
 
-            SurfaceInteraction3f ray_si = scene->ray_intersect(rayOtoPonCluster);
             MediumInteraction3f ray_mi  = medium->sample_interaction(rayOtoPonCluster, sampler->next_1d(), channel, active);
-            auto [ray_tr, ray_pdf]      = medium->eval_tr_and_pdf(ray_mi, ray_si, active);
-            transmittance               = ray_tr;
+           
+            transmittance = medium->evalMediumTransmittance(rayOtoPonCluster, sampler, channel, active);
 
             auto [sigma_s, sigma_n, sigma_t] = medium->get_scattering_coefficients(ray_mi, active);
-
             material *= sigma_s;
             material *= sigma_s;
 
@@ -698,7 +695,7 @@ private:
 
         // get the difference of the two closest points
         Vector3f dP = w + (sc * u) - (tc * v); // =  S1(sc) - S2(tc)
-        return norm(dP);
+        return squared_norm(dP);
     }
 
 protected:

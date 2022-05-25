@@ -318,6 +318,9 @@ public:
     virtual SurfaceInteraction3f eval_parameterization(const Point2f &uv,
                                                        Mask active = true) const;
 
+    void build(Point3f min, Point3f max);
+
+
     //! @}
     // =============================================================
 

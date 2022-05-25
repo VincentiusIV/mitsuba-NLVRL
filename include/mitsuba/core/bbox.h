@@ -331,39 +331,6 @@ template <typename Point_> struct BoundingBox {
         return { c, norm(c - max) };
     }
 
-    template <typename Ray, typename Float> MTS_INLINE bool rayIntersect(const Ray &ray, Float &nearT, Float &farT) const {
-
-        nearT = -std::numeric_limits<Float>::infinity();
-        farT  = std::numeric_limits<Float>::infinity();
-
-        /* For each pair of AABB planes */
-        for (int i = 0; i < 3; i++) {
-            const Float origin = ray.o[i];
-            const Float minVal = min[i], maxVal = max[i];
-
-            if (ray.d[i] == 0) {
-                /* The ray is parallel to the planes */
-                if (origin < minVal || origin > maxVal)
-                    return false;
-            } else {
-                /* Calculate intersection distances */
-                Float t1 = (minVal - origin) * ray.d_rcp[i];
-                Float t2 = (maxVal - origin) * ray.d_rcp[i];
-
-                if (t1 > t2)
-                    std::swap(t1, t2);
-
-                nearT = std::max(t1, nearT);
-                farT  = std::min(t2, farT);
-
-                if (!(nearT <= farT))
-                    return false;
-            }
-        }
-
-        return true;
-    }
-
     template <typename Ray> MTS_INLINE auto getMinDistanceSqr(const Ray &ray) const {
         using Float  = typename Ray::Float;
         using Vector = typename Ray::Vector;
@@ -833,8 +800,8 @@ template <typename Point_> struct BoundingBox {
         }
     };
 
-    Float _v1, _v2;
-    if(rayIntersect(ray, _v1, _v2)){
+    auto [valid, _v1, _v2] = ray_intersect(ray);
+    if(valid){
         return 0.0f;
     } else {
         // This code does not handle the min distance

@@ -73,6 +73,14 @@ public:
         if (is_polarized_v<Spectrum>)
             Log(LogLevel::Info, "polarized tho");
 
+        for each (auto shape in scene->shapes()) {
+            if (shape->interior_medium() != nullptr)
+            {
+                ScalarBoundingBox3f shape_bbox = shape->bbox();
+                shape->build(shape_bbox.min, shape_bbox.max);
+            }
+        }
+
         Sampler *sampler = sensor->sampler();
         sampler->seed(0);
 
@@ -246,14 +254,12 @@ public:
                     auto [bs, bsdfVal] = bsdf->sample(bCtx, si, sampler->next_1d(active_surface), sampler->next_2d(active_surface), active_surface);
                     bsdfVal            = si.to_world_mueller(bsdfVal, -bs.wo, si.wi);
 
-
                     throughput = throughput  * bsdfVal;
                     active &= any(neq(depolarize(throughput), 0.f));
                     if (none_or<false>(active)) {
                         break;
                     }
                     eta *= bs.eta;
-
 
                     RayDifferential3f bsdf_ray(si.spawn_ray(si.to_world(bs.wo)));
 
@@ -305,10 +311,15 @@ public:
             Log(LogLevel::Info, debugStr.c_str());
         }
 
-        m_globalPhotonMap->setScaleFactor(scale);
-        m_globalPhotonMap->build();
-        debugStr = "Building global PM, size: " + std::to_string(m_globalPhotonMap->size());
-        Log(LogLevel::Info, debugStr.c_str());
+        if (m_globalPhotonMap->size() > 0) {
+            m_globalPhotonMap->setScaleFactor(scale);
+            m_globalPhotonMap->build();
+            debugStr = "Building global PM, size: " + std::to_string(m_globalPhotonMap->size());
+            Log(LogLevel::Info, debugStr.c_str());
+        } else {
+            Log(LogLevel::Info, "No global photons");
+        }
+
 
         if (m_causticPhotonMap->size() > 0) {
             m_causticPhotonMap->setScaleFactor(scale);
@@ -324,7 +335,7 @@ public:
             debugStr = "Building volume PM, size: " + std::to_string(m_volumePhotonMap->size());
             Log(LogLevel::Info, debugStr.c_str());
             m_volumePhotonMap->build();
-            m_bre->build(m_volumePhotonMap, m_volumeLookupSize);
+            //m_bre->build(m_volumePhotonMap, m_volumeLookupSize);
         } else {
             Log(LogLevel::Info, "No volume photons");
         }
@@ -358,7 +369,9 @@ public:
         mi.t                    = math::Infinity<Float>;
         SurfaceInteraction3f si = zero<SurfaceInteraction3f>();
         si.t                    = math::Infinity<Float>;
-        
+        Medium::NonLinearInteraction nlmi;
+
+
         si = scene->ray_intersect(ray, active);
         Mask valid_ray = si.is_valid();
 
@@ -394,7 +407,7 @@ public:
 
             Mask active_medium    = active && neq(medium, nullptr);
             Mask active_surface   = active && !active_medium;
-            Mask act_null_scatter = false, act_medium_scatter = false, escaped_medium = false;
+            Mask act_null_scatter = false, act_medium_scatter = false, act_nonlinear = false, escaped_medium = false;
 
             #pragma region RTE
             Mask is_spectral  = active_medium;
@@ -411,6 +424,14 @@ public:
                 if (any_or<true>(intersect))
                     masked(si, intersect) = scene->ray_intersect(ray, intersect);
                 needs_intersection &= !active_medium;
+
+                if (medium->is_nonlinear()) {
+                    // Keep looping non-linear interactions until we surpass the mi.t
+                    nlmi = medium->sampleNonLinearInteraction(ray, channel, active_medium);
+                    if (nlmi.t < mi.t) {
+                        
+                    }
+                }
 
                 masked(mi.t, active_medium && (si.t < mi.t)) = math::Infinity<Float>;
                 if (any_or<true>(is_spectral)) {
@@ -452,9 +473,9 @@ public:
                 PhaseFunctionContext phase_ctx(sampler);
                 auto phase = mi.medium->phase_function();
 
-                masked(radiance, active) += m_bre->query(ray, medium, si, sampler, channel, active, m_maxDepth - 1, false) * throughput;
-                break;
-                //masked(radiance, active) += m_volumePhotonMap->estimateRadianceVolume(si, mi, m_globalLookupRadius, m_globalLookupSize) * throughput;
+                /*masked(radiance, active) += m_bre->query(ray, medium, si, sampler, channel, active, m_maxDepth - 1, false) * throughput;
+                break;*/
+                masked(radiance, active) += m_volumePhotonMap->estimateRadianceVolume(mi, medium, sampler, ray, channel, m_globalLookupRadius, m_globalLookupSize) * throughput;
                 // ------------------ Phase function sampling -----------------
                 masked(phase, !act_medium_scatter) = nullptr;
                 auto [wo, phase_pdf]               = phase->sample(phase_ctx, mi, sampler->next_2d(act_medium_scatter), act_medium_scatter);
@@ -479,9 +500,9 @@ public:
             if (any_or<true>(active_surface)) {
 
                 if (si.shape->is_emitter()) {
+                    break;
                     Spectrum emitterEval = si.shape->emitter()->eval(si);
                     radiance += emitterEval * throughput;
-                    break;
                 }
 
                 BSDFContext bCtx;

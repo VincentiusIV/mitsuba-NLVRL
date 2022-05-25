@@ -204,7 +204,7 @@ public:
             if (currentdist > tmpDist) {
                 currentdist = tmpDist;
                 currentbest = parent;
-                upperbound  = sqrt(currentdist / queryNode->intensity.max());
+                upperbound  = sqrt(currentdist / hmax(queryNode->intensity));
             }
         }
 

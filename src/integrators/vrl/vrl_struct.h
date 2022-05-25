@@ -47,7 +47,7 @@ template <typename Float, typename Spectrum> struct VRL {
                 auto _ray = ray;
                 _ray.maxt = dist;
                 Mask active             = true;
-                return evalMediumTransmittance(m_medium, _ray, sampler, m_channel, active);
+                return m_medium->evalMediumTransmittance(_ray, sampler, m_channel, active);
             }
         };
 
@@ -79,7 +79,7 @@ template <typename Float, typename Spectrum> struct VRL {
     void setEndPoint(const Point3f &p) {
         direction = p - origin;
         length    = norm(direction);
-        direction /= length;
+        direction = normalize(direction);
         m_valid = true;
     }
 
@@ -205,7 +205,7 @@ template <typename Float, typename Spectrum> struct VRL {
             auto h             = [&closest_point, this, &ray]() -> Float {
                 Point3f vh = origin + direction * closest_point.tVRL;
                 Point3f uh = ray.o + ray.d * closest_point.tCam;
-                return norm(uh - vh);
+                return squared_norm(uh - vh);
             }();
 
             // prevent degenerative cases when VRL/sensor are very close
@@ -213,7 +213,7 @@ template <typename Float, typename Spectrum> struct VRL {
                 Log(LogLevel::Warn, "VRL/sensor very close");
                 return SamplingInfo::invalid();
             }
-            h = sqrt(h);
+            h = safe_sqrt(h);
 
             // Code from sampling VRL points
             // Section 4.1
@@ -221,13 +221,13 @@ template <typename Float, typename Spectrum> struct VRL {
             Float v1Hat = length + v0Hat;
 
             // Compute the sin(theta) using cross product
-            Float sinTheta = norm(cross(direction, ray.d));
+            Float sinTheta = squared_norm(cross(direction, ray.d));
             if (sinTheta == 0) {
                 Log(LogLevel::Warn, "Parallel vectors");
                 return SamplingInfo::invalid();
             }
             assert(sinTheta > 0);
-            sinTheta = sqrt(sinTheta);
+            sinTheta = safe_sqrt(sinTheta);
 
             // Alternative code for compute sin(theta) much slower
             // TODO: Direct formula for computing sin theta
@@ -458,11 +458,10 @@ template <typename Float, typename Spectrum> struct VRL {
         }
     }
 
-    static Spectrum evalTransmittance(const Scene *scene, const Point3f &p1, bool p1OnSurface, const Point3f &p2, bool p2OnSurface, const Medium *_medium, int &interactions,
-                               Sampler *sampler, UInt32 channel, Mask active) {
+    static Spectrum evalTransmittance(const Scene *scene, const Point3f &p1, bool p1OnSurface, const Point3f &p2, bool p2OnSurface, const Medium *_medium, int &interactions, Sampler *sampler, UInt32 channel, Mask active) {
         Vector3f d        = p2 - p1;
         Float remaining = norm(d);
-        d /= remaining;
+        d                 = normalize(d);
         
         Float lengthFactor = p2OnSurface ? (1 - math::ShadowEpsilon<Float>) : 1;
         Ray3f ray(p1, d, 0.0f);
@@ -488,7 +487,7 @@ template <typename Float, typename Spectrum> struct VRL {
                 Ray3f mediumRay = Ray3f(ray);
                 mediumRay.mint = 0;
                 mediumRay.maxt = std::min(si.t, remaining);
-                transmittance *= evalMediumTransmittance(medium, mediumRay, sampler, channel, active);
+                transmittance *= medium->evalMediumTransmittance(mediumRay, sampler, channel, active);
             }
 
             if (!surface || transmittance[0] == 0.0)
@@ -533,52 +532,6 @@ template <typename Float, typename Spectrum> struct VRL {
         }
         return m;
     }
-    static Spectrum evalMediumTransmittance(const Medium* medium, const Ray3f& _ray, Sampler* sampler, UInt32 channel, Mask active) {
-        /* When Woodcock tracking is selected as the sampling method,
-               we can use this method to get a noisy (but unbiased) estimate
-               of the transmittance */
-        Ray3f ray(_ray);
-        auto [valid, mint, maxt] = medium->intersect_aabb(ray);
-        valid &= (enoki::isfinite(mint) || enoki::isfinite(maxt));
-        active &= valid;
-        masked(mint, !active) = 0.f;
-        masked(maxt, !active) = math::Infinity<Float>;
-        mint = max(mint, ray.mint);
-        maxt = min(maxt, ray.maxt);
-
-#if defined(HETVOL_STATISTICS)
-        avgRayMarchingStepsTransmittance.incrementBase();
-#endif
-        int nSamples = 2; /// XXX make configurable
-        Float result = 0;
-        MediumInteraction3f mi;
-
-        for (int i = 0; i < nSamples; ++i) {
-            Float t                           = mint;
-            while (true) {
-
-                mi = medium->sample_interaction(ray, sampler->next_1d(), channel, active);
-                t += mi.t;
-                maxt -= mi.t;
-                if (t >= maxt || !mi.is_valid()) {
-                    result += 1;
-                    break;
-                }
-
-                Mask act_scatter = (sampler->next_1d(active) < index_spectrum(mi.sigma_t, channel) / index_spectrum(mi.combined_extinction, channel));
-                if (any_or<true>(act_scatter)) {
-                    break;
-                }
-
-
-                Ray3f newRay = mi.spawn_ray(ray.d);
-                newRay.mint = 0.0f;
-                newRay.maxt = maxt;          
-                ray          = std::move(newRay);             
-            }
-        }
-        return Spectrum(result / nSamples);
-    }
 
     Spectrum getContrib(const Scene *scene, const bool uniformSampling, const Ray3f &ray, Float lengthOfRay, Sampler *sampler, UInt32 channel) const {
         auto sampling = samplingVRL(scene, ray, sampler, uniformSampling, channel);
@@ -613,13 +566,13 @@ template <typename Float, typename Spectrum> struct VRL {
         mediumRay.mint = 0;
         mediumRay.maxt = sampling.tCam;
 
-        Spectrum rayTrans = evalMediumTransmittance(m_medium, mediumRay, sampler, channel, active);
+        Spectrum rayTrans = m_medium->evalMediumTransmittance(mediumRay, sampler, channel, active);
 
         Ray3f mediumVRL(origin, direction, 0);
         mediumVRL.mint    = 0;
         mediumVRL.maxt    = sampling.tVRL;
 
-        Spectrum vrlTrans = evalMediumTransmittance(m_medium, mediumVRL, sampler, channel, active);
+        Spectrum vrlTrans = m_medium->evalMediumTransmittance(mediumVRL, sampler, channel, active);
 
         Float fallOff = 1.0f / (lengthPtoP * lengthPtoP);
 

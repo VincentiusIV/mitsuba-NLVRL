@@ -60,7 +60,7 @@ MTS_VARIANT Shape<Float, Spectrum>::Shape(const Properties &props) : m_id(props.
             if (name == "interior") {
                 if (m_interior_medium)
                     Throw("Only a single interior medium can be specified per shape.");
-                m_interior_medium = medium;
+                m_interior_medium          = medium;
                 Log(LogLevel::Info, "ya boi has an interior medium");
             } else if (name == "exterior") {
                 if (m_exterior_medium)
@@ -385,6 +385,11 @@ MTS_VARIANT typename Shape<Float, Spectrum>::ScalarBoundingBox3f
 Shape<Float, Spectrum>::bbox(ScalarIndex) const {
     return bbox();
 }
+
+MTS_VARIANT void Shape<Float, Spectrum>::build(Point3f min, Point3f max) {
+    m_interior_medium.get()->build(min, max);
+}
+
 
 MTS_VARIANT typename Shape<Float, Spectrum>::ScalarBoundingBox3f
 Shape<Float, Spectrum>::bbox(ScalarIndex index, const ScalarBoundingBox3f &clip) const {

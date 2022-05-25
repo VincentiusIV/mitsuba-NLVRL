@@ -26,6 +26,8 @@ public:
         m_max_density    = m_scale * m_sigmat->max();
         m_inv_max_density             = 1.0f / (m_scale * m_sigmat->max());
         m_has_spectral_extinction = props.bool_("has_spectral_extinction", true);
+
+        Log(LogLevel::Info, to_string().c_str());
     }
 
     MTS_INLINE auto eval_sigmat(const MediumInteraction3f &mi) const {

@@ -1,24 +1,19 @@
 <scene version="2.0.0">
     <include filename="fragments/bsdfs-rgb.xml"/>
 	
-    <default name="spp" value="16"/>
+	<default name="spp" value="16"/>
     <default name="res" value="256"/>
     <default name="max_depth" value="6"/>
-    <default name="cbox_size" value="0.005"/>
-	<default name="cbox_x" value="-250"/>
-	<default name="cbox_y" value="-200"/>
-	<default name="cbox_z" value="-250"/>
-	<default name="volume_size" value="1.5"/>
-
+	
     <sensor type="perspective">
         <string name="fov_axis" value="smaller"/>
-        <float name="near_clip" value="1"/>
+        <float name="near_clip" value="10"/>
         <float name="far_clip" value="2800"/>
         <float name="focus_distance" value="1000"/>
         <float name="fov" value="39.3077"/>
         <transform name="to_world">
-            <lookat origin="0.125, 0.4, -5"
-                    target="0.125, 0.4, 0"
+            <lookat origin="0, 0, -800"
+                    target="0, 0, -799"
                     up    ="  0,   1,    0"/>
         </transform>
         <sampler type="independent">  <!-- ldsampler -->
@@ -35,43 +30,33 @@
 	<shape type="obj">
         <string name="filename" value="meshes/cbox_luminaire.obj"/>
         <transform name="to_world">
-            <translate x="$cbox_x" y="-250.5" z="$cbox_z"/>
-			<scale value="$cbox_size"/>
+            <translate x="-280" y="-340" z="-280"/>
         </transform>
         <ref id="light"/>
         <ref id="area-emitter"/>
     </shape>
-	
+
 	<emitter type="area" id="area-emitter">
         <rgb name="radiance" value="18.387, 10.9873, 2.75357"/>
 		<vector name="radcolor" value="18.387, 10.9873, 2.75357"/>
     </emitter>
 	
-	
-	<medium id="medium1" type="heterogeneous">
-        <float name="scale" value="8"/>
-
-        <volume name="sigma_t" type="gridvolume">
-            <transform name="to_world">
-                <scale value="$volume_size"/>
-                <translate x="-0.5" y="-0.5" z="-0.5"/>
-            </transform>
-            <boolean name="use_grid_bbox" value="false"/>
-            <string name="filename" value="textures/sigmat.vol"/>
-        </volume>
-
-        <rgb name="albedo" value="0.99, 0.7, 0.7"/>
+	<medium id="medium1" type="nonlinear">
+        <float name="scale" value="0.005"/>
+        <rgb name="sigma_t" value="0.5"/>
+        <rgb name="albedo" value="1.0, 1.0, 1.0"/>
         <phase type="isotropic" />
     </medium>
-    <shape type="obj">
+
+	
+	<!-- Fog -->
+	<shape type="obj">
         <string name="filename" value="meshes/unit_cube_centered.obj"/>
         <bsdf type="null">
         </bsdf>
-        <ref id="medium1" name="interior"/>
-        <transform name="to_world">
-            <scale value="$volume_size"/>
+		<transform name="to_world">
+            <scale x="400" y="400" z="400"/>
         </transform>
+        <ref id="medium1" name="interior"/>
     </shape>
-	
-
 </scene>
