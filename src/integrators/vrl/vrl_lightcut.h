@@ -344,7 +344,7 @@ private:
 
             MediumInteraction3f ray_mi  = medium->sample_interaction(rayOtoPonCluster, sampler->next_1d(), channel, active);
            
-            transmittance = medium->evalMediumTransmittance(rayOtoPonCluster, sampler, channel, active);
+            transmittance = medium->evalMediumTransmittance(rayOtoPonCluster, sampler, active);
 
             auto [sigma_s, sigma_n, sigma_t] = medium->get_scattering_coefficients(ray_mi, active);
             material *= sigma_s;

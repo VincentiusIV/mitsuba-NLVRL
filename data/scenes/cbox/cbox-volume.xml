@@ -1,7 +1,7 @@
 <scene version="2.0.0">
     <include filename="fragments/bsdfs-rgb.xml"/>
 	
-	<default name="spp" value="16"/>
+	<default name="spp" value="1"/>
     <default name="res" value="256"/>
     <default name="max_depth" value="6"/>
 	
@@ -12,8 +12,8 @@
         <float name="focus_distance" value="1000"/>
         <float name="fov" value="39.3077"/>
         <transform name="to_world">
-            <lookat origin="278, 273, -800"
-                    target="278, 273, -799"
+            <lookat origin="0, 0, -800"
+                    target="0, 0, -799"
                     up    ="  0,   1,    0"/>
         </transform>
         <sampler type="independent">  <!-- ldsampler -->
@@ -30,7 +30,7 @@
 	<shape type="obj">
         <string name="filename" value="meshes/cbox_luminaire.obj"/>
         <transform name="to_world">
-            <translate x="0" y="50" z="0"/>
+            <translate x="-280" y="-300" z="-280"/>
         </transform>
         <ref id="light"/>
         <ref id="area-emitter"/>
@@ -55,8 +55,7 @@
         <bsdf type="null">
         </bsdf>
 		<transform name="to_world">
-            <translate x=".5" y=".50" z=".5"/>
-            <scale x="550" y="550" z="550"/>
+            <scale x="400" y="400" z="400"/>
         </transform>
         <ref id="medium1" name="interior"/>
     </shape>

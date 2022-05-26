@@ -99,7 +99,7 @@ public:
         return m;
     }
 
-    Spectrum evalMediumTransmittance(const Ray3f &_ray, Sampler *sampler, UInt32 channel, Mask active) const {
+    Spectrum evalMediumTransmittance(const Ray3f &_ray, Sampler *sampler, Mask active) const {
         /* When Woodcock tracking is selected as the sampling method,
                we can use this method to get a noisy (but unbiased) estimate
                of the transmittance */
@@ -125,6 +125,13 @@ public:
 
         for (int i = 0; i < nSamples; ++i) {
             Float t = mint;
+
+            UInt32 channel = 0;
+            if (is_rgb_v<Spectrum>) {
+                uint32_t n_channels = (uint32_t) array_size_v<Spectrum>;
+                channel             = (UInt32) min(sampler->next_1d(active) * n_channels, n_channels - 1);
+            }
+
             while (true) {
 
                 mi = sample_interaction(ray, sampler->next_1d(), channel, active);

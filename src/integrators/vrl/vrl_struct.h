@@ -47,7 +47,7 @@ template <typename Float, typename Spectrum> struct VRL {
                 auto _ray = ray;
                 _ray.maxt = dist;
                 Mask active             = true;
-                return m_medium->evalMediumTransmittance(_ray, sampler, m_channel, active);
+                return m_medium->evalMediumTransmittance(_ray, sampler, active);
             }
         };
 
@@ -487,7 +487,7 @@ template <typename Float, typename Spectrum> struct VRL {
                 Ray3f mediumRay = Ray3f(ray);
                 mediumRay.mint = 0;
                 mediumRay.maxt = std::min(si.t, remaining);
-                transmittance *= medium->evalMediumTransmittance(mediumRay, sampler, channel, active);
+                transmittance *= medium->evalMediumTransmittance(mediumRay, sampler, active);
             }
 
             if (!surface || transmittance[0] == 0.0)
@@ -566,13 +566,13 @@ template <typename Float, typename Spectrum> struct VRL {
         mediumRay.mint = 0;
         mediumRay.maxt = sampling.tCam;
 
-        Spectrum rayTrans = m_medium->evalMediumTransmittance(mediumRay, sampler, channel, active);
+        Spectrum rayTrans = m_medium->evalMediumTransmittance(mediumRay, sampler, active);
 
         Ray3f mediumVRL(origin, direction, 0);
         mediumVRL.mint    = 0;
         mediumVRL.maxt    = sampling.tVRL;
 
-        Spectrum vrlTrans = m_medium->evalMediumTransmittance(mediumVRL, sampler, channel, active);
+        Spectrum vrlTrans = m_medium->evalMediumTransmittance(mediumVRL, sampler, active);
 
         Float fallOff = 1.0f / (lengthPtoP * lengthPtoP);
 

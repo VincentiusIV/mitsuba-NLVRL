@@ -2,7 +2,8 @@
     <include filename="cbox-volume.xml"/>
 	
 	<integrator type="photonmap">
-		<integer name="lightEmissions" value="1000000"/>
+		<integer name="lightEmissions" value="10000000"/>
+		<float name="volumeLookupRadiusRelative" value="0.005"/>
     </integrator>
 
 </scene>

@@ -3,13 +3,22 @@
 #include <enoki/fwd.h>
 #include <mitsuba/core/fwd.h>
 #include <mitsuba/core/math.h>
+#include <mitsuba/core/properties.h>
+#include <mitsuba/core/ray.h>
+#include <mitsuba/core/spectrum.h>
+#include <mitsuba/core/vector.h>
+#include <mitsuba/render/phase.h>
+#include <mitsuba/render/records.h>
+#include <mitsuba/render/medium.h>
 #include <random>
 #include "kdtree.h"
 #include "../vrl/vrl_struct.h"
 
+
 NAMESPACE_BEGIN(mitsuba)
 
 #define INV_PI 0.31830988618379067154
+#define UNIT_SPHERE_VOLUME 4.18879020478639
 
 template <typename Float, typename Spectrum> struct PhotonData {
     MTS_IMPORT_TYPES()
@@ -48,7 +57,7 @@ struct Photon : SimpleKDNode<Point, PhotonData<Float, Spectrum>> {
 template <typename Float, typename Spectrum>
 class PhotonMap {
 public:
-    MTS_IMPORT_TYPES()
+    MTS_IMPORT_TYPES(PhaseFunctionContext)
     MTS_IMPORT_OBJECT_TYPES()
 
     typedef PhotonData<Float, Spectrum> PhotonData;
@@ -183,36 +192,33 @@ public:
         return 3 * INV_PI * (1 - x * x) * (1 - x * x);
     }
 
-    Spectrum estimateRadianceVolume(const MediumInteraction3f& mi, const Medium* medium, Sampler* sampler, const Ray3f &ray, UInt32 channel, float searchRadius, size_t maxPhotons) const {
-        SearchResult *results  = new SearchResult[maxPhotons]; // this is really expensive, consider a buffer per thread
+    Spectrum estimateRadianceVolume(Point3f gatherPoint, Vector3f wo, const Medium *medium, Sampler *sampler, float searchRadius, size_t maxPhotons) const {
+        SearchResult *results  = new SearchResult[maxPhotons];
         float squaredRadius    = searchRadius * searchRadius;
-        size_t resultCount     = nnSearch(mi.p, squaredRadius, maxPhotons, results);
+        size_t resultCount     = nnSearch(gatherPoint, squaredRadius, maxPhotons, results);
         float invSquaredRadius = 1.0f / squaredRadius;
 
         Spectrum result(0.0f);
-        
-        Vector3f N(0.0f);
+
+        MediumInteraction3f mi1;
+        PhaseFunctionContext phase_ctx1(sampler);
+        const PhaseFunction *pf = medium->phase_function();
+
         for (size_t i = 0; i < resultCount; i++) {
             const SearchResult &searchResult = results[i];
             const Photon &photon             = m_kdtree[searchResult.index];
             const PhotonData &photonData     = photon.getData();
 
-            float weight  = 1.0f;
-            Float sqrTerm = 1.0f - searchResult.distSquared * invSquaredRadius;
-            weight *= sqrTerm;
-            Mask active = true;
+            mi1.wi = -photonData.direction;
+            Float photonPF = pf->eval(phase_ctx1, mi1, wo);
 
-            Vector3f dir = photon.getPosition() - mi.p;
-            Float length = norm(dir);
-            Ray3f rayToPhoton(mi.p, dir, 0.0f);
-            rayToPhoton.mint = 0.0f;
-            rayToPhoton.maxt = length;
-            Spectrum tr      = medium->evalMediumTransmittance(rayToPhoton, sampler, channel, active);
-            result += photonData.power * weight * tr;
+            result += photonData.power * photonPF;
         }
+        result *= m_scale;
+        result /= (UNIT_SPHERE_VOLUME * searchRadius * searchRadius * searchRadius);
 
         delete[] results;
-        return result * (m_scale * INV_PI * invSquaredRadius);
+        return result;
     }
 
 protected:
