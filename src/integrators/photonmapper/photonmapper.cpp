@@ -37,30 +37,30 @@ public:
 
     PhotonMapper(const Properties &props) : Base(props) {
         m_numLightEmissions = props.int_("lightEmissions", 1000000);
-
-        m_globalPhotonMap    = new PhotonMap(m_numLightEmissions);
+        m_globalPhotonMap = new PhotonMap(m_numLightEmissions);
         m_causticPhotonMap = new PhotonMap(m_numLightEmissions);
-        m_volumePhotonMap    = new PhotonMap(m_numLightEmissions);       
-        m_bre                = new BeamRadianceEstimator();
-
-        m_directSamples    = props.int_("directSamples", 16);
-        m_glossySamples    = props.int_("glossySamples", 32);
-        m_rrDepth     = props.int_("rrStartDepth", 5);
-        m_maxDepth         = props.int_("max_depth", 512);
+        m_volumePhotonMap = new PhotonMap(m_numLightEmissions);
+        m_bre = new BeamRadianceEstimator();
+        m_directSamples = props.int_("directSamples", 16);
+        m_glossySamples = props.int_("glossySamples", 32);
+        m_rrDepth = props.int_("rrStartDepth", 5);
+        m_maxDepth = props.int_("max_depth", 512);
         m_maxSpecularDepth = props.int_("maxSpecularDepth", 4);
-        m_granularity      = props.int_("granularity", 0);
-        m_globalPhotons    = props.int_("globalPhotons", 250000);
-        m_causticPhotons   = props.int_("causticPhotons", 250000);
-        m_volumePhotons    = props.int_("volumePhotons", 250000);
+        m_granularity = props.int_("granularity", 0);
+        m_globalPhotons = props.int_("globalPhotons", 250000);
+        m_causticPhotons = props.int_("causticPhotons", 250000);
+        m_volumePhotons = props.int_("volumePhotons", 250000);
         m_volumeLookupRadiusRelative = props.float_("volumeLookupRadiusRelative", 0.01f);
         m_globalLookupRadiusRelative = props.float_("globalLookupRadiusRelative", 0.05f);
         m_causticLookupRadiusRelative = props.float_("causticLookupRadiusRelative", 0.0125f);
-        m_globalLookupSize    = props.int_("globalLookupSize", 120);
-        m_causticLookupSize   = props.int_("causticLookupSize", 120);
-        m_volumeLookupSize    = props.int_("volumeLookupSize", 120);
-        m_gatherLocally       = props.bool_("gatherLocally", true);
-        m_autoCancelGathering = props.bool_("autoCancelGathering", true);       
+        m_globalLookupSize = props.int_("globalLookupSize", 120);
+        m_causticLookupSize = props.int_("causticLookupSize", 120);
+        m_volumeLookupSize = props.int_("volumeLookupSize", 120);
+        m_gatherLocally = props.bool_("gatherLocally", true);
+        m_autoCancelGathering = props.bool_("autoCancelGathering", true);
     }
+
+
 
     void preprocess(Scene* scene, Sensor* sensor) override {
         Log(LogLevel::Info, "Pre Processing Photon Map...");
@@ -117,11 +117,15 @@ public:
             mi.t                   = math::Infinity<Float>;
             SurfaceInteraction3f si = zero<SurfaceInteraction3f>();
             si.t                    = math::Infinity<Float>;
+            Medium::NonLinearInteraction nli;
+
 
             // Sample random emitter
             emitter = sampleEmitter(scene, sampler->next_2d(), true);
             auto rayColorPair = emitter->sample_ray(0.0, sampler->next_1d(), sampler->next_2d(), sampler->next_2d());
             RayDifferential3f ray(rayColorPair.first);
+            ray.o = Point3f(-250.0f, 200.0f, 15.0f);
+            ray.d = normalize(Vector3f(0.5f, -0.3f, 0.0f));
             Spectrum flux = emitter->getUniformRadiance();
             flux *= math::Pi<float> * emitter->shape()->surface_area();
             medium = emitter->medium();
@@ -139,20 +143,12 @@ public:
                 channel             = (UInt32) min(sampler->next_1d(active) * n_channels, n_channels - 1);
             }
 
-            /*si = scene->ray_intersect(ray, active);
-            if (!si.is_valid())
-                continue;*/
-            /*Mask has_medium_trans            = si.is_valid() && si.is_medium_transition();
-            masked(medium, has_medium_trans) = si.target_medium(ray.d);*/
-
             for (int bounce = 0;; ++bounce) {
                 active &= any(neq(depolarize(throughput), 0.f));
                 Float q         = min(hmax(depolarize(throughput)) * sqr(eta), .95f);
                 Mask perform_rr = (depth > (uint32_t) m_rrDepth);
                 active &= sampler->next_1d(active) < q || !perform_rr;
                 masked(throughput, perform_rr) *= rcp(detach(q));
-
-               
 
                 Mask exceeded_max_depth = depth >= (uint32_t) m_maxDepth;
                 if (none(active) || all(exceeded_max_depth))
@@ -164,7 +160,6 @@ public:
                 Mask act_null_scatter = false, act_medium_scatter = false, escaped_medium = false;
                 #pragma region RTE
                 
-
                 Mask is_spectral  = active_medium;
                 Mask not_spectral = false;
                 if (any_or<true>(active_medium)) {
@@ -175,13 +170,51 @@ public:
                 if (any_or<true>(active_medium)) {
                     ++mediumDepth;
                     mi = medium->sample_interaction(ray, sampler->next_1d(active_medium), channel, active_medium);
+
+                    if (mi.is_valid() && medium->is_nonlinear()) {
+                        nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
+
+                        for (size_t i = 0; i < 100; i++) {
+                            if (nli.t > mi.t || !nli.is_valid)
+                                break;
+                            // Move ray to nli.p + Eps
+                            ray.o = ray(nli.t + math::RayEpsilon<Float>);                            
+                            ray.d = nli.wo;
+                            ray.update();
+                            mi.sh_frame = Frame3f(ray.d);
+                            mi.wi = -ray.d;
+                            auto [aabb_its, mint, maxt] = medium->intersect_aabb(ray);
+                            aabb_its &= (enoki::isfinite(mint) || enoki::isfinite(maxt));
+                            active &= aabb_its;
+                            mint = max(ray.mint, mint);
+                            maxt = min(ray.maxt, maxt);
+
+                            auto combined_extinction = medium->get_combined_extinction(mi, active_medium);
+                            Float m                  = combined_extinction[0];
+                            if constexpr (is_rgb_v<Spectrum>) { // Handle RGB rendering
+                                masked(m, eq(channel, 1u)) = combined_extinction[1];
+                                masked(m, eq(channel, 2u)) = combined_extinction[2];
+                            } else {
+                                ENOKI_MARK_USED(channel);
+                            }
+
+                            Mask valid_mi = active && (mi.t <= maxt);
+                            mi.t -= (nli.t + math::RayEpsilon<Float>);
+                            mi.p                                         = ray(mi.t);
+                            std::tie(mi.sigma_s, mi.sigma_n, mi.sigma_t) = medium->get_scattering_coefficients(mi, valid_mi);
+                            mi.combined_extinction                       = combined_extinction;
+
+                            Medium::NonLinearInteraction new_nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);;
+                            nli = std::move(new_nli);                           
+                        }
+                    }
+
                     masked(ray.maxt, active_medium && medium->is_homogeneous() && mi.is_valid()) = mi.t;
                     Mask intersect = needs_intersection && active_medium;
                     if (any_or<true>(intersect))
                         masked(si, intersect) = scene->ray_intersect(ray, intersect);
                     needs_intersection &= !active_medium;
 
-                    
                     masked(mi.t, active_medium && (si.t < mi.t)) = math::Infinity<Float>;
                     if (any_or<true>(is_spectral)) {
                         auto [tr, free_flight_pdf] = medium->eval_tr_and_pdf(mi, si, is_spectral);
@@ -414,6 +447,11 @@ public:
                     }
                     radiance += m_volumePhotonMap->estimateRadianceVolume(gatherPoint, mediumRay.d, medium, sampler, m_volumeLookupRadius, m_volumePhotons) * throughput;
                 }
+            }
+
+            if (si.is_valid() && si.shape->is_emitter()) {
+                Spectrum emitterEval = si.shape->emitter()->eval(si);
+                radiance += emitterEval * throughput;               
             }
         }
 

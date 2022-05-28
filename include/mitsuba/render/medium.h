@@ -19,8 +19,8 @@ public:
     {
     public:
         bool is_valid;
+        Vector3f wi, wo, n;
         float n1, n2;
-        Vector3f n;
         Point3f p;
         float t;
 
