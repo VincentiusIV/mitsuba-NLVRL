@@ -188,7 +188,7 @@ public:
                             active &= aabb_its;
                             mint = max(ray.mint, mint);
                             maxt = min(ray.maxt, maxt);
-
+                                
                             auto combined_extinction = medium->get_combined_extinction(mi, active_medium);
                             Float m                  = combined_extinction[0];
                             if constexpr (is_rgb_v<Spectrum>) { // Handle RGB rendering
