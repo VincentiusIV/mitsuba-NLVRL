@@ -47,6 +47,7 @@ public:
         m_inv_max_density         = 1.0f / (m_scale * m_sigmat->max());
         m_has_spectral_extinction = props.bool_("has_spectral_extinction", true);
         resolution                = Point3f(props.int_("res_x", 4.0), props.int_("res_y", 4.0), props.int_("res_z", 4.0));
+        Log(LogLevel::Info, to_string().c_str());
 
     }
 

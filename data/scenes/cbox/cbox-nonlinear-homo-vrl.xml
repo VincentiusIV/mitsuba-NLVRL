@@ -1,0 +1,12 @@
+<scene version="2.0.0">
+    <include filename="cbox-nonlinear-homo.xml"/>
+	
+	<integrator type="vrl">
+		<integer name="lightEmissions" value="1000000"/>
+		<integer name="targetVRLs" value="100"/>
+		<integer name="samplesPerQuery" value="2"/>
+		<boolean name="useUniformSampling" value="true"/>
+		<boolean name="useLightCut" value="false"/>
+    </integrator>
+
+</scene>

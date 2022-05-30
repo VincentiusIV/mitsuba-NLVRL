@@ -59,21 +59,19 @@ public:
         //}
     }
 
-    void push_back(VRL &vrl, bool scatterOrSurface) {
+    void push_back(VRL &vrl, bool log) {
         if (size() >= m_maxSize)
             return;
         if (vrl.getMedium() == nullptr)
             return;
         if (vrl.flux == Spectrum(0.0))
             return;
-        /*std::ostringstream stream;
-        if (scatterOrSurface)
-            stream << "Insert from scatter:" << vrl;
-        else
-            stream << "Insert from surface:" << vrl;
+        std::ostringstream stream;
+        if (log)
+            stream << "Insert VRL:" << vrl;
                 
         std::string str = stream.str();
-        Log(LogLevel::Info, str.c_str());*/
+        Log(LogLevel::Info, str.c_str());
         m_map.emplace_back(vrl);
     }
 

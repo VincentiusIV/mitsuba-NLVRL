@@ -17,7 +17,6 @@
 #include <mitsuba/core/warp.h>
 #include <random>
 #include "photonmap.h"
-#include "bre.h"
 
 NAMESPACE_BEGIN(mitsuba)
 
@@ -32,7 +31,6 @@ public:
     MTS_IMPORT_OBJECT_TYPES()
 
     typedef PhotonMap<Float, Spectrum> PhotonMap;
-    typedef BeamRadianceEstimator<Float, Spectrum> BeamRadianceEstimator;
     typedef typename PhotonMap::PhotonData PhotonData;
 
     PhotonMapper(const Properties &props) : Base(props) {
@@ -40,7 +38,6 @@ public:
         m_globalPhotonMap = new PhotonMap(m_numLightEmissions);
         m_causticPhotonMap = new PhotonMap(m_numLightEmissions);
         m_volumePhotonMap = new PhotonMap(m_numLightEmissions);
-        m_bre = new BeamRadianceEstimator();
         m_directSamples = props.int_("directSamples", 16);
         m_glossySamples = props.int_("glossySamples", 32);
         m_rrDepth = props.int_("rrStartDepth", 5);
@@ -64,15 +61,6 @@ public:
 
     void preprocess(Scene* scene, Sensor* sensor) override {
         Log(LogLevel::Info, "Pre Processing Photon Map...");
-
-        if (is_rgb_v<Spectrum>)
-            Log(LogLevel::Info, "rgb tho");
-        if (is_monochromatic_v<Spectrum>)
-            Log(LogLevel::Info, "monochromatic tho");
-        if (is_spectral_v<Spectrum>)
-            Log(LogLevel::Info, "spectral tho");
-        if (is_polarized_v<Spectrum>)
-            Log(LogLevel::Info, "polarized tho");
 
         const Medium* startMedium;
         for each (auto shape in scene->shapes()) {
@@ -126,6 +114,7 @@ public:
             RayDifferential3f ray(rayColorPair.first);
             ray.o = Point3f(-250.0f, 200.0f, 15.0f);
             ray.d = normalize(Vector3f(0.5f, -0.3f, 0.0f));
+            ray.update();
             Spectrum flux = emitter->getUniformRadiance();
             flux *= math::Pi<float> * emitter->shape()->surface_area();
             medium = emitter->medium();
@@ -381,21 +370,6 @@ public:
         Log(LogLevel::Info, "Pre Processing done.");     
     }
 
-   /* bool onSegment(Vector3f Pi, Vector3f Pj, Vector3f Q) {
-        Float dis1  = norm(Pi - Q);
-        Float dis2  = norm(Pj - Q);
-        Float dis3  = norm(Pi - Pj);
-        if (dis3 + math::Epsilon<Float> < dis1 + dis2)
-            return false;
-        return true;
-    }
-    Vector3f stepout(Vector3f ray, Float length) {
-        Float L     = length;
-        Float len   = enoki::sqrt(ray * ray);
-        Vector3f ans(L * ray.x() / len, L * ray.y() / len, L * ray.z() / len);
-        return ans;
-    }*/
-
     std::pair<Spectrum, Mask> sample(const Scene *scene, Sampler *sampler,
                                      const RayDifferential3f &_ray,
                                      const Medium *medium, Float *aovs,
@@ -521,7 +495,6 @@ private:
     PhotonMap *m_globalPhotonMap;
     PhotonMap *m_causticPhotonMap;
     PhotonMap *m_volumePhotonMap;
-    BeamRadianceEstimator *m_bre;
 
     int m_numLightEmissions, m_directSamples, m_glossySamples, m_rrDepth, m_maxDepth,
         m_maxSpecularDepth, m_granularity;
