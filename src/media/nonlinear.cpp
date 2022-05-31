@@ -52,10 +52,8 @@ public:
     }
 
     void build(Point3f min, Point3f max) override {
-        bbox = ScalarBoundingBox3f(min, max);
-        width          = bbox.extents().x();
-        height         = bbox.extents().y();
-        depth          = bbox.extents().z();
+        Medium::build(min, max);
+       
         cellSize       = Point3f(width / resolution[0], height / resolution[1], depth / resolution[2]);
 
         arraySize = resolution[0] * resolution[1] * resolution[2];
@@ -271,7 +269,6 @@ private:
     ref<Volume> m_sigmat, m_albedo;
     NLNode *grid;
     int arraySize;
-    ScalarBoundingBox3f bbox;
     Vector3f resolution;
 
     Point3f cellSize;

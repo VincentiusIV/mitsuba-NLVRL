@@ -48,13 +48,14 @@ public:
 
         m_nbParticules = props.int_("nbParticules", 50);
         m_rrDepth      = props.int_("rrDepth", 5);
-        /* Maximum number of passes to render. -1 renders until the process is stopped. */
-        m_useLightCut = props.bool_("useLightCut", false);
+
+
 
         // VRL Options
         m_diceVRL             = props.int_("diceVRL", 1);
         m_longVRL             = props.bool_("longVRL", false);
         m_useUniformSampling  = props.bool_("useUniformSampling", false);
+        m_useLightCut = props.bool_("useLightCut", false);
         m_RRVRL               = props.bool_("RRVRL", false);
         m_scaleRR             = props.float_("scaleRR", 0.5); // 2 meters before 5%
         m_nbSamplesRay        = props.int_("nbSamplesRay", 1);
@@ -212,6 +213,8 @@ public:
                             ;
                             nli = std::move(new_nli);
                         }
+
+                        break;
                     }
 
                     masked(ray.maxt, active_medium && medium->is_homogeneous() && mi.is_valid()) = mi.t;

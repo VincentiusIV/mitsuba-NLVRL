@@ -105,10 +105,9 @@ public:
                of the transmittance */
 
         Ray3f ray(_ray);
-        if (is_homogeneous()) {
-            /*Float negLength = ray.mint - ray.maxt;
-            Spectrum transmittance(medium->max_density() != 0 ? exp(medium->max_density() * negLength) : (Float) 1.0f);
-            return transmittance;*/
+
+        if (ray.maxt < 0.0f) {
+            Log(LogLevel::Error, "attempting to sample Tr for ray with negative maxt");
         }
 
         auto [valid, mint, maxt] = intersect_aabb(ray);
@@ -118,6 +117,16 @@ public:
         masked(maxt, !active) = math::Infinity<Float>;
         ray.mint = mint = max(mint, ray.mint);
         ray.maxt = maxt = min(maxt, ray.maxt);
+
+        if (!active)
+            return Spectrum(1.0f);
+
+        if (is_homogeneous()) {
+            float negLength = ray.mint - ray.maxt;
+            Float val = enoki::exp(max_density() * negLength);
+            Spectrum transmittance(max_density() != 0 ? val : (Float) 1.0f);
+            return transmittance;
+        }
 
         int nSamples = 2; /// XXX make configurable
         Float result = 0;
@@ -137,7 +146,7 @@ public:
                 mi = sample_interaction(ray, sampler->next_1d(), channel, active);
                 t += mi.t;
                 maxt -= mi.t;
-                if (t >= maxt || !mi.is_valid()) {
+                if (maxt <= 0.0f || t >= maxt || !mi.is_valid()) {
                     result += 1;
                     break;
                 }
@@ -161,7 +170,10 @@ public:
     }
 
     virtual void build(Point3f min, Point3f max) {
-        
+        bbox   = ScalarBoundingBox3f(min, max);
+        width  = bbox.extents().x();
+        height = bbox.extents().y();
+        depth  = bbox.extents().z();
     }
 
     /// Return the phase function of this medium
@@ -208,6 +220,7 @@ protected:
     ScalarFloat m_scale;
     /// Identifier (if available)
     std::string m_id;
+    ScalarBoundingBox3f bbox;
 
     float width, height, depth;
 };

@@ -51,8 +51,8 @@ public:
         return { sigmas, sigman, sigmat };
     }
 
-    std::tuple<Mask, Float, Float>
-    intersect_aabb(const Ray3f & /* ray */) const override {
+    std::tuple<Mask, Float, Float> intersect_aabb(const Ray3f &ray) const override {
+        //return bbox.ray_intersect(ray);
         return { true, 0.f, math::Infinity<Float> };
     }
 

@@ -187,6 +187,7 @@ template <typename Float, typename Spectrum> struct VRL {
         Float tCam = sampler->next_1d() * ray.maxt;
         Float tVRL = sampler->next_1d() * length;
 
+
         return SamplingInfo{ ray.o + ray.d * tCam, tCam, origin + direction * tVRL, tVRL, length * ray.maxt };
     }
 
@@ -371,14 +372,6 @@ template <typename Float, typename Spectrum> struct VRL {
                     tRay[i] = (hPoint * tan(theta[i] - M_PI_2)) - u0Hat;
 
                     Vector dir = normalize(pVRL - ray(tRay[i]));
-                    /*const PhaseFunction *pf = m_medium->phase_function();
-                    MediumSamplingRecord mRec1;
-                    PhaseFunctionSamplingRecord psr1(mRec1, -this->direction, -dir);
-                    MediumSamplingRecord mRec2;
-                    PhaseFunctionSamplingRecord psr2(mRec2, -ray.d, dir);
-                    Float vrlPF = pf->eval(psr1);
-                    Float rayPF = pf->eval(psr2);
-                    phaseFunctions[i] = vrlPF * rayPF;*/
 
                     const PhaseFunction *pf = m_medium->phase_function();
                     Float vrlPF             = 1.0;
@@ -536,6 +529,16 @@ template <typename Float, typename Spectrum> struct VRL {
     Spectrum getContrib(const Scene *scene, const bool uniformSampling, const Ray3f &ray, Float lengthOfRay, Sampler *sampler, UInt32 channel) const {
         auto sampling = samplingVRL(scene, ray, sampler, uniformSampling, channel);
 
+        /*std::ostringstream test2;
+        test2 << "LC [" << std::endl
+              << "  uniformSampling  = " << string::indent(uniformSampling) << std::endl
+              << "  ray  = " << string::indent(ray) << std::endl
+              << "  length  = " << string::indent(length) << std::endl
+              << "  tCam  = " << string::indent(sampling.tCam) << std::endl
+              << "  tVRL = " << string::indent(sampling.tVRL) << std::endl
+              << "]";
+        Log(LogLevel::Info, test2.str().c_str());*/
+
         // Check the visibility of the two sampled points
         Vector3f dir     = sampling.pVRL - sampling.pCam;
         Float lengthPtoP = norm(dir);
@@ -566,11 +569,27 @@ template <typename Float, typename Spectrum> struct VRL {
         mediumRay.mint = 0;
         mediumRay.maxt = sampling.tCam;
 
+        /*std::ostringstream test1;
+        test1 << "LC [" << std::endl
+            << "  mediumRay  = " << string::indent(mediumRay) << std::endl
+            << "]";
+        Log(LogLevel::Info, test1.str().c_str());*/
+
         Spectrum rayTrans = m_medium->evalMediumTransmittance(mediumRay, sampler, active);
 
         Ray3f mediumVRL(origin, direction, 0);
         mediumVRL.mint    = 0;
         mediumVRL.maxt    = sampling.tVRL;
+
+         /*std::ostringstream test2;
+        test2 << "LC [" << std::endl
+            << "  mediumVRL  = " << string::indent(mediumVRL) << std::endl 
+            << "  ray  = " << string::indent(ray) << std::endl 
+            << "  sampling.tCam  = " << string::indent(sampling.tCam) << std::endl 
+            << "  sampling.tVRL = " << string::indent(sampling.tVRL) << std::endl 
+            << "  length  = " << string::indent(length) << std::endl
+            << "]";
+        Log(LogLevel::Info, test2.str().c_str());*/
 
         Spectrum vrlTrans = m_medium->evalMediumTransmittance(mediumVRL, sampler, active);
 
@@ -592,9 +611,9 @@ template <typename Float, typename Spectrum> struct VRL {
         auto [sigmaSRay, sigmaNRay, sigmaTRay] = m_medium->get_scattering_coefficients(mi2, active);
 
         Spectrum result = flux * fallOff                             // = nan
-                          * vrlTrans                                 // 1.0 if short beams
                           * vrlPF                                    // Fs(theta u0)
                           * rayPF                                    // Fs(theta uv)
+                          * vrlTrans                                 // 1.0 if short beams
                           * rayTrans                                 // = 0
                           * vrlToRayTrans                            // = 0
                           * sigmaSRay * sigmaSVRL * sampling.invPDF; // = nan
@@ -605,7 +624,7 @@ template <typename Float, typename Spectrum> struct VRL {
 #endif
         {
             std::ostringstream stream;
-            stream << "Contrib VRL = [flux:" << flux << ", fallOff:" << fallOff << ", vrlTrans:" << vrlTrans << ", vrlPF:" << vrlPF << ", rayPF:" << rayPF << ", rayTrans:" << rayTrans
+            stream << "Contrib VRL = [ray:" << ray << ", flux:" << flux << ", fallOff:" << fallOff << ", vrlTrans:" << vrlTrans << ", vrlPF:" << vrlPF << ", rayPF:" << rayPF << ", rayTrans:" << rayTrans
                    << ", vrlToRayTrans:" << vrlToRayTrans << ", sigmaSRay:" << sigmaSRay << ", sigmaSVRL:" << sigmaSVRL << ", invPDF:" << sampling.invPDF << ", result = " << result;
             std::string str = stream.str();
             Log(LogLevel::Info, str.c_str());

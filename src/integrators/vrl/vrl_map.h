@@ -202,7 +202,7 @@ public:
                 VRLPercentagePruned.incrementBase(m_map.size());*/
             } else if (m_accel == ELightCutAcceleration) {
                 VRLLightCut::LCQuery query{ ray, sampler, 0 };
-                Li += m_lc->query(scene, sampler, query, nb_BBIntersection, channel) * m_scale;
+                Li += m_lc->query(scene, sampler, query, nb_BBIntersection, useUniformSampling, channel) * m_scale;
                 nb_evaluation += query.nb_evaluation;
             } else {
                 Log(LogLevel::Error, "query for acceleration is not implemented");
