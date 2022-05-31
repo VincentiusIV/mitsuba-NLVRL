@@ -107,7 +107,7 @@ public:
         Ray3f ray(_ray);
 
         if (ray.maxt < 0.0f) {
-            Log(LogLevel::Error, "attempting to sample Tr for ray with negative maxt");
+            Log(LogLevel::Warn, "attempting to sample Tr for ray with negative maxt");
         }
 
         auto [valid, mint, maxt] = intersect_aabb(ray);

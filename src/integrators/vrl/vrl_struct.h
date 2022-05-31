@@ -112,11 +112,11 @@ template <typename Float, typename Spectrum> struct VRL {
         Vector3f v = r.d * r.maxt;
         Vector3f w = Vector3f(origin - r.o);
 
-        Float a = enoki::dot(u, u);
-        Float b = enoki::dot(u, v); // = nan
-        Float c = enoki::dot(v, v); // = inf
-        Float d = enoki::dot(u, w);
-        Float e = enoki::dot(v, w); // = -nan
+        Float a = dot(u, u);
+        Float b = dot(u, v);
+        Float c = dot(v, v);
+        Float d = dot(u, w);
+        Float e = dot(v, w);
 
         Float D = a * c - b * b;
 
@@ -186,19 +186,12 @@ template <typename Float, typename Spectrum> struct VRL {
     SamplingInfo sampleMC(const Ray3f &ray, Sampler *sampler) const {
         Float tCam = sampler->next_1d() * ray.maxt;
         Float tVRL = sampler->next_1d() * length;
-
-
         return SamplingInfo{ ray.o + ray.d * tCam, tCam, origin + direction * tVRL, tVRL, length * ray.maxt };
     }
 
 #define USE_PEAK_SAMPLING 0
 #define USE_ANISOTROPIC_SAMPLING 1
-    SamplingInfo samplingVRL(const Scene *scene, const Ray3f &ray, Sampler *sampler, bool uniformSampling, UInt32 channel) const {
-
-        if (std::isinf(ray.maxt)) {
-            Log(LogLevel::Error, "Cannot sample a point on an infinite ray!");
-        }
-
+    SamplingInfo samplingVRL(const Scene* scene, const Ray3f &ray, Sampler *sampler, bool uniformSampling, UInt32 channel) const {
         if (uniformSampling) {
             return sampleMC(ray, sampler);
         } else {
@@ -210,10 +203,8 @@ template <typename Float, typename Spectrum> struct VRL {
             }();
 
             // prevent degenerative cases when VRL/sensor are very close
-            if (h == 0.0) {
-                Log(LogLevel::Warn, "VRL/sensor very close");
+            if (h == 0.0)
                 return SamplingInfo::invalid();
-            }
             h = safe_sqrt(h);
 
             // Code from sampling VRL points
@@ -251,25 +242,21 @@ template <typename Float, typename Spectrum> struct VRL {
                 // Equation 13
                 Float a0 = A(v0Hat, h, sinTheta);
                 Float a1 = A(v1Hat, h, sinTheta);
-                Float v  = (h * std::sinh(lerp(r, a0, a1))) / sinTheta;
+                Float v  = (h * std::sinh(enoki::lerp(a0, a1, r))) / sinTheta;
 
                 // Equation 10 and 11
-                Float invPDF = (a1 - a0) * sqrt(h * h + v * v * sinTheta * sinTheta);
+                Float invPDF = (a1 - a0) * std::sqrt(h * h + v * v * sinTheta * sinTheta);
                 invPDF /= sinTheta;
                 return VRLSampling{ v, invPDF };
             };
 
             auto sampling_vrl = inverseCDF_A(sampler->next_1d(), v0Hat, v1Hat, h, sinTheta);
             // Rechange the variable from vHat to V;
-            Point3f pVRL = origin + direction * (sampling_vrl.vHat + closest_point.tVRL);
-            // vHat = nan, tVRL = nan
+            Float tVRL = (sampling_vrl.vHat + closest_point.tVRL);
+            Point3f pVRL = origin + direction * tVRL;
+
             // sample point on camera ray using Kulla and al. : section 4.1
-#if USE_ANISOTROPIC_SAMPLING
-            const PhaseFunction *pf = m_medium->phase_function();
-            if (has_flag(pf->flags(true), PhaseFunctionFlags::Isotropic)) {
-#else
             if (true) {
-#endif
                 Float uHat  = dot(ray.d, (pVRL - ray.o));
                 Float u0Hat = -uHat;
                 Float u1Hat = ray.maxt + u0Hat;
@@ -282,25 +269,39 @@ template <typename Float, typename Spectrum> struct VRL {
                     auto B       = [](Float x, Float h) -> Float { return atan(x / h); };
                     Float thetaA = B(u0, h);
                     Float thetaB = B(u1, h);
-                    Float uHat   = h * tan(lerp(eps, thetaA, thetaB));
+                    Float uHat   = h * tan(enoki::lerp(thetaA, thetaB, eps));
                     return RaySampling{ uHat, (thetaB - thetaA) * (h * h + uHat * uHat) / h };
                 };
-                Float hPoint      = norm((ray.o + ray.d * uHat) - (pVRL));
+                Float hPoint      = norm(ray.o + ray.d * uHat - pVRL);
                 auto sampling_ray = inverseCDF_B(sampler->next_1d(), u0Hat, u1Hat, hPoint);
-                Point3f pCam      = ray.o + ray.d * (sampling_ray.uHat - u0Hat);
+                Float tCam = (sampling_ray.uHat - u0Hat); 
+                Point3f pCam      = ray.o + ray.d * tCam;
 
-                return SamplingInfo{ pCam, (sampling_ray.uHat - u0Hat), pVRL, (sampling_vrl.vHat + closest_point.tVRL), sampling_vrl.invPDF * sampling_ray.invPDF };
+                /*std::ostringstream oss;
+                oss << "Found node for origin[" << std::endl
+                    << "  ray  = " << string::indent(ray) << std::endl
+                    << "  vrl.o  = " << origin << std::endl
+                    << "  vrl.d  = " << direction << std::endl
+                    << "  vrl.length  = " << length << std::endl
+                    << "  tCam  = " << string::indent(tCam) << std::endl
+                    << "  ClosestPointInfo.tCam  = " << string::indent(closest_point.tCam) << std::endl
+                    << "  tVRL  = " << string::indent(tVRL) << std::endl
+                    << "  ClosestPointInfo.tVRL  = " << string::indent(closest_point.tVRL) << std::endl
+                    << "]";
+                Log(LogLevel::Info, oss.str().c_str());*/
+
+                return SamplingInfo{ pCam, tCam, pVRL, tVRL, sampling_vrl.invPDF * sampling_ray.invPDF };
             } else {
                 // Anisotropic phase function
                 // Note this code is not "battle" tested.
 
 #define CDF_LENGHT 10
                 // Precompute values (Appendix 1)
-                Vector3f a            = (ray.o - pVRL);
+                Vector a              = (ray.o - pVRL);
                 Float distVRLtoOrigin = norm(a);
                 a /= distVRLtoOrigin;
-                Vector3f b = normalize(ray(ray.maxt) - pVRL);
-                Vector3f c = cross(a, b);
+                Vector b = normalize(ray(ray.maxt) - pVRL);
+                Vector c = cross(a, b);
 
                 // Initialize the thetas
                 // These will be used to sample the interval
@@ -310,7 +311,7 @@ template <typename Float, typename Spectrum> struct VRL {
                 Float uHat            = dot(ray.d, (pVRL - ray.o));
                 Float u0Hat           = -uHat;
                 Float u1Hat           = ray.maxt + u0Hat;
-                Float hPoint          = norm((ray.o + ray.d * uHat) - pVRL);
+                Float hPoint          = norm(ray.o + ray.d * uHat - pVRL);
                 theta[0]              = atan(u0Hat / hPoint) + M_PI_2;
                 theta[CDF_LENGHT - 1] = atan(u1Hat / hPoint) + M_PI_2;
 
@@ -365,36 +366,23 @@ template <typename Float, typename Spectrum> struct VRL {
                 Float tRay[CDF_LENGHT];           //< The distance on the camera ray
                 Float phaseFunctions[CDF_LENGHT]; //< The product of phase functions
                 Float thetaRayVPL = acos(dot(-a, ray.d));
-                Mask active       = true;
                 for (int i = 0; i < CDF_LENGHT; i++) {
 
                     // Uses kulla equation to get the distance on the camera ray
                     tRay[i] = (hPoint * tan(theta[i] - M_PI_2)) - u0Hat;
 
-                    Vector dir = normalize(pVRL - ray(tRay[i]));
+                    Vector3f dir             = normalize(pVRL - ray(tRay[i]));
 
-                    const PhaseFunction *pf = m_medium->phase_function();
-                    Float vrlPF             = 1.0;
-                    Float rayPF             = 1.0;
+                    Mask active = true;
 
-                    Spectrum sigmaSRay, sigmaSVRL;
+                    MediumInteraction3f mi1, mi2;
+                    mi1.wi = -direction;
+                    mi2.wi = -ray.d;
                     PhaseFunctionContext phase_ctx1(sampler), phase_ctx2(sampler);
 
-                    Ray3f mediumVRL(origin, direction, 0);
-
-                    SurfaceInteraction3f vrl_si  = scene->ray_intersect(mediumVRL);
-                    MediumInteraction3f vrl_mi   = m_medium->sample_interaction(mediumVRL, sampler->next_1d(), channel, active);
-                    auto [vrl_tr, vrl_pdf]       = m_medium->eval_tr_and_pdf(vrl_mi, vrl_si, active);
-                    sigmaSVRL                    = vrl_mi.sigma_s;
-                    auto [vrl_wo, vrl_phase_pdf] = pf->sample(phase_ctx1, vrl_mi, sampler->next_2d(active), active);
-                    vrlPF                        = pf->eval(phase_ctx1, vrl_mi, vrl_wo, active);
-
-                    SurfaceInteraction3f ray_si  = scene->ray_intersect(ray);
-                    MediumInteraction3f ray_mi   = m_medium->sample_interaction(ray, sampler->next_1d(), channel, active);
-                    auto [ray_tr, ray_pdf]       = m_medium->eval_tr_and_pdf(ray_mi, ray_si, active);
-                    sigmaSRay                    = ray_mi.sigma_s;
-                    auto [ray_wo, ray_phase_pdf] = pf->sample(phase_ctx2, ray_mi, sampler->next_2d(active), active);
-                    rayPF                        = pf->eval(phase_ctx2, ray_mi, ray_wo, active);
+                    const PhaseFunction *pf = m_medium->phase_function();
+                    Float vrlPF             = pf->eval(phase_ctx1, mi1, -dir);
+                    Float rayPF             = pf->eval(phase_ctx2, mi2, dir);
 
                     phaseFunctions[i] = vrlPF * rayPF;
                 }
@@ -529,16 +517,6 @@ template <typename Float, typename Spectrum> struct VRL {
     Spectrum getContrib(const Scene *scene, const bool uniformSampling, const Ray3f &ray, Float lengthOfRay, Sampler *sampler, UInt32 channel) const {
         auto sampling = samplingVRL(scene, ray, sampler, uniformSampling, channel);
 
-        /*std::ostringstream test2;
-        test2 << "LC [" << std::endl
-              << "  uniformSampling  = " << string::indent(uniformSampling) << std::endl
-              << "  ray  = " << string::indent(ray) << std::endl
-              << "  length  = " << string::indent(length) << std::endl
-              << "  tCam  = " << string::indent(sampling.tCam) << std::endl
-              << "  tVRL = " << string::indent(sampling.tVRL) << std::endl
-              << "]";
-        Log(LogLevel::Info, test2.str().c_str());*/
-
         // Check the visibility of the two sampled points
         Vector3f dir     = sampling.pVRL - sampling.pCam;
         Float lengthPtoP = norm(dir);
@@ -569,28 +547,11 @@ template <typename Float, typename Spectrum> struct VRL {
         mediumRay.mint = 0;
         mediumRay.maxt = sampling.tCam;
 
-        /*std::ostringstream test1;
-        test1 << "LC [" << std::endl
-            << "  mediumRay  = " << string::indent(mediumRay) << std::endl
-            << "]";
-        Log(LogLevel::Info, test1.str().c_str());*/
-
         Spectrum rayTrans = m_medium->evalMediumTransmittance(mediumRay, sampler, active);
 
         Ray3f mediumVRL(origin, direction, 0);
         mediumVRL.mint    = 0;
         mediumVRL.maxt    = sampling.tVRL;
-
-         /*std::ostringstream test2;
-        test2 << "LC [" << std::endl
-            << "  mediumVRL  = " << string::indent(mediumVRL) << std::endl 
-            << "  ray  = " << string::indent(ray) << std::endl 
-            << "  sampling.tCam  = " << string::indent(sampling.tCam) << std::endl 
-            << "  sampling.tVRL = " << string::indent(sampling.tVRL) << std::endl 
-            << "  length  = " << string::indent(length) << std::endl
-            << "]";
-        Log(LogLevel::Info, test2.str().c_str());*/
-
         Spectrum vrlTrans = m_medium->evalMediumTransmittance(mediumVRL, sampler, active);
 
         Float fallOff = 1.0f / (lengthPtoP * lengthPtoP);

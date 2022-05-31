@@ -6,7 +6,7 @@
 		<integer name="targetVRLs" value="100"/>
 		<integer name="samplesPerQuery" value="2"/>
 		<boolean name="useUniformSampling" value="false"/>
-		<boolean name="useLightCut" value="false"/>
+		<boolean name="useLightCut" value="true"/>
     </integrator>
 
 </scene>
