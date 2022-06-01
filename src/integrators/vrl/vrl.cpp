@@ -105,6 +105,7 @@ public:
 
         static int greatestDepth = 0;
         ScalarFloat emitter_pdf  = 1.f / scene->emitters().size();
+        int volumeLightCount = 0;
 
         for (int index = 0; index < m_numLightEmissions; index++) {
             sampler->advance();
@@ -121,9 +122,9 @@ public:
             emitter           = sampleEmitter(scene, sampler->next_2d(), true);
             auto rayColorPair = emitter->sample_ray(0.0, sampler->next_1d(), sampler->next_2d(), sampler->next_2d());
             Ray3f ray(rayColorPair.first);
-            ray.o = Point3f(-250.0f, 200.0f, 15.0f);
+            /*ray.o = Point3f(-250.0f, 200.0f, 15.0f);
             ray.d = normalize(Vector3f(0.5f, -0.3f, 0.0f));
-            ray.update();
+            ray.update();*/
             Spectrum flux = emitter->getUniformRadiance();
             flux *= math::Pi<float> * emitter->shape()->surface_area();
             medium = emitter->medium();
@@ -264,7 +265,9 @@ public:
                         masked(throughput, not_spectral && act_medium_scatter) *= mi.sigma_s / mi.sigma_t;
 
                     tempVRL.setEndPoint(mi.p);
-                    m_vrlMap->push_back(std::move(tempVRL), false);
+                    m_vrlMap->push_back(std::move(tempVRL), false);/*
+                    if (m_vrlMap->push_back(std::move(tempVRL), false))
+                        ++volumeLightCount;*/
                     tempVRL = VRL(mi.p, medium, throughput * flux, depth, channel);
 
                     PhaseFunctionContext phase_ctx(sampler);
@@ -295,7 +298,9 @@ public:
                         break;
 
                     tempVRL.setEndPoint(si.p);
-                    m_vrlMap->push_back(std::move(tempVRL), false);
+                    m_vrlMap->push_back(std::move(tempVRL), false);/*
+                    if(m_vrlMap->push_back(std::move(tempVRL), false))
+                        ++volumeLightCount;*/
 
                     handleSurfaceInteraction(ray, depth, delta, si, medium, flux * throughput);
 
@@ -343,6 +348,10 @@ public:
 
                 active &= (active_surface | active_medium);
             }
+
+            ++volumeLightCount;
+            if (!m_vrlMap->can_add())
+                break;
         }
 
         std::string desad = "greatest depth = " + std::to_string(greatestDepth);
@@ -394,7 +403,7 @@ public:
             // If needed, an acceleration data structure is build on the fly
 
             // is this correct?
-            m_vrlMap->setScaleFactor(1.0 / m_vrlMap->size());
+            m_vrlMap->setScaleFactor(1.0 / volumeLightCount);
             m_vrlMap->build(scene, m_useLightCut ? ELightCutAcceleration : ENoVRLAcceleration, sampler, m_thresholdBetterDist, m_thresholdError);
         } else {
             Log(LogLevel::Info, "No VRLs");

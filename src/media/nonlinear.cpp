@@ -69,15 +69,6 @@ public:
                     ScalarBoundingBox3f newBox(min, max);                    
                     NLNode newNode(newBox, calculateIoR(newBox.center()));
                     grid[arrayIndex++] = std::move(newNode);
-
-                    std::ostringstream oss;
-                    oss << "New Node[" << std::endl
-                        << "  min = " << string::indent(min) << std::endl
-                        << "  max  = " << string::indent(max) << std::endl
-                        << "  ior  = " << string::indent(newNode.ior) << std::endl
-                        << "]";
-                    Log(LogLevel::Info, oss.str().c_str());
-
                 }
             }
         }   

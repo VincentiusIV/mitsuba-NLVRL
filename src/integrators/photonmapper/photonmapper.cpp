@@ -112,8 +112,8 @@ public:
             emitter = sampleEmitter(scene, sampler->next_2d(), true);
             auto rayColorPair = emitter->sample_ray(0.0, sampler->next_1d(), sampler->next_2d(), sampler->next_2d());
             RayDifferential3f ray(rayColorPair.first);
-            ray.o = Point3f(-250.0f, 200.0f, 15.0f);
-            ray.d = normalize(Vector3f(0.5f, -0.3f, 0.0f));
+            /*ray.o = Point3f(-250.0f, 200.0f, 15.0f);
+            ray.d = normalize(Vector3f(0.5f, -0.3f, 0.0f));*/
             ray.update();
             Spectrum flux = emitter->getUniformRadiance();
             flux *= math::Pi<float> * emitter->shape()->surface_area();

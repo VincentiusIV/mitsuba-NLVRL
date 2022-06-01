@@ -59,20 +59,24 @@ public:
         //}
     }
 
-    void push_back(VRL &vrl, bool log) {
-        if (size() >= m_maxSize)
-            return;
+    bool can_add() {
+        return (size() < m_maxSize);
+    }
+
+    bool push_back(VRL &vrl, bool log) {
+        if (!can_add())
+            return false;
         if (vrl.getMedium() == nullptr)
-            return;
+            return false;
         if (vrl.flux == Spectrum(0.0))
-            return;
-        std::ostringstream stream;
+            return false;
+        /*std::ostringstream stream;
         if (log)
-            stream << "Insert VRL:" << vrl;
-                
+            stream << "Insert VRL:" << vrl;                
         std::string str = stream.str();
-        Log(LogLevel::Info, str.c_str());
+        Log(LogLevel::Info, str.c_str());*/
         m_map.emplace_back(vrl);
+        return true;
     }
 
     virtual ~VRLMap() {}
@@ -102,6 +106,10 @@ public:
 
     void build(const Scene *scene, EVRLAcceleration accel, Sampler *sampler, int thresholdBetterDist, Float thresholdError) {
         m_accel = accel;
+        std::ostringstream stream;
+        stream << "Building VRL map... Scale factor = " << m_scale;
+        std::string str = stream.str();
+        Log(LogLevel::Info, str.c_str());
         if (m_accel == ENoVRLAcceleration) {
             Log(LogLevel::Info, "No VRL acceleration.");
             // Nothing to do
