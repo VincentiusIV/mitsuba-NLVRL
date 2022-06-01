@@ -3,11 +3,11 @@
 	
 	<integrator type="vrl">
 		<integer name="lightEmissions" value="10000"/>
-		<integer name="targetVRLs" value="10000"/>
+		<integer name="targetVRLs" value="100"/>
 		<integer name="samplesPerQuery" value="1"/>
 		<boolean name="useUniformSampling" value="false"/>
-		<boolean name="useLightCut" value="true"/>
-		<boolean name="useNonLinear" value="true"/>
+		<boolean name="useLightCut" value="false"/>
+		<boolean name="useNonLinear" value="false"/>
     </integrator>
 
 </scene>
