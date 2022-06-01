@@ -2,11 +2,12 @@
     <include filename="cbox-nonlinear-homo.xml"/>
 	
 	<integrator type="vrl">
-		<integer name="lightEmissions" value="1000000"/>
-		<integer name="targetVRLs" value="100"/>
-		<integer name="samplesPerQuery" value="2"/>
+		<integer name="lightEmissions" value="10000"/>
+		<integer name="targetVRLs" value="10000"/>
+		<integer name="samplesPerQuery" value="1"/>
 		<boolean name="useUniformSampling" value="false"/>
 		<boolean name="useLightCut" value="true"/>
+		<boolean name="useNonLinear" value="true"/>
     </integrator>
 
 </scene>

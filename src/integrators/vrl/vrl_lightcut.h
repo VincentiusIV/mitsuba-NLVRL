@@ -232,7 +232,11 @@ public:
                     childrenEstimates += estimate;
                     Li += estimate;
                     if (!child_cluster->isLeaf) {
-                        CutCluster new_cut = { child_cluster, getClusterUpperBound(scene, sampler, *child_cluster, query.ray, channel, nb_BBIntersection), std::move(estimate) };
+                        CutCluster new_cut = { 
+                            child_cluster, 
+                            getClusterUpperBound(scene, sampler, *child_cluster, query.ray, channel, nb_BBIntersection), 
+                            std::move(estimate) 
+                        };
                         refiningCut.emplace(std::move(new_cut));
                     }
                 }
@@ -305,6 +309,7 @@ private:
         Point3f min_aabb_point = Point3f(0.0);
         if (cluster.nodes.size() > m_thresholdBetterDist) {
             min_length = cluster.aabb.getMinDistanceSqr(r);
+            min_length = safe_sqrt(min_length);
 
             // increment number of bounding volume intersection counter
             // nb_BBIntersection++;
@@ -342,12 +347,10 @@ private:
             rayOtoPonCluster.mint = 0;
             rayOtoPonCluster.maxt = min_length;
 
-
-
-            MediumInteraction3f ray_mi  = medium->sample_interaction(rayOtoPonCluster, sampler->next_1d(), channel, active);
-           
             transmittance = medium->evalMediumTransmittance(rayOtoPonCluster, sampler, active);
 
+            MediumInteraction3f ray_mi;
+            ray_mi.p                         = r.o;
             auto [sigma_s, sigma_n, sigma_t] = medium->get_scattering_coefficients(ray_mi, active);
             material *= sigma_s;
             material *= sigma_s;

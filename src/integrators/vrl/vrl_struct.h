@@ -199,13 +199,13 @@ template <typename Float, typename Spectrum> struct VRL {
             auto h             = [&closest_point, this, &ray]() -> Float {
                 Point3f vh = origin + direction * closest_point.tVRL;
                 Point3f uh = ray.o + ray.d * closest_point.tCam;
-                return squared_norm(uh - vh);
+                return enoki::squared_norm(uh - vh);
             }();
 
             // prevent degenerative cases when VRL/sensor are very close
             if (h == 0.0)
                 return SamplingInfo::invalid();
-            h = safe_sqrt(h);
+            h = enoki::safe_sqrt(h);
 
             // Code from sampling VRL points
             // Section 4.1
@@ -213,13 +213,13 @@ template <typename Float, typename Spectrum> struct VRL {
             Float v1Hat = length + v0Hat;
 
             // Compute the sin(theta) using cross product
-            Float sinTheta = squared_norm(cross(direction, ray.d));
+            Float sinTheta = enoki::squared_norm(enoki::cross(direction, ray.d));
             if (sinTheta == 0) {
                 Log(LogLevel::Warn, "Parallel vectors");
                 return SamplingInfo::invalid();
             }
             assert(sinTheta > 0);
-            sinTheta = safe_sqrt(sinTheta);
+            sinTheta = enoki::safe_sqrt(sinTheta);
 
             // Alternative code for compute sin(theta) much slower
             // TODO: Direct formula for computing sin theta
@@ -236,16 +236,16 @@ template <typename Float, typename Spectrum> struct VRL {
                 auto A = [](Float x, Float h, Float sinTheta) -> Float {
                     // TODO: Check if a better and more efficient alternative is available
                     //  for computing the asinh function
-                    auto asinh = [](const Float value) -> Float { return std::log(value + std::sqrt(value * value + 1)); };
+                    auto asinh = [](const Float value) -> Float { return enoki::log(value + enoki::sqrt(value * value + 1)); };
                     return asinh((x / h) * sinTheta);
                 };
                 // Equation 13
                 Float a0 = A(v0Hat, h, sinTheta);
                 Float a1 = A(v1Hat, h, sinTheta);
-                Float v  = (h * std::sinh(enoki::lerp(a0, a1, r))) / sinTheta;
+                Float v  = (h * enoki::sinh(enoki::lerp(a0, a1, r))) / sinTheta;
 
                 // Equation 10 and 11
-                Float invPDF = (a1 - a0) * std::sqrt(h * h + v * v * sinTheta * sinTheta);
+                Float invPDF = (a1 - a0) * enoki::sqrt(h * h + v * v * sinTheta * sinTheta);
                 invPDF /= sinTheta;
                 return VRLSampling{ v, invPDF };
             };
@@ -257,7 +257,7 @@ template <typename Float, typename Spectrum> struct VRL {
 
             // sample point on camera ray using Kulla and al. : section 4.1
             if (true) {
-                Float uHat  = dot(ray.d, (pVRL - ray.o));
+                Float uHat  = enoki::dot(ray.d, (pVRL - ray.o));
                 Float u0Hat = -uHat;
                 Float u1Hat = ray.maxt + u0Hat;
 
@@ -266,29 +266,36 @@ template <typename Float, typename Spectrum> struct VRL {
                     Float invPDF;
                 };
                 auto inverseCDF_B = [](Float eps, Float u0, Float u1, Float h) -> RaySampling {
-                    auto B       = [](Float x, Float h) -> Float { return atan(x / h); };
+                    auto B       = [](Float x, Float h) -> Float { return enoki::atan(x / h); };
                     Float thetaA = B(u0, h);
                     Float thetaB = B(u1, h);
-                    Float uHat   = h * tan(enoki::lerp(thetaA, thetaB, eps));
+                    Float uHat   = h * enoki::tan(enoki::lerp(thetaA, thetaB, eps));
                     return RaySampling{ uHat, (thetaB - thetaA) * (h * h + uHat * uHat) / h };
                 };
-                Float hPoint      = norm(ray.o + ray.d * uHat - pVRL);
+                Float hPoint      = enoki::norm(ray.o + ray.d * uHat - pVRL);
                 auto sampling_ray = inverseCDF_B(sampler->next_1d(), u0Hat, u1Hat, hPoint);
                 Float tCam = (sampling_ray.uHat - u0Hat); 
                 Point3f pCam      = ray.o + ray.d * tCam;
 
-                /*std::ostringstream oss;
-                oss << "Found node for origin[" << std::endl
-                    << "  ray  = " << string::indent(ray) << std::endl
-                    << "  vrl.o  = " << origin << std::endl
-                    << "  vrl.d  = " << direction << std::endl
-                    << "  vrl.length  = " << length << std::endl
-                    << "  tCam  = " << string::indent(tCam) << std::endl
-                    << "  ClosestPointInfo.tCam  = " << string::indent(closest_point.tCam) << std::endl
-                    << "  tVRL  = " << string::indent(tVRL) << std::endl
-                    << "  ClosestPointInfo.tVRL  = " << string::indent(closest_point.tVRL) << std::endl
-                    << "]";
-                Log(LogLevel::Info, oss.str().c_str());*/
+                // TODO: This shouldnt be necessary, but sometimes the value is slightly below/above 0.0/length
+                tCam = enoki::clamp(tCam, 0.0f, ray.maxt);
+                tVRL = enoki::clamp(tVRL, 0.0f, length);
+
+                if (tCam < 0 || tVRL < 0 || tCam > ray.maxt || tVRL > length) {
+                    std::ostringstream oss;
+                    oss << "t out of range [" << std::endl
+                        << "  ray  = " << string::indent(ray) << std::endl
+                        << "  vrl.o  = " << origin << std::endl
+                        << "  vrl.d  = " << direction << std::endl
+                        << "  vrl.length  = " << length << std::endl
+                        << "  tCam  = " << string::indent(tCam) << std::endl
+                        << "  ClosestPointInfo.tCam  = " << string::indent(closest_point.tCam) << std::endl
+                        << "  tVRL  = " << string::indent(tVRL) << std::endl
+                        << "  ClosestPointInfo.tVRL  = " << string::indent(closest_point.tVRL) << std::endl
+                        << "]";
+                    Log(LogLevel::Error, oss.str().c_str());
+                }
+
 
                 return SamplingInfo{ pCam, tCam, pVRL, tVRL, sampling_vrl.invPDF * sampling_ray.invPDF };
             } else {

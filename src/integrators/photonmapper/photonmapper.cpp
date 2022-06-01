@@ -410,6 +410,10 @@ public:
 
                 Ray3f mediumRay = si.spawn_ray(ray.d);
                 ray = std::move(mediumRay);
+
+                mediumRay.maxt = t;
+                throughput *= medium->evalMediumTransmittance(mediumRay, sampler, active);
+
                 si = scene->ray_intersect(ray, active);
                 Vector3f gatherPoint = ray.o;
 
@@ -417,6 +421,20 @@ public:
                     while (t < si.t) {
                         radiance += m_volumePhotonMap->estimateRadianceVolume(gatherPoint, mediumRay.d, medium, sampler, m_volumeLookupRadius, m_volumePhotons) * throughput;
                         t += m_volumeLookupRadius * 2;
+                        mediumRay.o = gatherPoint;
+                        mediumRay.maxt = m_volumeLookupRadius * 2;
+                       /* throughput *= medium->evalMediumTransmittance(mediumRay, sampler, active);
+
+                        MediumInteraction3f mi1;
+                        mi1.wi = -mediumRay.d;
+                        PhaseFunctionContext phase_ctx1(sampler);
+
+                        const PhaseFunction *pf = medium->phase_function();
+                        Float rayPF             = pf->eval(phase_ctx1, mi1, mediumRay.d);
+                        mi1.p = mediumRay.o;
+                        auto [sigmaSVRL, sigmaNVRL, sigmaTVRL] = medium->get_scattering_coefficients(mi1, active);*/
+                        //throughput *= rayPF * sigmaSVRL / sigmaTVRL;
+
                         gatherPoint = ray(t);
                     }
                     radiance += m_volumePhotonMap->estimateRadianceVolume(gatherPoint, mediumRay.d, medium, sampler, m_volumeLookupRadius, m_volumePhotons) * throughput;

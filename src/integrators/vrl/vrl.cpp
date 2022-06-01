@@ -55,6 +55,7 @@ public:
         m_diceVRL             = props.int_("diceVRL", 1);
         m_longVRL             = props.bool_("longVRL", false);
         m_useUniformSampling  = props.bool_("useUniformSampling", false);
+        m_useNonLinear        = props.bool_("useNonLinear", true);
         m_useLightCut = props.bool_("useLightCut", false);
         m_RRVRL               = props.bool_("RRVRL", false);
         m_scaleRR             = props.float_("scaleRR", 0.5); // 2 meters before 5%
@@ -172,7 +173,7 @@ public:
                 if (any_or<true>(active_medium)) {
                     mi = medium->sample_interaction(ray, sampler->next_1d(active_medium), channel, active_medium);
 
-                    if (mi.is_valid() && medium->is_nonlinear()) {
+                    if (m_useNonLinear && mi.is_valid() && medium->is_nonlinear()) {
                         nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
 
                         for (size_t i = 0; i < 100; i++) {
@@ -214,7 +215,7 @@ public:
                             nli = std::move(new_nli);
                         }
 
-                        break;
+                        //break;
                     }
 
                     masked(ray.maxt, active_medium && medium->is_homogeneous() && mi.is_valid()) = mi.t;
@@ -535,6 +536,7 @@ private:
     bool m_longVRL;
     int m_diceVRL;
     bool m_useUniformSampling;
+    bool m_useNonLinear;
     bool m_RRVRL;
     Float m_scaleRR;
     int m_nbSamplesRay; //< Mostly for the VPL
