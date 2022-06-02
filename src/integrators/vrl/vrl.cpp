@@ -37,7 +37,7 @@ public:
         m_globalPhotons               = props.int_("globalPhotons", 250000);
         m_causticPhotons              = props.int_("causticPhotons", 250000);
         m_targetVRLs                  = props.int_("targetVRLs", 1000);
-        m_volumeLookupRadiusRelative  = props.float_("volumeLookupRadiusRelative", 0.01f);
+        m_volumeLookupRadiusRelative  = props.float_("volumeLookupRadiusRelative", 0.005f);
         m_globalLookupRadiusRelative  = props.float_("globalLookupRadiusRelative", 0.05f);
         m_causticLookupRadiusRelative = props.float_("causticLookupRadiusRelative", 0.0125f);
         m_globalLookupSize            = props.int_("globalLookupSize", 120);
@@ -122,9 +122,12 @@ public:
             emitter           = sampleEmitter(scene, sampler->next_2d(), true);
             auto rayColorPair = emitter->sample_ray(0.0, sampler->next_1d(), sampler->next_2d(), sampler->next_2d());
             Ray3f ray(rayColorPair.first);
+
+            // TODO: Find a better way to make laser...
             /*ray.o = Point3f(-250.0f, 200.0f, 15.0f);
             ray.d = normalize(Vector3f(0.5f, -0.3f, 0.0f));
             ray.update();*/
+
             Spectrum flux = emitter->getUniformRadiance();
             flux *= math::Pi<float> * emitter->shape()->surface_area();
             medium = emitter->medium();

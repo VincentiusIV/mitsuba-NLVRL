@@ -211,8 +211,8 @@ public:
 
             mi1.wi = -photonData.direction;
             Float photonPF = pf->eval(phase_ctx1, mi1, wo);
-
-            result += photonData.power * photonPF;
+            Float sqrTerm  = 1.0f - searchResult.distSquared * invSquaredRadius;
+            result += photonData.power * photonPF * (sqrTerm * sqrTerm);
         }
         result *= m_scale;
         result /= (UNIT_SPHERE_VOLUME * searchRadius * searchRadius * searchRadius);

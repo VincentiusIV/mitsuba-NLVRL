@@ -3,8 +3,8 @@
 	
 	<integrator type="photonmap">
 		<integer name="lightEmissions" value="1000000"/>
-		<integer name="volumeLookupSize" value="1000"/>
-		<float name="volumeLookupRadiusRelative" value="0.01"/>
+		<integer name="volumeLookupSize" value="120"/>
+		<float name="volumeLookupRadiusRelative" value="0.05"/>
     </integrator>
 
 </scene>
