@@ -310,7 +310,7 @@ public:
      * \return The number of search results (equal to \c k or less)
      */
     size_t nnSearch(const PointType &p, float &_sqrSearchRadius, size_t k,
-                    SearchResult *results) const {
+                    SearchResult *results, size_t &M) const {
         if (m_nodes.size() == 0)
             return 0;
 
@@ -361,6 +361,7 @@ public:
             float pointDistSquared = squared_norm(between);
 
             if (pointDistSquared < sqrSearchRadius) {
+                ++M; 
                 /* Switch to a max-heap when the available search
                    result space is exhausted */
                 if (resultCount < k) {

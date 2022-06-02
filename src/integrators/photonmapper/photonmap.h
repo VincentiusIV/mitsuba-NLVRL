@@ -101,12 +101,8 @@ public:
     }
 
     inline size_t nnSearch(const Point3f &p, Float &sqrSearchRadius, size_t k,
-                           SearchResult *results) const {
-        return m_kdtree.nnSearch(p, sqrSearchRadius, k, results);
-    }
-
-    inline size_t nnSearch(const Point3f &p, size_t k, SearchResult *) const {
-        return m_kdtree.nnSearch(p, k, results);
+                           SearchResult *results, size_t &M) const {
+        return m_kdtree.nnSearch(p, sqrSearchRadius, k, results, M);
     }
 
     inline void insert(const Point3f &position, const PhotonData &photon) {
@@ -122,7 +118,8 @@ public:
                               float searchRadius, size_t maxPhotons, bool smooth = false) const {
         SearchResult *results  = new SearchResult[maxPhotons]; // this is really expensive, consider a buffer per thread
         float squaredRadius = searchRadius * searchRadius;
-        size_t resultCount  = nnSearch(si.p, squaredRadius, maxPhotons, results);
+        size_t M = 0;
+        size_t resultCount     = nnSearch(si.p, squaredRadius, maxPhotons, results, M);
         float invSquaredRadius = 1.0f / squaredRadius;
         Spectrum result(0.0f);
         const BSDF *bsdf = si.bsdf();
@@ -159,7 +156,8 @@ public:
     Spectrum estimateCausticRadiance(const SurfaceInteraction3f &si, float searchRadius, size_t maxPhotons) const {
         SearchResult *results  = new SearchResult[maxPhotons]; // this is really expensive, consider a buffer per thread
         float squaredRadius    = searchRadius * searchRadius;
-        size_t resultCount     = nnSearch(si.p, squaredRadius, maxPhotons, results);
+        size_t M               = 0;
+        size_t resultCount     = nnSearch(si.p, squaredRadius, maxPhotons, results, M);
         float invSquaredRadius = 1.0f / squaredRadius;
         Spectrum result(0.0f);
         const BSDF *bsdf = si.bsdf();
@@ -195,7 +193,8 @@ public:
     Spectrum estimateRadianceVolume(Point3f gatherPoint, Vector3f wo, const Medium *medium, Sampler *sampler, float searchRadius, size_t maxPhotons) const {
         SearchResult *results  = new SearchResult[maxPhotons];
         float squaredRadius    = searchRadius * searchRadius;
-        size_t resultCount     = nnSearch(gatherPoint, squaredRadius, maxPhotons, results);
+        size_t M               = 0;
+        size_t resultCount     = nnSearch(gatherPoint, squaredRadius, maxPhotons, results, M);
         float invSquaredRadius = 1.0f / squaredRadius;
 
         Spectrum result(0.0f);

@@ -9,6 +9,7 @@
 		<boolean name="useUniformSampling" value="false"/>
 		<boolean name="useLightCut" value="true"/>
 		<boolean name="useNonLinear" value="true"/>
+		<boolean name="useLaser" value="true"/>
     </integrator>
 
 </scene>

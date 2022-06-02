@@ -56,6 +56,7 @@ public:
         m_longVRL             = props.bool_("longVRL", false);
         m_useUniformSampling  = props.bool_("useUniformSampling", false);
         m_useNonLinear        = props.bool_("useNonLinear", true);
+        m_useLaser        = props.bool_("useLaser", false);
         m_useLightCut = props.bool_("useLightCut", false);
         m_RRVRL               = props.bool_("RRVRL", false);
         m_scaleRR             = props.float_("scaleRR", 0.5); // 2 meters before 5%
@@ -123,10 +124,11 @@ public:
             auto rayColorPair = emitter->sample_ray(0.0, sampler->next_1d(), sampler->next_2d(), sampler->next_2d());
             Ray3f ray(rayColorPair.first);
 
-            // TODO: Find a better way to make laser...
-            /*ray.o = Point3f(-250.0f, 200.0f, 15.0f);
-            ray.d = normalize(Vector3f(0.5f, -0.3f, 0.0f));
-            ray.update();*/
+            if (m_useLaser) {
+                ray.o = Point3f(-250.0f, 200.0f, 15.0f);
+                ray.d = normalize(Vector3f(0.5f, -0.3f, 0.0f));
+                ray.update();
+            }
 
             Spectrum flux = emitter->getUniformRadiance();
             flux *= math::Pi<float> * emitter->shape()->surface_area();
@@ -406,7 +408,7 @@ public:
             // If needed, an acceleration data structure is build on the fly
 
             // is this correct?
-            m_vrlMap->setScaleFactor(1.0 / volumeLightCount);
+            m_vrlMap->setScaleFactor(1.0f / volumeLightCount);
             m_vrlMap->build(scene, m_useLightCut ? ELightCutAcceleration : ENoVRLAcceleration, sampler, m_thresholdBetterDist, m_thresholdError);
         } else {
             Log(LogLevel::Info, "No VRLs");
@@ -467,6 +469,9 @@ public:
                         auto [evaluations, color, intersections] =
                             m_vrlMap->query(gatherRay, scene, sampler, -1, totalLength, m_useUniformSampling, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
                         radiance += color * throughput;
+
+                        throughput *= medium->evalMediumTransmittance(gatherRay, sampler, active);
+
                         t += totalLength;
                         gatherRay.o = ray(t);
                     }                    
@@ -549,6 +554,7 @@ private:
     int m_diceVRL;
     bool m_useUniformSampling;
     bool m_useNonLinear;
+    bool m_useLaser;
     bool m_RRVRL;
     Float m_scaleRR;
     int m_nbSamplesRay; //< Mostly for the VPL

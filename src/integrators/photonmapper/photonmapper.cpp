@@ -54,7 +54,9 @@ public:
         m_causticLookupSize = props.int_("causticLookupSize", 120);
         m_volumeLookupSize = props.int_("volumeLookupSize", 120);
         m_gatherLocally = props.bool_("gatherLocally", true);
-        m_autoCancelGathering = props.bool_("autoCancelGathering", true);
+        m_autoCancelGathering         = props.bool_("autoCancelGathering", true);
+        m_useNonLinear                = props.bool_("useNonLinear", true);
+        m_useLaser                    = props.bool_("useLaser", false);
     }
 
 
@@ -113,9 +115,11 @@ public:
             auto rayColorPair = emitter->sample_ray(0.0, sampler->next_1d(), sampler->next_2d(), sampler->next_2d());
             RayDifferential3f ray(rayColorPair.first);
 
-            ray.o = Point3f(-250.0f, 200.0f, 15.0f);
-            ray.d = normalize(Vector3f(0.5f, -0.3f, 0.0f));
-            ray.update();
+            if (m_useLaser) {
+                ray.o = Point3f(-250.0f, 200.0f, 15.0f);
+                ray.d = normalize(Vector3f(0.5f, -0.3f, 0.0f));
+                ray.update();
+            }
 
             Spectrum flux = emitter->getUniformRadiance();
             flux *= math::Pi<float> * emitter->shape()->surface_area();
@@ -143,7 +147,11 @@ public:
 
                 Mask exceeded_max_depth = depth >= (uint32_t) m_maxDepth;
                 if (none(active) || all(exceeded_max_depth))
+                {
+                    if (neq(medium, nullptr))
+                        handleMediumInteraction(depth - nullInteractions, delta, mi, medium, -ray.d, flux * throughput);
                     break;
+                }
 
                 // -------------------- RTE ----------------- //
                 Mask active_medium  = active && neq(medium, nullptr);
@@ -162,7 +170,7 @@ public:
                     ++mediumDepth;
                     mi = medium->sample_interaction(ray, sampler->next_1d(active_medium), channel, active_medium);
 
-                    if (mi.is_valid() && medium->is_nonlinear()) {
+                    if (m_useNonLinear && mi.is_valid() && medium->is_nonlinear()) {
                         nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
 
                         for (size_t i = 0; i < 100; i++) {
@@ -418,16 +426,17 @@ public:
 
                 si = scene->ray_intersect(ray, active);
                 Vector3f gatherPoint = ray.o;
-
+                mediumRay.o = gatherPoint;
+                
                 if (si.is_valid()) {
                     while (t < si.t) {
-                        radiance += m_volumePhotonMap->estimateRadianceVolume(gatherPoint, mediumRay.d, medium, sampler, m_volumeLookupRadius, m_volumePhotons) * throughput;
+                        Spectrum volumeRadiance = m_volumePhotonMap->estimateRadianceVolume(gatherPoint, mediumRay.d, medium, sampler, m_volumeLookupRadius, m_volumePhotons);
+                        radiance += volumeRadiance *throughput;
+
                         t += m_volumeLookupRadius * 2;
-                        mediumRay.o = gatherPoint;
+                        /*mediumRay.o = gatherPoint;
                         mediumRay.maxt = m_volumeLookupRadius * 2;
-
-                        throughput *= medium->evalMediumTransmittance(mediumRay, sampler, active);
-
+                        throughput *= medium->evalMediumTransmittance(mediumRay, sampler, active);*/
                         gatherPoint = ray(t);
                     }
                     radiance += m_volumePhotonMap->estimateRadianceVolume(gatherPoint, mediumRay.d, medium, sampler, m_volumeLookupRadius, m_volumePhotons) * throughput;
@@ -516,6 +525,8 @@ private:
     int m_globalLookupSize, m_causticLookupSize, m_volumeLookupSize;
     /* Should photon gathering steps exclusively run on the local machine? */
     bool m_gatherLocally;
+    bool m_useNonLinear;
+    bool m_useLaser;
     /* Indicates if the gathering steps should be canceled if not enough photons
      * are generated. */
     bool m_autoCancelGathering;
