@@ -649,8 +649,7 @@ public:
             }
 
             /* Check if the current point is within the query's search radius */
-            const float pointDistSquared =
-                (node.getPosition() - p).lengthSquared();
+            const float pointDistSquared = squared_norm(node.getPosition() - p);
 
             if (pointDistSquared < distSquared) {
                 ++found;

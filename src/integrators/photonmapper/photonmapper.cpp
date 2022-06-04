@@ -393,8 +393,7 @@ public:
             m_globalLookupRadius  = m_globalLookupRadiusRelative * sceneRadius;
             m_causticLookupRadius = m_causticLookupRadiusRelative * sceneRadius;
             m_volumeLookupRadius = m_volumeLookupRadiusRelative * sceneRadius;
-            std::string lookupString = "- Global Lookup Radius: " +
-                                       std::to_string(m_globalLookupRadius);
+            std::string lookupString = "- Volume Lookup Radius: " + std::to_string(m_volumeLookupRadius);
             Log(LogLevel::Info, lookupString.c_str());
             lookupString = "- Scene Radius: " + std::to_string(sceneRadius);
             Log(LogLevel::Info, lookupString.c_str());
@@ -429,9 +428,13 @@ public:
                 mediumRay.o = gatherPoint;
                 
                 if (si.is_valid()) {
+                    size_t MVol = 0;
+                    size_t M    = 0;
+                    Spectrum volRadiance(0.0f);
                     while (t < si.t) {
-                        Spectrum volumeRadiance = m_volumePhotonMap->estimateRadianceVolume(gatherPoint, mediumRay.d, medium, sampler, m_volumeLookupRadius, m_volumePhotons);
-                        radiance += volumeRadiance *throughput;
+                        Spectrum estimate = m_volumePhotonMap->estimateRadianceVolume(gatherPoint, mediumRay.d, medium, sampler, m_volumeLookupRadius, m_volumePhotons, M);
+                        MVol += M;
+                        volRadiance += estimate;
 
                         t += m_volumeLookupRadius * 2;
                         /*mediumRay.o = gatherPoint;
@@ -439,7 +442,15 @@ public:
                         throughput *= medium->evalMediumTransmittance(mediumRay, sampler, active);*/
                         gatherPoint = ray(t);
                     }
-                    radiance += m_volumePhotonMap->estimateRadianceVolume(gatherPoint, mediumRay.d, medium, sampler, m_volumeLookupRadius, m_volumePhotons) * throughput;
+                    volRadiance += m_volumePhotonMap->estimateRadianceVolume(gatherPoint, mediumRay.d, medium, sampler, m_volumeLookupRadius, m_volumePhotons, M) * throughput;
+                    volRadiance /= UNIT_SPHERE_VOLUME * enoki::pow(m_volumeLookupRadius, 3);
+                    MVol += M;
+
+                    volRadiance *= m_volumePhotonMap->getScaleFactor();
+                    radiance += volRadiance;
+                    if (MVol > 0) {
+                        
+                    }
                 }
             }
 

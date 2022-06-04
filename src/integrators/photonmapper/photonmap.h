@@ -190,34 +190,54 @@ public:
         return 3 * INV_PI * (1 - x * x) * (1 - x * x);
     }
 
-    Spectrum estimateRadianceVolume(Point3f gatherPoint, Vector3f wo, const Medium *medium, Sampler *sampler, float searchRadius, size_t maxPhotons) const {
-        SearchResult *results  = new SearchResult[maxPhotons];
-        float squaredRadius    = searchRadius * searchRadius;
-        size_t M               = 0;
-        size_t resultCount     = nnSearch(gatherPoint, squaredRadius, maxPhotons, results, M);
-        float invSquaredRadius = 1.0f / squaredRadius;
+    struct RadianceQueryVolume {
+        RadianceQueryVolume(const Point3f &p, const Vector3f _wo, const Medium *_medium, Sampler *_sampler, int maxDepth, Float radius)
+            : pos(p), medium(_medium), sampler(_sampler), wo(_wo), maxDepth(maxDepth), searchRadius(radius), result(0.0f), M(0) {}
 
-        Spectrum result(0.0f);
+        inline void operator()(const Photon &photon) {
+            const PhotonData &photonData = photon.getData();
+            const PhaseFunction *pf      = medium->phase_function();
+            // Test the radius
+            Float lengthSqr = squared_norm(pos - photon.position);
+            if ((searchRadius * searchRadius - lengthSqr) < 0)
+                return;
 
-        MediumInteraction3f mi1;
-        PhaseFunctionContext phase_ctx1(sampler);
-        const PhaseFunction *pf = medium->phase_function();
+            // Test the depth of the photon
+            if (maxDepth > 0 && photonData.depth > maxDepth)
+                return;
 
-        for (size_t i = 0; i < resultCount; i++) {
-            const SearchResult &searchResult = results[i];
-            const Photon &photon             = m_kdtree[searchResult.index];
-            const PhotonData &photonData     = photon.getData();
+            // Count the number of photon which we can collect
+            M += 1;
 
-            mi1.wi = -photonData.direction;
+            // Accumulate the contribution of the photon
+            MediumInteraction3f mi1;
+            PhaseFunctionContext phase_ctx1(sampler);
+            mi1.wi         = -photonData.direction;
             Float photonPF = pf->eval(phase_ctx1, mi1, wo);
-            Float sqrTerm  = 1.0f - searchResult.distSquared * invSquaredRadius;
-            result += photonData.power * photonPF * (sqrTerm * sqrTerm);
-        }
-        result *= m_scale;
-        result /= (UNIT_SPHERE_VOLUME * searchRadius * searchRadius * searchRadius);
 
-        delete[] results;
-        return result;
+            // Accumulate the results
+            result += photonData.power * photonPF;
+        }
+
+        // Information GP
+        const Point3f &pos;
+        const Medium *medium;
+        const Vector3f wo;
+        Sampler *sampler;
+        // Other
+        int maxDepth;
+        Float searchRadius;
+
+        // Results
+        Spectrum result;
+        int M;
+    };
+
+    Spectrum estimateRadianceVolume(Point3f gatherPoint, Vector3f wo, const Medium *medium, Sampler *sampler, float searchRadius, size_t maxPhotons, size_t &M) const {
+        RadianceQueryVolume query(gatherPoint, wo, medium, sampler, -1, searchRadius);
+        m_kdtree.executeQuery(gatherPoint, searchRadius, query);
+        M = query.M;
+        return query.result;
     }
 
 protected:
