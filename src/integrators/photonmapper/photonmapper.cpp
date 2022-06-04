@@ -382,7 +382,7 @@ public:
 
     std::pair<Spectrum, Mask> sample(const Scene *scene, Sampler *sampler,
                                      const RayDifferential3f &_ray,
-                                     const Medium *medium, Float *aovs,
+                                     const Medium *_medium, Float *aovs,
                                      Mask active) const override {
         MTS_MASKED_FUNCTION(ProfilerPhase::SamplingIntegratorSample, active);
 
@@ -400,11 +400,13 @@ public:
         }
 
         Ray3f ray(_ray);
-
+        MediumPtr medium(_medium);
         Spectrum radiance(0.0f), throughput(1.0f);
 
         SurfaceInteraction3f si = zero<SurfaceInteraction3f>();
         si.t                    = math::Infinity<Float>;
+        MediumInteraction3f mi  = zero<MediumInteraction3f>();
+        mi.t = math::Infinity<Float>;
         Medium::NonLinearInteraction nlmi;
 
         si = scene->ray_intersect(ray, active);
@@ -414,6 +416,8 @@ public:
 
             if (si.is_medium_transition()) {
                 medium = si.target_medium(ray.d);
+                if (eq(medium, nullptr))
+                    return { radiance, valid_ray };
 
                 Float t = m_volumeLookupRadius;
 
@@ -421,7 +425,6 @@ public:
                 ray = std::move(mediumRay);
 
                 mediumRay.maxt = t;
-                throughput *= medium->evalMediumTransmittance(mediumRay, sampler, active);
 
                 si = scene->ray_intersect(ray, active);
                 Vector3f gatherPoint = ray.o;
@@ -431,10 +434,29 @@ public:
                     size_t MVol = 0;
                     size_t M    = 0;
                     Spectrum volRadiance(0.0f);
+                    UInt32 channel = 0;
+                    if (is_rgb_v<Spectrum>) {
+                        uint32_t n_channels = (uint32_t) array_size_v<Spectrum>;
+                        channel             = (UInt32) min(sampler->next_1d(active) * n_channels, n_channels - 1);
+                    }
+
                     while (t < si.t) {
-                        Spectrum estimate = m_volumePhotonMap->estimateRadianceVolume(gatherPoint, mediumRay.d, medium, sampler, m_volumeLookupRadius, m_volumePhotons, M);
-                        MVol += M;
-                        volRadiance += estimate;
+                        mediumRay.o = gatherPoint;
+                        mi          = medium->sample_interaction(mediumRay, sampler->next_1d(), channel, active);
+                        if (mi.is_valid()) {
+                            
+
+                            Spectrum estimate = m_volumePhotonMap->estimateRadianceVolume(gatherPoint, mediumRay.d, medium, sampler, m_volumeLookupRadius, m_volumePhotons, M);
+
+                            auto [tr, free_flight_pdf] = medium->eval_tr_and_pdf(mi, si, active);
+                            Float tr_pdf               = index_spectrum(free_flight_pdf, channel);
+                            estimate *= select(tr_pdf > 0.f, tr / tr_pdf, 0.f);
+                            estimate *= throughput;
+                            throughput *= tr;
+
+                            MVol += M;
+                            volRadiance += estimate;
+                        }
 
                         t += m_volumeLookupRadius * 2;
                         /*mediumRay.o = gatherPoint;
@@ -442,7 +464,7 @@ public:
                         throughput *= medium->evalMediumTransmittance(mediumRay, sampler, active);*/
                         gatherPoint = ray(t);
                     }
-                    volRadiance += m_volumePhotonMap->estimateRadianceVolume(gatherPoint, mediumRay.d, medium, sampler, m_volumeLookupRadius, m_volumePhotons, M) * throughput;
+                    /*volRadiance += m_volumePhotonMap->estimateRadianceVolume(gatherPoint, mediumRay.d, medium, sampler, m_volumeLookupRadius, m_volumePhotons, M) * throughput;*/
                     volRadiance /= UNIT_SPHERE_VOLUME * enoki::pow(m_volumeLookupRadius, 3);
                     MVol += M;
 

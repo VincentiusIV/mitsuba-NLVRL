@@ -4,7 +4,7 @@
 	<integrator type="photonmap">
 		<integer name="lightEmissions" value="1000000"/>
 		<integer name="volumeLookupSize" value="120"/>
-		<float name="volumeLookupRadiusRelative" value="0.05"/>
+		<float name="volumeLookupRadiusRelative" value="0.02"/>
 		<boolean name="useLaser" value="true"/>
 		<boolean name="useNonLinear" value="true"/>
     </integrator>
