@@ -128,7 +128,7 @@ public:
             float eta(1.0f);
             int nullInteractions = 0, mediumDepth = 0;
             bool delta = false;
-
+            bool fromLight = true;
             //
             Mask active             = true;
             Mask needs_intersection = true;
@@ -257,8 +257,9 @@ public:
                     PhaseFunctionContext phase_ctx(sampler);
                     auto phase = mi.medium->phase_function();
 
-                    handleMediumInteraction(depth - nullInteractions, delta, mi, medium, -ray.d, flux * throughput);
-
+                    if (!fromLight)
+                        handleMediumInteraction(depth - nullInteractions, delta, mi, medium, -ray.d, flux * throughput);
+                    fromLight = false;
                     // ------------------ Phase function sampling -----------------
                     masked(phase, !act_medium_scatter) = nullptr;
                     auto [wo, phase_pdf]               = phase->sample(phase_ctx, mi, sampler->next_2d(act_medium_scatter), act_medium_scatter);
@@ -444,25 +445,29 @@ public:
                         mediumRay.o = gatherPoint;
                         mi          = medium->sample_interaction(mediumRay, sampler->next_1d(), channel, active);
                         if (mi.is_valid()) {
-                            
 
-                            Spectrum estimate = m_volumePhotonMap->estimateRadianceVolume(gatherPoint, mediumRay.d, medium, sampler, m_volumeLookupRadius, m_volumePhotons, M);
+                            Mask act_scatter = sampler->next_1d(active) < index_spectrum(mi.sigma_t, channel) / index_spectrum(mi.combined_extinction, channel);
+                            if (act_scatter) {
+                                Spectrum estimate = m_volumePhotonMap->estimateRadianceVolume(gatherPoint, mediumRay.d, medium, sampler, m_volumeLookupRadius, m_volumePhotons, M);
 
-                            auto [tr, free_flight_pdf] = medium->eval_tr_and_pdf(mi, si, active);
-                            Float tr_pdf               = index_spectrum(free_flight_pdf, channel);
-                            estimate *= select(tr_pdf > 0.f, tr / tr_pdf, 0.f);
-                            estimate *= throughput;
-                            throughput *= tr;
+                                auto [tr, free_flight_pdf] = medium->eval_tr_and_pdf(mi, si, active);
+                                Float tr_pdf               = index_spectrum(free_flight_pdf, channel);
+                                estimate *= select(tr_pdf > 0.f, tr / tr_pdf, 0.f);
+                                estimate *= throughput;
+                                throughput *= tr;
 
-                            MVol += M;
-                            volRadiance += estimate;
+                                MVol += M;
+                                volRadiance += estimate;
+                            }
+
                         }
 
                         t += m_volumeLookupRadius * 2;
                         /*mediumRay.o = gatherPoint;
                         mediumRay.maxt = m_volumeLookupRadius * 2;
                         throughput *= medium->evalMediumTransmittance(mediumRay, sampler, active);*/
-                        gatherPoint = ray(t);
+                        gatherPoint    = ray(t);
+                        mediumRay.maxt = m_volumeLookupRadius * 2;
                     }
                     /*volRadiance += m_volumePhotonMap->estimateRadianceVolume(gatherPoint, mediumRay.d, medium, sampler, m_volumeLookupRadius, m_volumePhotons, M) * throughput;*/
                     volRadiance /= UNIT_SPHERE_VOLUME * enoki::pow(m_volumeLookupRadius, 3);
@@ -483,7 +488,7 @@ public:
         }
 
         // Photon map is used for both direct & indirect radiance.
-        radiance *= 2;
+      //  radiance *= 2;
        /* std::ostringstream stream;
         stream << "Final radiance: " << radiance;
         std::string str = stream.str();

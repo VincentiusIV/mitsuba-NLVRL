@@ -164,6 +164,13 @@ public:
         mint = max(ray.mint, mint);
         maxt = min(ray.maxt, maxt);
 
+        
+        if (maxt < math::RayEpsilon<Float>)
+        {
+            nli.is_valid = false;
+            return nli;
+        }
+
         nli.t = maxt + math::RayEpsilon<Float>;
         nli.p = ray(maxt);
 

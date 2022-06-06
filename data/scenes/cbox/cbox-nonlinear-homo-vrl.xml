@@ -8,7 +8,7 @@
 		<float name="volumeLookupRadiusRelative" value="0.01"/>
 		<boolean name="useUniformSampling" value="false"/>
 		<boolean name="useLightCut" value="true"/>
-		<boolean name="useNonLinear" value="true"/>
+		<boolean name="useNonLinear" value="false"/>
 		<boolean name="useLaser" value="true"/>
     </integrator>
 
