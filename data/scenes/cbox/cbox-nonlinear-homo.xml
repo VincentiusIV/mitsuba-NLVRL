@@ -1,7 +1,7 @@
 <scene version="2.0.0">
     <include filename="fragments/bsdfs-rgb.xml"/>
 	
-	<default name="spp" value="256"/>
+	<default name="spp" value="128"/>
     <default name="res" value="256"/>
     <default name="max_depth" value="6"/>
 	
@@ -48,7 +48,6 @@
         <phase type="isotropic" />
     </medium>
 
-	
 	<!-- Fog -->
 	<shape type="obj">
         <string name="filename" value="meshes/unit_cube_centered.obj"/>

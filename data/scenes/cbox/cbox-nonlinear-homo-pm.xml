@@ -2,7 +2,7 @@
     <include filename="cbox-nonlinear-homo.xml"/>
 	
 	<integrator type="photonmap">
-		<integer name="lightEmissions" value="10000000"/>
+		<integer name="lightEmissions" value="100000"/>
 		<integer name="volumeLookupSize" value="120"/>
 		<float name="volumeLookupRadiusRelative" value="0.005"/>
 		<boolean name="useLaser" value="true"/>
