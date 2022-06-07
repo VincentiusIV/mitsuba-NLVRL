@@ -36,6 +36,7 @@
         <ref id="area-emitter"/>
     </shape>
 
+
 	<emitter type="area" id="area-emitter">
         <rgb name="radiance" value="18.387, 10.9873, 2.75357"/>
 		<vector name="radcolor" value="18.387, 10.9873, 2.75357"/>
@@ -47,7 +48,7 @@
         <rgb name="albedo" value="1.0, 1.0, 1.0"/>
         <phase type="isotropic" />
     </medium>
-
+	
 	<!-- Fog -->
 	<shape type="obj">
         <string name="filename" value="meshes/unit_cube_centered.obj"/>

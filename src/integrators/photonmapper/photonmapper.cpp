@@ -57,6 +57,7 @@ public:
         m_autoCancelGathering         = props.bool_("autoCancelGathering", true);
         m_useNonLinear                = props.bool_("useNonLinear", true);
         m_useLaser                    = props.bool_("useLaser", false);
+        m_useFirstPhoton              = props.bool_("useFirstPhoton", false);
     }
 
 
@@ -64,16 +65,11 @@ public:
     void preprocess(Scene* scene, Sensor* sensor) override {
         Log(LogLevel::Info, "Pre Processing Photon Map...");
 
-        const Medium* startMedium;
         for each (auto shape in scene->shapes()) {
             if (shape->interior_medium() != nullptr)
             {
                 ScalarBoundingBox3f shape_bbox = shape->bbox();
                 shape->build(shape_bbox.min, shape_bbox.max);
-
-                if (startMedium)
-                    Log(LogLevel::Warn, "Multiple media in the scene, NYI!");
-                startMedium = shape->interior_medium();
             }
         }
 
@@ -101,7 +97,7 @@ public:
         for (int index = 0; index < m_numLightEmissions; index++) {
             sampler->advance();
             EmitterPtr emitter = nullptr;
-            MediumPtr medium   = startMedium;
+            MediumPtr medium   = nullptr;
             Spectrum throughput(1.0f);
             MediumInteraction3f mi = zero<MediumInteraction3f>();
             mi.t                   = math::Infinity<Float>;
@@ -127,7 +123,7 @@ public:
             
             float eta(1.0f);
             int nullInteractions = 0, mediumDepth = 0;
-            bool delta = false;
+            bool wasTransmitted = false;
             bool fromLight = true;
             //
             Mask active             = true;
@@ -149,7 +145,7 @@ public:
                 if (none(active) || all(exceeded_max_depth))
                 {
                     if (neq(medium, nullptr))
-                        handleMediumInteraction(depth - nullInteractions, delta, mi, medium, -ray.d, flux * throughput);
+                        handleMediumInteraction(depth - nullInteractions, wasTransmitted, mi, medium, -ray.d, flux * throughput);
                     break;
                 }
 
@@ -258,8 +254,8 @@ public:
                     PhaseFunctionContext phase_ctx(sampler);
                     auto phase = mi.medium->phase_function();
 
-                    if (!fromLight)
-                        handleMediumInteraction(depth - nullInteractions, delta, mi, medium, -ray.d, flux * throughput);
+                    if (!fromLight || m_useFirstPhoton)
+                        handleMediumInteraction(depth - nullInteractions, wasTransmitted, mi, medium, -ray.d, flux * throughput);
                     fromLight = false;
                     // ------------------ Phase function sampling -----------------
                     masked(phase, !act_medium_scatter) = nullptr;
@@ -286,13 +282,14 @@ public:
                     if (si.shape->is_emitter())
                         break;
 
-                    handleSurfaceInteraction(ray, depth, delta, si, medium, flux * throughput);
-
+                    handleSurfaceInteraction(ray, depth, wasTransmitted, si, medium, flux * throughput);
+                    
                     BSDFContext bCtx;
                     BSDFPtr bsdf  = si.bsdf(ray);
 
                     auto [bs, bsdfVal] = bsdf->sample(bCtx, si, sampler->next_1d(active_surface), sampler->next_2d(active_surface), active_surface);
                     bsdfVal            = si.to_world_mueller(bsdfVal, -bs.wo, si.wi);
+                    
 
                     throughput = throughput  * bsdfVal;
                     active &= any(neq(depolarize(throughput), 0.f));
@@ -311,10 +308,7 @@ public:
                     masked(nullInteractions, !non_null_bsdf) += 1;
 
                     valid_ray |= non_null_bsdf;
-                    delta = non_null_bsdf && (has_flag(bs.sampled_type, BSDFFlags::Transmission) || has_flag(bs.sampled_type, BSDFFlags::Reflection));
-
-                    /*if (any_or<true>(has_flag(bs.sampled_type, BSDFFlags::Transmission)))
-                        Log(LogLevel::Info, "Delta interact");*/
+                    wasTransmitted = non_null_bsdf && (has_flag(bs.sampled_type, BSDFFlags::Transmission));
 
                     Mask intersect2             = active_surface && needs_intersection;
                     SurfaceInteraction3f si_new = si;
@@ -413,8 +407,8 @@ public:
         mi.t = math::Infinity<Float>;
         Medium::NonLinearInteraction nlmi;
 
-        si = scene->ray_intersect(ray, active);
-        Mask valid_ray = si.is_valid();
+        //si =;
+        Mask valid_ray = scene->ray_intersect(ray, active).is_valid();
 
         float eta(1.0f);
         int nullInteractions = 0;
@@ -443,11 +437,12 @@ public:
                 }
 
                 // -------------------- RTE ----------------- //
+
                 Mask active_medium    = active && neq(medium, nullptr);
                 Mask active_surface   = active && !active_medium;
                 Mask escaped_medium = false;
-#pragma region RTE
 
+#pragma region RTE
                 Mask is_spectral  = active_medium;
                 Mask not_spectral = false;
                 if (any_or<true>(active_medium)) {
@@ -456,31 +451,87 @@ public:
                 }
 
                 if (any_or<true>(active_medium)) {
-                    Float t = m_volumeLookupRadius;
+
+                    Float radius = m_volumeLookupRadius * enoki::lerp(0.5f, 1.5f, sampler->next_1d());
+                    Float t      = radius;
+         
+                    Ray3f mediumRay(ray);         
+                    mediumRay.maxt = t;
+         
+                    Vector3f gatherPoint = ray.o;
+                    mediumRay.o = gatherPoint;
+         
+                    if (si.is_valid()) {
+                        size_t MVol = 0;
+                        size_t M    = 0;
+                        Spectrum volRadiance(0.0f);
+                        UInt32 channel = 0;
+                        if (is_rgb_v<Spectrum>) {
+                            uint32_t n_channels = (uint32_t) array_size_v<Spectrum>;
+                            channel             = (UInt32) min(sampler->next_1d(active) * n_channels, n_channels - 1);
+                        }
+                        int it = 0;
+                        while (t < si.t) {
+                            ++it;
+                            mediumRay.o = gatherPoint;
+                            mi          = medium->sample_interaction(mediumRay, sampler->next_1d(), channel, active);
+                            if (mi.is_valid()) {
+         
+                                Mask act_scatter = sampler->next_1d(active) < index_spectrum(mi.sigma_t, channel) / index_spectrum(mi.combined_extinction, channel);
+                                if (act_scatter) {
+                                    Spectrum estimate = m_volumePhotonMap->estimateRadianceVolume(gatherPoint, mediumRay.d, medium, sampler, radius, m_volumePhotons, M);
+         
+                                    auto [tr, free_flight_pdf] = medium->eval_tr_and_pdf(mi, si, active);
+                                    Float tr_pdf               = index_spectrum(free_flight_pdf, channel);
+                                    estimate *= select(tr_pdf > 0.f, tr / tr_pdf, 0.f);
+                                    estimate *= throughput;
+                                    throughput *= tr;
+         
+                                    MVol += M;
+                                    volRadiance += estimate;
+                                }
+         
+                            }
+         
+                            t += radius * 2;
+                            gatherPoint    = ray(t);
+                            mediumRay.maxt = radius * 2;
+                        }
+         
+                        volRadiance /= UNIT_SPHERE_VOLUME * enoki::pow(radius, 3);
+                        volRadiance *= m_volumePhotonMap->getScaleFactor();
+                        MVol += M;
+         
+                        radiance += volRadiance;
+                    }
+
+                    escaped_medium = true;
+                    active_surface |= si.is_valid();
+                }
+                                                                                                                                 
+                    /* Float radius = m_volumeLookupRadius * enoki::lerp(0.5f, 1.5f, sampler->next_1d());
 
                     Ray3f mediumRay(ray);
-                    mediumRay.maxt = m_volumeLookupRadius * 2;
-                    ray = std::move(mediumRay);
+                    mediumRay.maxt = radius * 2;
+
+                    mi = medium->sample_interaction(mediumRay, sampler->next_1d(), channel, active);
 
                     si = scene->ray_intersect(mediumRay, active);
-                    if (si.t <= mediumRay.maxt) {
-                        mediumRay.maxt = si.t;
-                        escaped_medium = true;
+                    if (si.t < mi.t || si.t < mediumRay.maxt) {
+                        escaped_medium     = true;
                         needs_intersection = true;
                         active_medium = false;
                     }
 
-                    mi = medium->sample_interaction(mediumRay, sampler->next_1d(), channel, active);
+                    if (active_medium && mi.t < mediumRay.maxt) {
+                        size_t MVol = 0;
+                        size_t M    = 0;
+                        Spectrum volRadiance(0.0f);
 
-                    size_t MVol = 0;
-                    size_t M    = 0;
-                    Spectrum volRadiance(0.0f);
-
-                    if (mi.is_valid()) {
                         Mask act_scatter = sampler->next_1d(active) < index_spectrum(mi.sigma_t, channel) / index_spectrum(mi.combined_extinction, channel);
                         if (act_scatter) {
-                            Point3f gatherPoint = mediumRay(m_volumeLookupRadius);
-                            Spectrum estimate   = m_volumePhotonMap->estimateRadianceVolume(gatherPoint, mediumRay.d, medium, sampler, mediumRay.maxt * 0.5f, m_volumePhotons, M);
+                            Point3f gatherPoint = mediumRay(radius);
+                            Spectrum estimate   = m_volumePhotonMap->estimateRadianceVolume(gatherPoint, mediumRay.d, medium, sampler, radius, m_volumePhotons, M);
 
                             auto [tr, free_flight_pdf] = medium->eval_tr_and_pdf(mi, si, active);
                             Float tr_pdf               = index_spectrum(free_flight_pdf, channel);
@@ -490,20 +541,27 @@ public:
 
                             MVol += M;
                             volRadiance += estimate;
+                        } else {
+                            /*masked(throughput, is_spectral) *= mi.sigma_n * index_spectrum(mi.combined_extinction, channel) / index_spectrum(mi.sigma_n, channel);
                         }
+
+                        // Move the ray by the segment
+                        ray.o += mediumRay.d * mediumRay.maxt;
+                        ray.mint = 0.f;
+                        si.t     = si.t - mediumRay.maxt;
+
+                        volRadiance /= UNIT_SPHERE_VOLUME * enoki::pow(radius, 3);
+                        volRadiance *= m_volumePhotonMap->getScaleFactor();
+                        radiance += volRadiance;
+
+                    
                     }
 
-                    volRadiance /= UNIT_SPHERE_VOLUME * enoki::pow(m_volumeLookupRadius, 3);
-                    volRadiance *= m_volumePhotonMap->getScaleFactor();
-                    radiance += volRadiance;
-
-                    ray.o += mediumRay.d * mediumRay.maxt;
-                }
+                    masked(depth, act_medium_scatter) += 1;*/
 
                 active &= depth < (uint32_t) m_maxDepth;
-                
 
-#pragma endregion RTE
+#pragma endregion
 
                 // --------------------- Surface Interactions ---------------------
                 active_surface |= escaped_medium;
@@ -521,11 +579,22 @@ public:
 
                     // sample global/caustic map
 
+
                     BSDFContext bCtx;
                     BSDFPtr bsdf = si.bsdf(ray);
 
                     auto [bs, bsdfVal] = bsdf->sample(bCtx, si, sampler->next_1d(active_surface), sampler->next_2d(active_surface), active_surface);
                     bsdfVal            = si.to_world_mueller(bsdfVal, -bs.wo, si.wi);
+
+                    Mask active_e = active_surface && has_flag(bsdf->flags(), BSDFFlags::Smooth) && !has_flag(bsdf->flags(), BSDFFlags::Transmission);
+                    // && !has_flag(bs.sampled_type, BSDFFlags::Reflection);
+                    // Photon Map Sampling
+                    if (likely(any_or<true>(active_e))) {
+                        radiance[active_surface] += m_causticPhotonMap->estimateCausticRadiance(si, m_causticLookupRadius, m_causticLookupSize) * throughput;
+                        radiance[active_surface] += m_globalPhotonMap->estimateRadiance(si, m_globalLookupRadius, m_globalLookupSize) * throughput;
+                        break;
+                    }
+
 
                     throughput = throughput * bsdfVal;
                     active &= any(neq(depolarize(throughput), 0.f));
@@ -560,80 +629,8 @@ public:
 
                 active &= (active_surface | active_medium);
             }
-             
-            /*
-            if (si.is_medium_transition()) {
-                medium = si.target_medium(ray.d);
-                if (eq(medium, nullptr))
-                    return { radiance, valid_ray };
-
-                Float t = m_volumeLookupRadius;
-
-                Ray3f mediumRay = si.spawn_ray(ray.d);
-                ray = std::move(mediumRay);
-
-                mediumRay.maxt = t;
-
-                si = scene->ray_intersect(ray, active);
-                Vector3f gatherPoint = ray.o;
-                mediumRay.o = gatherPoint;
-                
-                if (si.is_valid()) {
-                    size_t MVol = 0;
-                    size_t M    = 0;
-                    Spectrum volRadiance(0.0f);
-                    UInt32 channel = 0;
-                    if (is_rgb_v<Spectrum>) {
-                        uint32_t n_channels = (uint32_t) array_size_v<Spectrum>;
-                        channel             = (UInt32) min(sampler->next_1d(active) * n_channels, n_channels - 1);
-                    }
-                    int it = 0;
-                    while (t < si.t) {
-                        ++it;
-                        mediumRay.o = gatherPoint;
-                        mi          = medium->sample_interaction(mediumRay, sampler->next_1d(), channel, active);
-                        if (mi.is_valid()) {
-
-                            Mask act_scatter = sampler->next_1d(active) < index_spectrum(mi.sigma_t, channel) / index_spectrum(mi.combined_extinction, channel);
-                            if (act_scatter) {
-                                Spectrum estimate = m_volumePhotonMap->estimateRadianceVolume(gatherPoint, mediumRay.d, medium, sampler, m_volumeLookupRadius, m_volumePhotons, M);
-
-                                auto [tr, free_flight_pdf] = medium->eval_tr_and_pdf(mi, si, active);
-                                Float tr_pdf               = index_spectrum(free_flight_pdf, channel);
-                                estimate *= select(tr_pdf > 0.f, tr / tr_pdf, 0.f);
-                                estimate *= throughput;
-                                throughput *= tr;
-
-                                MVol += M;
-                                volRadiance += estimate;
-                            }
-
-                        }
-
-                        t += m_volumeLookupRadius * 2;
-                        gatherPoint    = ray(t);
-                        mediumRay.maxt = m_volumeLookupRadius * 2;
-                    }
-                    
-                    volRadiance /= UNIT_SPHERE_VOLUME * enoki::pow(m_volumeLookupRadius, 3);
-                    MVol += M;
-
-                    volRadiance *= m_volumePhotonMap->getScaleFactor();
-                    radiance += volRadiance;
-                    if (MVol > 0) {
-                        
-                    }
-                }
-            }
-            */
-            if (si.is_valid() && si.shape->is_emitter()) {
-                Spectrum emitterEval = si.shape->emitter()->eval(si);
-                radiance += emitterEval * throughput;               
-            }
         }
 
-        // Photon map is used for both direct & indirect radiance.
-      //  radiance *= 2;
        /* std::ostringstream stream;
         stream << "Final radiance: " << radiance;
         std::string str = stream.str();
@@ -659,7 +656,7 @@ public:
         return emitter;
     }
 
-    void handleSurfaceInteraction(const Ray3f &ray, int depth, bool delta,
+    void handleSurfaceInteraction(const Ray3f &ray, int depth, bool wasTransmitted,
                                   const SurfaceInteraction3f &si,
                                   const Medium *medium,
                                   const Spectrum &weight) const {
@@ -667,7 +664,7 @@ public:
         uint32_t bsdfFlags = bsdf->flags();
         if (!has_flag(bsdf->flags(), BSDFFlags::Smooth))
             return;
-        if (!delta) {
+        if (!wasTransmitted) {
             m_globalPhotonMap->insert(si.p, PhotonData(si.n, ray.d, weight, depth));
         } else {
             m_causticPhotonMap->insert(si.p, PhotonData(si.n, ray.d, weight, depth));
@@ -710,6 +707,7 @@ private:
     bool m_gatherLocally;
     bool m_useNonLinear;
     bool m_useLaser;
+    bool m_useFirstPhoton;
     /* Indicates if the gathering steps should be canceled if not enough photons
      * are generated. */
     bool m_autoCancelGathering;
