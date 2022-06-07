@@ -5,7 +5,8 @@
 		<integer name="lightEmissions" value="1000000"/>
 		<integer name="targetVRLs" value="100"/>
 		<integer name="samplesPerQuery" value="2"/>
-		<boolean name="useUniformSampling" value="true"/>
+		<float name="volumeLookupRadiusRelative" value="0.1"/>
+		<boolean name="useUniformSampling" value="false"/>
 		<boolean name="useLightCut" value="true"/>
     </integrator>
 </scene>

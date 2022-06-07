@@ -139,7 +139,7 @@ public:
 
             float eta(1.0f);
             int nullInteractions = 0, mediumDepth = 0;
-            bool delta = false;
+            bool delta = false, volumePath = false;
 
             //
             Mask active             = true;
@@ -213,7 +213,7 @@ public:
                             mi.combined_extinction                       = combined_extinction;
 
                             tempVRL.setEndPoint(ray.o);
-                            m_vrlMap->push_back(std::move(tempVRL), true);
+                            volumePath |= m_vrlMap->push_back(std::move(tempVRL), true);
                             tempVRL = VRL(ray.o, medium, throughput * flux, depth, channel);
 
                             Medium::NonLinearInteraction new_nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
@@ -270,7 +270,7 @@ public:
                         masked(throughput, not_spectral && act_medium_scatter) *= mi.sigma_s / mi.sigma_t;
 
                     tempVRL.setEndPoint(mi.p);
-                    m_vrlMap->push_back(std::move(tempVRL), false);/*
+                    volumePath |= m_vrlMap->push_back(std::move(tempVRL), false); /*
                     if (m_vrlMap->push_back(std::move(tempVRL), false))
                         ++volumeLightCount;*/
                     tempVRL = VRL(mi.p, medium, throughput * flux, depth, channel);
@@ -303,7 +303,7 @@ public:
                         break;
 
                     tempVRL.setEndPoint(si.p);
-                    m_vrlMap->push_back(std::move(tempVRL), false);/*
+                    volumePath |= m_vrlMap->push_back(std::move(tempVRL), false); /*
                     if(m_vrlMap->push_back(std::move(tempVRL), false))
                         ++volumeLightCount;*/
 
@@ -354,9 +354,8 @@ public:
                 active &= (active_surface | active_medium);
             }
 
-            ++volumeLightCount;
-            if (!m_vrlMap->can_add())
-                break;
+            if (volumePath)
+                ++volumeLightCount;           
         }
 
         std::string desad = "greatest depth = " + std::to_string(greatestDepth);
@@ -417,6 +416,188 @@ public:
         Log(LogLevel::Info, "Pre Processing done.");
     }
 
+    std::pair<Spectrum, Mask> sample(const Scene *scene, Sampler *sampler, const RayDifferential3f &_ray, const Medium *_medium, Float *aovs, Mask active) const override {
+        MTS_MASKED_FUNCTION(ProfilerPhase::SamplingIntegratorSample, active);
+
+        static Float m_globalLookupRadius = -1, m_causticLookupRadius = -1, m_volumeLookupRadius = -1;
+        if (m_globalLookupRadius == -1) {
+            Float sceneRadius        = norm(scene->bbox().center() - scene->bbox().max);
+            m_globalLookupRadius     = m_globalLookupRadiusRelative * sceneRadius;
+            m_causticLookupRadius    = m_causticLookupRadiusRelative * sceneRadius;
+            m_volumeLookupRadius     = m_volumeLookupRadiusRelative * sceneRadius;
+            std::string lookupString = "- Volume Lookup Radius: " + std::to_string(m_volumeLookupRadius);
+            Log(LogLevel::Info, lookupString.c_str());
+            lookupString = "- Scene Radius: " + std::to_string(sceneRadius);
+            Log(LogLevel::Info, lookupString.c_str());
+        }
+
+        static int early_exits = 0;
+
+        Ray3f ray(_ray);
+        MediumPtr medium(_medium);
+        Spectrum radiance(0.0f), throughput(1.0f);
+
+        SurfaceInteraction3f si = zero<SurfaceInteraction3f>();
+        si.t                    = math::Infinity<Float>;
+        MediumInteraction3f mi  = zero<MediumInteraction3f>();
+        mi.t                    = math::Infinity<Float>;
+        Medium::NonLinearInteraction nlmi;
+
+        // si =;
+        Mask valid_ray = scene->ray_intersect(ray, active).is_valid();
+
+        float eta(1.0f);
+        int nullInteractions = 0;
+        bool delta           = false;
+
+        Mask needs_intersection = true;
+        UInt32 depth = 1, channel = 0;
+        if (is_rgb_v<Spectrum>) {
+            uint32_t n_channels = (uint32_t) array_size_v<Spectrum>;
+            channel             = (UInt32) min(sampler->next_1d(active) * n_channels, n_channels - 1);
+        }
+        int finbounce = 0;
+        if (valid_ray) {
+
+            for (int bounce = 0;; ++bounce) {
+                if (bounce > 500) {
+                    ++early_exits;
+                    break;
+                }
+                finbounce = bounce;
+                active &= any(neq(depolarize(throughput), 0.f));
+
+                Mask exceeded_max_depth = depth >= (uint32_t) m_maxDepth;
+                if (none(active) || all(exceeded_max_depth)) {
+                    break;
+                }
+
+                // -------------------- RTE ----------------- //
+
+                Mask active_medium  = active && neq(medium, nullptr);
+                Mask active_surface = active && !active_medium;
+                Mask escaped_medium = false;
+
+#pragma region RTE
+                Mask is_spectral  = active_medium;
+                Mask not_spectral = false;
+                if (any_or<true>(active_medium)) {
+                    is_spectral &= medium->has_spectral_extinction();
+                    not_spectral = !is_spectral && active_medium;
+                }
+
+                if (any_or<true>(active_medium)) {
+
+                    Float totalLength = m_volumeLookupRadius;
+                    Float t           = totalLength;
+
+                    Ray3f gatherRay(ray.o, ray.d, 0.0f);
+                    gatherRay.mint = 0.0f;
+                    gatherRay.maxt = totalLength;
+
+                    UInt32 channel = 0;
+                    if (is_rgb_v<Spectrum>) {
+                        uint32_t n_channels = (uint32_t) array_size_v<Spectrum>;
+                        channel             = (UInt32) min(sampler->next_1d(active) * n_channels, n_channels - 1);
+                    }
+
+                    if (si.is_valid()) {
+                        while (t < si.t) {
+                            auto [evaluations, color, intersections] = m_vrlMap->query(gatherRay, scene, sampler, -1, totalLength, m_useUniformSampling, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
+                            radiance += color * throughput;
+
+                            throughput *= medium->evalMediumTransmittance(gatherRay, sampler, active);
+
+                            t += totalLength;
+                            gatherRay.o = ray(t);
+                        }
+
+                        auto [evaluations, color, intersections] =
+                            m_vrlMap->query(gatherRay, scene, sampler, -1, totalLength, m_useUniformSampling, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
+                        radiance += color * throughput;
+                    }
+
+                    escaped_medium = true;
+                    active_surface |= si.is_valid();
+                }
+
+                active &= depth < (uint32_t) m_maxDepth;
+
+#pragma endregion
+
+                // --------------------- Surface Interactions ---------------------
+                active_surface |= escaped_medium;
+                Mask intersect = active_surface && needs_intersection;
+                if (any_or<true>(intersect))
+                    masked(si, intersect) = scene->ray_intersect(ray, intersect);
+                active_surface &= si.is_valid();
+
+                // -------------------- End RTE ----------------- //
+
+                if (any_or<true>(active_surface)) {
+
+                    if (si.shape->is_emitter())
+                        break;
+
+                    // sample global/caustic map
+
+                    BSDFContext bCtx;
+                    BSDFPtr bsdf = si.bsdf(ray);
+
+                    auto [bs, bsdfVal] = bsdf->sample(bCtx, si, sampler->next_1d(active_surface), sampler->next_2d(active_surface), active_surface);
+                    bsdfVal            = si.to_world_mueller(bsdfVal, -bs.wo, si.wi);
+
+                    Mask active_e = active_surface && has_flag(bsdf->flags(), BSDFFlags::Smooth) && !has_flag(bsdf->flags(), BSDFFlags::Transmission);
+                    // && !has_flag(bs.sampled_type, BSDFFlags::Reflection);
+                    // Photon Map Sampling
+                    if (likely(any_or<true>(active_e))) {
+                        radiance[active_surface] += m_causticPhotonMap->estimateCausticRadiance(si, m_causticLookupRadius, m_causticLookupSize) * throughput;
+                        radiance[active_surface] += m_globalPhotonMap->estimateRadiance(si, m_globalLookupRadius, m_globalLookupSize) * throughput;
+                        break;
+                    }
+
+                    throughput = throughput * bsdfVal;
+                    active &= any(neq(depolarize(throughput), 0.f));
+                    if (none_or<false>(active)) {
+                        break;
+                    }
+                    eta *= bs.eta;
+
+                    RayDifferential3f bsdf_ray(si.spawn_ray(si.to_world(bs.wo)));
+
+                    masked(ray, active_surface) = bsdf_ray;
+                    needs_intersection |= active_surface;
+
+                    Mask non_null_bsdf = active_surface && !has_flag(bs.sampled_type, BSDFFlags::Null);
+                    masked(depth, non_null_bsdf) += 1;
+                    masked(nullInteractions, !non_null_bsdf) += 1;
+
+                    valid_ray |= non_null_bsdf;
+                    delta = non_null_bsdf && (has_flag(bs.sampled_type, BSDFFlags::Transmission) || has_flag(bs.sampled_type, BSDFFlags::Reflection));
+
+                    Mask intersect2             = active_surface && needs_intersection;
+                    SurfaceInteraction3f si_new = si;
+                    if (any_or<true>(intersect2))
+                        si_new = scene->ray_intersect(ray, active);
+                    needs_intersection &= !intersect2;
+
+                    Mask has_medium_trans            = active_surface && si.is_medium_transition();
+                    masked(medium, has_medium_trans) = si.target_medium(ray.d);
+
+                    si = si_new;
+                }
+
+                active &= (active_surface | active_medium);
+            }
+        }
+
+        /* std::ostringstream stream;
+         stream << "Final radiance: " << radiance;
+         std::string str = stream.str();
+         Log(LogLevel::Info, str.c_str());*/
+        return { radiance, valid_ray };
+    }
+    /*
      std::pair<Spectrum, Mask> sample(const Scene *scene, Sampler *sampler, const RayDifferential3f &_ray, const Medium *medium, Float *aovs, Mask active) const override {
         MTS_MASKED_FUNCTION(ProfilerPhase::SamplingIntegratorSample, active);
 
@@ -490,13 +671,9 @@ public:
 
         // Photon map is used for both direct & indirect radiance.
         radiance *= 2;
-        /* std::ostringstream stream;
-         stream << "Final radiance: " << radiance;
-         std::string str = stream.str();
-         Log(LogLevel::Info, str.c_str());*/
-        return { radiance, valid_ray };
-    }
 
+        return { radiance, valid_ray };
+    } */
     EmitterPtr sampleEmitter(const Scene *scene, const Point2f &sample_, Mask active) const {
         Point2f sample(sample_);
         EmitterPtr emitter = nullptr;
