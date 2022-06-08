@@ -70,7 +70,7 @@ Medium<Float, Spectrum>::sample_interaction(const Ray3f &ray, Float sample,
     mi.mint         = mint;
     std::tie(mi.sigma_s, mi.sigma_n, mi.sigma_t) =
         get_scattering_coefficients(mi, valid_mi);
-    mi.combined_extinction = combined_extinction;
+    mi.combined_extinction                       = combined_extinction;
     return mi;
 }
 

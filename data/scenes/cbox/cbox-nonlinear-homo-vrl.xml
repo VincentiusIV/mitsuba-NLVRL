@@ -2,14 +2,14 @@
     <include filename="cbox-nonlinear-homo.xml"/>
 	
 	<integrator type="vrl">
-		<integer name="lightEmissions" value="10000"/>
-		<integer name="targetVRLs" value="1000"/>
-		<integer name="samplesPerQuery" value="1"/>
-		<float name="volumeLookupRadiusRelative" value="0.1"/>
-		<boolean name="useUniformSampling" value="false"/>
-		<boolean name="useLightCut" value="true"/>
-		<boolean name="useNonLinear" value="false"/>
-		<boolean name="useLaser" value="true"/>
+		<integer name="light_emissions" value="10000"/>
+		<integer name="target_vrls" value="1000"/>
+		<integer name="samples_per_query" value="1"/>
+		<float name="volume_lookup_radius_relative" value="0.1"/>
+		<boolean name="use_uniform_sampling" value="false"/>
+		<boolean name="use_light_cut" value="true"/>
+		<boolean name="use_non_linear" value="true"/>
+		<boolean name="use_laser" value="true"/>
     </integrator>
 
 </scene>

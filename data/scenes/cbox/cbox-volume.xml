@@ -57,7 +57,11 @@
 		<transform name="to_world">
             <translate x="$cbox_x" y="$cbox_y" z="$cbox_z"/>
         </transform>
-        <ref id="white"/>
+		
+        <bsdf type="conductor">
+            <spectrum name="eta" value="0.789000"/>
+            <spectrum name="k" value="6.150000"/>
+        </bsdf>
     </shape>
     <shape type="obj">
         <string name="filename" value="meshes/cbox_ceiling.obj"/>

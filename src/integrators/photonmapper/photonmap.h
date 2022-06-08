@@ -233,7 +233,7 @@ public:
         int M;
     };
 
-    Spectrum estimateRadianceVolume(Point3f gatherPoint, Vector3f wo, const Medium *medium, Sampler *sampler, float searchRadius, size_t maxPhotons, size_t &M) const {
+    Spectrum estimateRadianceVolume(Point3f gatherPoint, Vector3f wo, const Medium *medium, Sampler *sampler, float searchRadius, size_t &M) const {
         RadianceQueryVolume query(gatherPoint, wo, medium, sampler, -1, searchRadius);
         m_kdtree.executeQuery(gatherPoint, searchRadius, query);
         M = query.M;

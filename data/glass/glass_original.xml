@@ -1,63 +1,16 @@
 <?xml version='1.0' encoding='utf-8'?>
 
 <scene version="0.6.0">
-    <integrator type="vrl">
-        <!-- Number of passes of the integrator. -->
-        <integer name="maxPasses" value="2000"/>
 
-        <!-- Short VRLs as opposed to infinitely long VRLs? (The latter are 
-             not fully tested) -->
-        <boolean name="shortVrls" value="true"/>
-        <!-- Target number of VRLs per pass -->
-        <integer name="vrlTargetNum" value="300"/>
-
-        <!-- Maximum depth of particles traced to generate the VRLs. -->
-        <integer name="maxParticleDepth" value="-1"/>
-        <!-- Depth at which a nonzero Russian Roulette stopping probability 
-             gets forced for specular chains. -->
-        <integer name="specularForcedRRdepth" value="300"/>
-        <!-- Initial specular throughput for Russian Roulette decisions -->
-        <float name="initialSpecularThroughput" value="100"/>
-
-        <!-- Number of samples for VRL volume to volume transport. -->
-        <integer name="volVolSamples" value="2"/>
-        <!-- Number of samples for VRL volume to surface transport.
-             Note: there is no volume to surface transport in this scene! -->
-        <integer name="volSurfSamples" value="0"/>
-
-        <!-- Perform an initial global clustering (that will be used as a 
-             starting point for later local refinement if requested)? -->
-        <boolean name="globalCluster" value="false"/>
-        <!-- VRL undersampling for initial global cluster before per-slice 
-             refinement (Positive number N for a '1 in N' undersampling, 1 
-             to disable an initial global clustering, -1 for adaptive 
-             refinement). -->
-        <float name="globalUndersampling" value="1"/>
-
-        <!-- Perform a local refinement/clustering of VRLs? -->
-        <boolean name="localRefinement" value="true"/>
-        <!-- VRL undersampling of local clusters. Positive number N for a 
-             fixed '1 in N' undersampling, -1 for adaptive splitting into 
-             the optimal number of clusters. -->
-        <float name="localUndersampling" value="-1"/>
-        <!-- VRL undersampling for VRLs that had zero-contributions during 
-             preprocessing (and thus had no information available). -->
-        <float name="fallBackUndersampling" value="5"/>
-        <!-- Target number of slices (each slice gets its own local VRL 
-             clustering if 'localRefinement' is active) -->
-        <integer name="targetNumSlices" value="100"/>
-        <!-- Target pixel undersampling when sampling within a slice. -->
-        <float name="targetPixelUndersampling" value="50"/>
-        <!-- How much geometric curvature to take into account when 
-             grouping pixels into slices. -->
-        <float name="sliceCurvatureFactor" value="0.3"/>
-
-        <!-- Use information of this many neighbouring slices when 
-             determining VRL clustering for the current slice. -->
-        <integer name="neighbourCount" value="0"/>
-        <!-- Weight of those neighbours -->
-        <float name="neighbourWeight" value="0"/>
+	<integrator type="vrl">
+		<integer name="light_emissions" value="1000000"/>
+		<integer name="target_vrls" value="0"/>
+		<integer name="samples_per_query" value="1"/>
+		<float name="volume_lookup_radius_relative" value="0.1"/>
+		<boolean name="use_uniform_sampling" value="false"/>
+		<boolean name="use_light_cut" value="true"/>
     </integrator>
+
 
     <sensor type="perspective">
         <float name="focusDistance" value="0.306692"/>
@@ -84,7 +37,7 @@
 
     <emitter type="envmap" id="theEnvMap">
         <string name="filename" value="../envmap.exr"/>
-        <float name="scale" value="16"/>
+        <float name="scale" value="0.16"/>
     </emitter>
 
     <!-- World units are in meters -->
@@ -101,18 +54,17 @@
          without any (similarity-theory based) correction to the scattering 
          density.
     -->
-    <medium type="homogeneous" id="grapefruitJuiceIsotropic">
-        <float name="mediumSamplingWeight" value="1"/>
+    <medium id="grapefruitJuiceIsotropic" type="homogeneous" >
         <float name="scale" value="100"/>
-        <rgb name="sigmaS" value="0.45, 0.32, 0.23"/>
-        <rgb name="sigmaA" value="0.41, 0.95, 4.73"/>
+        <rgb name="albedo" value="0.45, 0.32, 0.23"/>
+        <rgb name="sigma_t" value="0.41, 0.95, 0.73"/>
     </medium>
 
     <!-- Very mildly absorbing glass to suppress very long internally 
          reflecting paths and give it a slight green tint. -->
-    <medium type="homogeneous" id="absorbingGlass">
-        <rgb name="sigmaS" value="0,  0,  0"/>
-        <rgb name="sigmaA" value="10,  8,  10"/>
+    <medium id="absorbingGlass" type="homogeneous" >
+        <rgb name="albedo" value="0,  0,  0"/>
+        <rgb name="sigma_t" value="1,  0.8,  1"/>
     </medium>
 
     <shape type="obj" id="glass">

@@ -129,6 +129,10 @@ public:
         m_bsphere = scene->bbox().bounding_sphere();
         m_bsphere.radius = max(math::RayEpsilon<Float>,
                                m_bsphere.radius * (1.f + math::RayEpsilon<Float>));
+       std::ostringstream stream;
+         stream << "set scene called, radius = " << m_bsphere.radius;
+         std::string str = stream.str();
+         Log(LogLevel::Info, str.c_str());
     }
 
     Spectrum eval(const SurfaceInteraction3f &si, Mask active) const override {
@@ -146,11 +150,16 @@ public:
         return unpolarized<Spectrum>(eval_spectrum(uv, si.wavelengths, active));
     }
 
-    std::pair<Ray3f, Spectrum> sample_ray(Float /* time */, Float /* wavelength_sample */,
-                                          const Point2f & /* sample2 */,
-                                          const Point2f & /* sample3 */,
-                                          Mask /* active */) const override {
-        NotImplementedError("sample_ray");
+    std::pair<Ray3f, Spectrum> sample_ray(Float time, Float wavelength_sample,
+                                          const Point2f &sample2, const Point2f &sample3,
+                                          Mask active) const override {
+        Interaction3f it;
+        it.p = Point3f(0.0);
+        it.time = time;
+        it.wavelengths = zero<Wavelength>();
+        auto [ds, radiance] = sample_direction(it, sample2, active);
+        Point3f o = -ds.n * m_bsphere.radius * 100.0f;
+        return std::make_pair(Ray3f(o, ds.n, time), radiance);
     }
 
     std::pair<DirectionSample3f, Spectrum>

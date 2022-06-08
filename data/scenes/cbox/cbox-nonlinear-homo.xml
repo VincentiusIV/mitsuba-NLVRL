@@ -5,6 +5,11 @@
     <default name="res" value="256"/>
     <default name="max_depth" value="6"/>
 	
+	
+    <default name="cbox_x" value="-275"/>
+    <default name="cbox_y" value="-275"/>
+    <default name="cbox_z" value="-30"/>
+	
     <sensor type="perspective">
         <string name="fov_axis" value="smaller"/>
         <float name="near_clip" value="10"/>
@@ -39,15 +44,29 @@
 
 	<emitter type="area" id="area-emitter">
         <rgb name="radiance" value="18.387, 10.9873, 2.75357"/>
-		<vector name="radcolor" value="18.387, 10.9873, 2.75357"/>
+		<vector name="radcolor" value="2.387, 18.9873, 2.75357"/>
     </emitter>
 	
 	<medium id="medium1" type="nonlinear">
         <float name="scale" value="0.005"/>
-        <rgb name="sigma_t" value="0.5"/>
+        <rgb name="sigma_t" value="0.1"/>
         <rgb name="albedo" value="1.0, 1.0, 1.0"/>
         <phase type="isotropic" />
     </medium>
+	
+	
+	<shape type="obj">
+        <string name="filename" value="meshes/cbox_floor.obj"/>
+		<transform name="to_world">
+            <translate x="$cbox_x" y="$cbox_y" z="$cbox_z"/>
+        </transform>
+		
+		
+        <bsdf type="conductor">
+            <spectrum name="eta" value="0.789000"/>
+            <spectrum name="k" value="6.150000"/>
+        </bsdf>
+    </shape>
 	
 	<!-- Fog -->
 	<shape type="obj">
