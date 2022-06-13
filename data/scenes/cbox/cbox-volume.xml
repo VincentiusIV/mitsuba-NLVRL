@@ -1,7 +1,7 @@
 <scene version="2.0.0">
     <include filename="fragments/bsdfs-rgb.xml"/>
 	
-	<default name="spp" value="64"/>
+	<default name="spp" value="1"/>
     <default name="res" value="256"/>
     <default name="max_depth" value="6"/>
 	
@@ -30,29 +30,28 @@
             <string name="pixel_format" value="rgb"/>
         </film>
     </sensor>
-	
 		<shape type="obj">
         <string name="filename" value="meshes/cbox_luminaire.obj"/>
         <transform name="to_world">
-            <translate x="$cbox_x" y="-275.5" z="$cbox_z"/>
+            <scale value="0.24"/>
+            <translate x="-63.72" y="142.09" z="-62.58"/>
         </transform>
         <ref id="light"/>
         <ref id="area-emitter"/>
     </shape>
-
+	
 	<shape type="sphere">
         <transform name="to_world">
-            <scale value="120"/>
-            <translate x="0" y="100" z="0"/>
+            <scale value="100"/>
+            <translate x="0" y="50" z="0"/>
         </transform>
 
         <bsdf type="dielectric"/>
     </shape>
 
-
 	<emitter type="area" id="area-emitter">
-        <rgb name="radiance" value="18.387, 10.9873, 2.75357"/>
-		<vector name="radcolor" value="18.387, 10.9873, 2.75357"/>
+        <rgb name="radiance" value="36.387, 20.9873, 5.75357"/>
+		<vector name="radcolor" value="36.387, 20.9873, 5.75357"/>
     </emitter>
 	
 	<medium id="medium1" type="homogeneous">
@@ -62,7 +61,6 @@
         <phase type="isotropic" />
     </medium>
 
-
 	<!-- Fog -->
 	<shape type="obj">
         <string name="filename" value="meshes/unit_cube_centered.obj"/>
@@ -70,7 +68,6 @@
         </bsdf>
 		<transform name="to_world">
            <scale x="545" y="545" z="545"/>
-            <translate x="0" y="-200" z="0"/>
         </transform>
         <ref id="medium1" name="interior"/>
     </shape>

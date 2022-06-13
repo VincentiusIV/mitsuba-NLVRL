@@ -156,7 +156,7 @@ public:
         size_t nb_evaluation;
     };
 
-    Spectrum query(const Scene *scene, Sampler *sampler, LCQuery &query, size_t &nb_BBIntersection, bool useUniformSampling, UInt32 channel) const {
+    Spectrum query(const Scene *scene, Sampler *sampler, LCQuery &query, size_t &nb_BBIntersection, bool useUniformSampling, bool useDirectIllum, UInt32 channel) const {
         if (m_root == nullptr)
             return Spectrum(0.f);
 
@@ -174,7 +174,7 @@ public:
         // TODO: However, it might be too complex to do it
         // Get the root node and put it inside the queue
         refiningCut.emplace(CutCluster{ m_root, getClusterUpperBound(scene, sampler, *m_root, query.ray, channel, nb_BBIntersection),
-                                        m_root->represent.getContrib(scene, useUniformSampling, query.ray, query.ray.maxt, query.sampler, channel) });
+                                        m_root->represent.getContrib(scene, useUniformSampling, useDirectIllum, query.ray, query.ray.maxt, query.sampler, channel) });
         Spectrum Li = refiningCut.top().estimate;
 
 #if DEBUG_VRL_LC
@@ -223,7 +223,7 @@ public:
                         estimate *= current_element.estimate;
                     } else {
                         query.nb_evaluation += 1;
-                        estimate = child_cluster->represent.getContrib(scene, useUniformSampling, query.ray, query.ray.maxt, query.sampler, channel);
+                        estimate = child_cluster->represent.getContrib(scene, useUniformSampling, useDirectIllum, query.ray, query.ray.maxt, query.sampler, channel);
                     }
                     if (std::isnan(estimate[0]) || std::isnan(estimate[1]) || std::isnan(estimate[2])) {
                         Log(LogLevel::Warn, "Invalid sample!");

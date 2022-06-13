@@ -54,6 +54,7 @@ public:
         laserOrigin = props.vector3f("laser_origin", Vector3f());
         laserDirection = props.vector3f("laser_direction", Vector3f());
 
+        m_useDirectIllum = props.bool_("use_direct_illum", false);
         // VRL Options
         m_diceVRL             = props.int_("dice_vrl", 1);
         m_longVRL             = props.bool_("long_vrl", false);
@@ -126,21 +127,13 @@ public:
                 ray               = rayColorPair.first;
                 flux              = rayColorPair.second;
 
-               /* if (m_vrlMap->can_add()) {
-                    std::ostringstream stream;
-                    stream << "rand ray = " << ray;
-                    std::string str = stream.str();
-                    Log(LogLevel::Info, str.c_str());
-                }*/
-
                 if (neq(emitter->shape(), nullptr)) {
                     flux = emitter->getUniformRadiance();
                     flux *= math::Pi<float> * emitter->shape()->surface_area();
-                } else {
-                    Log(LogLevel::Error, "unable to scale radiance as emitter shape si null");
                 }
+
+                medium = emitter->medium();
             }
-            medium = emitter->medium();
 
             if (m_useLaser) {
                 ray.o    = Point3f(laserOrigin);
@@ -153,6 +146,7 @@ public:
             float eta(1.0f);
             int nullInteractions = 0, mediumDepth = 0;
             bool wasTransmitted = false, volumePath = false;
+            bool is_direct = true;
 
             //
             Mask active             = true;
@@ -163,7 +157,7 @@ public:
                 channel             = (UInt32) min(sampler->next_1d(active) * n_channels, n_channels - 1);
             }
 
-            VRL tempVRL(ray.o, medium, throughput * flux, depth, channel);
+            VRL tempVRL(ray.o, medium, throughput * flux, depth, channel, is_direct);
 
             for (int bounce = 0;; ++bounce) {
                 active &= any(neq(depolarize(throughput), 0.f));
@@ -235,7 +229,7 @@ public:
 
                             tempVRL.setEndPoint(ray.o);
                             volumePath |= m_vrlMap->push_back(std::move(tempVRL), true);
-                            tempVRL = VRL(ray.o, medium, throughput * flux, depth, channel);
+                            tempVRL = VRL(ray.o, medium, throughput * flux, depth, channel, is_direct);
 
                             Medium::NonLinearInteraction new_nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
                             ;
@@ -250,13 +244,8 @@ public:
                     needs_intersection &= !active_medium;
 
                     // TODO: Non linear bug -> mi.t is reduced by nli, so transmittance here is now based on the last leftover which result in lower Tr than it should be.
-                    Spectrum vrlFlux = throughput * flux;
 
-                    tempVRL.setEndPoint(mi.p);
-                    volumePath |= m_vrlMap->push_back(std::move(tempVRL), false); /*
-                    if (m_vrlMap->push_back(std::move(tempVRL), false))
-                        ++volumeLightCount;*/
-                    tempVRL = VRL(mi.p, medium, vrlFlux, depth, channel);
+                    Spectrum vrlFlux = throughput * flux;
 
                     masked(mi.t, active_medium && (si.t < mi.t)) = math::Infinity<Float>;
                     if (any_or<true>(is_spectral)) {
@@ -273,6 +262,15 @@ public:
 
                     act_null_scatter |= null_scatter && active_medium;
                     act_medium_scatter |= !act_null_scatter && active_medium;
+
+                    if (act_medium_scatter)
+                    {
+                        tempVRL.setEndPoint(mi.p);
+                        volumePath |= m_vrlMap->push_back(std::move(tempVRL), false);
+                        if (volumePath)
+                            is_direct = false;
+                        tempVRL = VRL(mi.p, medium, vrlFlux, depth, channel, is_direct);
+                    }
 
                     if (any_or<true>(is_spectral && act_null_scatter))
                         masked(throughput, is_spectral && act_null_scatter) *= mi.sigma_n * index_spectrum(mi.combined_extinction, channel) / index_spectrum(mi.sigma_n, channel);
@@ -323,9 +321,7 @@ public:
                         break;
 
                     tempVRL.setEndPoint(si.p);
-                    volumePath |= m_vrlMap->push_back(std::move(tempVRL), false); /*
-                    if(m_vrlMap->push_back(std::move(tempVRL), false))
-                        ++volumeLightCount;*/
+                    volumePath |= m_vrlMap->push_back(std::move(tempVRL), false);
 
                     handleSurfaceInteraction(ray, depth, wasTransmitted, si, medium, flux * throughput);
 
@@ -354,6 +350,9 @@ public:
                     valid_ray |= non_null_bsdf;
                     wasTransmitted = non_null_bsdf && (has_flag(bs.sampled_type, BSDFFlags::Transmission));
 
+                    if (volumePath && !wasTransmitted)
+                        is_direct = false;
+
                     Mask intersect2             = active_surface && needs_intersection;
                     SurfaceInteraction3f si_new = si;
                     if (any_or<true>(intersect2))
@@ -361,9 +360,12 @@ public:
                     needs_intersection &= !intersect2;
 
                     Mask has_medium_trans            = active_surface && si.is_medium_transition();
+
+                    bool hadMedium = neq(medium, nullptr);
+
                     masked(medium, has_medium_trans) = si.target_medium(ray.d);
 
-                    tempVRL = VRL(ray.o, medium, throughput * flux, depth, channel);
+                    tempVRL = VRL(ray.o, medium, throughput * flux, depth, channel, is_direct);
 
                     si = si_new;
                 }
@@ -451,8 +453,6 @@ public:
             Log(LogLevel::Info, lookupString.c_str());
         }
 
-        static int early_exits = 0;
-
         Ray3f ray(_ray);
         MediumPtr medium(_medium);
         Spectrum radiance(0.0f), throughput(1.0f);
@@ -463,7 +463,6 @@ public:
         mi.t                    = math::Infinity<Float>;
         Medium::NonLinearInteraction nlmi;
 
-        // si =;
         Mask valid_ray = !m_hide_emitters && neq(scene->environment(), nullptr);
 
         float eta(1.0f);
@@ -477,11 +476,10 @@ public:
             uint32_t n_channels = (uint32_t) array_size_v<Spectrum>;
             channel             = (UInt32) min(sampler->next_1d(active) * n_channels, n_channels - 1);
         }
+
         for (int bounce = 0;; ++bounce) {
-            if (bounce > 500) {
-                ++early_exits;
-                break;
-            }
+            if (bounce > 1000)
+                Log(LogLevel::Error, "over 1k bounces, that cant be right");
             active &= any(neq(depolarize(throughput), 0.f));
 
             Mask exceeded_max_depth = depth >= (uint32_t) m_maxDepth;
@@ -517,7 +515,7 @@ public:
                         float length = min(si.t - t, totalLength);
                         gatherRay.maxt = length;
                         auto [evaluations, color, intersections] =
-                            m_vrlMap->query(gatherRay, scene, sampler, -1, length, m_useUniformSampling, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
+                            m_vrlMap->query(gatherRay, scene, sampler, -1, length, m_useUniformSampling, m_useDirectIllum, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
                         
 
                         t += length;
@@ -539,8 +537,9 @@ public:
 
                         auto [tr, free_flight_pdf] = medium->eval_tr_and_pdf(mi, si, active);
                         Float tr_pdf               = index_spectrum(free_flight_pdf, channel);
+                        //color *= select(tr_pdf > 0, tr / tr_pdf, 0.0f);
                         color *= throughput;
-                        radiance += color * 2;
+                        radiance += color;
                         throughput *= tr;
                     }
                 }
@@ -683,6 +682,7 @@ private:
     int m_samplesPerQuery = 2;
     int m_nbParticules;
     bool m_useLightCut;
+    bool m_useDirectIllum;
 
     // Options for VRL
     bool m_longVRL;

@@ -8,6 +8,7 @@
 		<float name="volume_lookup_radius_relative" value="1.0"/>
 		<boolean name="use_uniform_sampling" value="false"/>
 		<boolean name="use_light_cut" value="true"/>
+		<boolean name="use_direct_illum" value="true"/>
     </integrator>
 
 </scene>

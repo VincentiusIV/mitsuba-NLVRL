@@ -5,6 +5,7 @@
 NAMESPACE_BEGIN(mitsuba)
 
 #define VRL_DEBUG 0
+#define UNIT_SPHERE_VOLUME 4.18879020478639
 
 template <typename Float, typename Spectrum> struct VRL {
     MTS_IMPORT_TYPES(PhaseFunctionContext)
@@ -23,7 +24,8 @@ template <typename Float, typename Spectrum> struct VRL {
         m_channel      = 0;
     }
 
-    VRL(const Point3f &p, const Medium *m, const Spectrum &f, int curDepth, UInt32 channel) : origin(p), m_medium(m), flux(f), m_scatterDepth(curDepth), m_channel(channel) {
+    VRL(const Point3f &p, const Medium *m, const Spectrum &f, int curDepth, UInt32 channel, bool is_direct)
+        : origin(p), m_medium(m), flux(f), m_scatterDepth(curDepth), m_channel(channel), is_direct(is_direct) {
         direction = Vector3f(0, 0, 0);
         length    = 0;
 
@@ -178,15 +180,17 @@ template <typename Float, typename Spectrum> struct VRL {
         Float tCam;
         Point3f pVRL;
         Float tVRL;
-        Float invPDF;
+        Float vrl_invPDF;
+        Float ray_invPDF;
 
-        static SamplingInfo invalid() { return SamplingInfo{ Point3f(0.0), 0, Point3f(0.0), 0, 0 }; }
+        Float invPDF() { return ray_invPDF * vrl_invPDF; }
+        static SamplingInfo invalid() { return SamplingInfo{ Point3f(0.0), 0, Point3f(0.0), 0, 0, 0 }; }
     };
 
     SamplingInfo sampleMC(const Ray3f &ray, Sampler *sampler) const {
         Float tCam = sampler->next_1d() * ray.maxt;
         Float tVRL = sampler->next_1d() * length;
-        return SamplingInfo{ ray.o + ray.d * tCam, tCam, origin + direction * tVRL, tVRL, length * ray.maxt };
+        return SamplingInfo{ ray.o + ray.d * tCam, tCam, origin + direction * tVRL, tVRL, length, ray.maxt };
     }
 
 #define USE_PEAK_SAMPLING 0
@@ -297,7 +301,7 @@ template <typename Float, typename Spectrum> struct VRL {
                 }
 
 
-                return SamplingInfo{ pCam, tCam, pVRL, tVRL, sampling_vrl.invPDF * sampling_ray.invPDF };
+                return SamplingInfo{ pCam, tCam, pVRL, tVRL, sampling_vrl.invPDF, sampling_ray.invPDF };
             } else {
                 // Anisotropic phase function
                 // Note this code is not "battle" tested.
@@ -521,7 +525,7 @@ template <typename Float, typename Spectrum> struct VRL {
         return m;
     }
 
-    Spectrum getContrib(const Scene *scene, const bool uniformSampling, const Ray3f &ray, Float lengthOfRay, Sampler *sampler, UInt32 channel) const {
+    Spectrum getContrib(const Scene *scene, const bool uniformSampling, const bool useDirectIllum, const Ray3f &ray, Float lengthOfRay, Sampler *sampler, UInt32 channel) const {
         auto sampling = samplingVRL(scene, ray, sampler, uniformSampling, channel);
 
         // Check the visibility of the two sampled points
@@ -532,7 +536,7 @@ template <typename Float, typename Spectrum> struct VRL {
             return Spectrum(0.0);
         }
 
-        if (std::isnan(sampling.invPDF)) {
+        if (std::isnan(sampling.invPDF())) {
 #if VRL_DEBUG
             Log(LogLevel::Warn, "invalid VRL/sensor sample");
 #endif
@@ -563,20 +567,19 @@ template <typename Float, typename Spectrum> struct VRL {
 
         Float fallOff = 1.0f / (lengthPtoP * lengthPtoP);
 
-        MediumInteraction3f mi1, mi2;
-        mi1.wi = -direction;
-        mi2.wi = -ray.d;
-        PhaseFunctionContext phase_ctx1(sampler), phase_ctx2(sampler);
-
+        MediumInteraction3f mi1;        
+        PhaseFunctionContext phase_ctx(sampler);
         const PhaseFunction *pf = m_medium->phase_function();
-        Float vrlPF             = pf->eval(phase_ctx1, mi1, -dir);
-        Float rayPF             = pf->eval(phase_ctx2, mi2, dir);
 
-        mi1.p = sampling.pVRL;
-        mi2.p = sampling.pCam;
+        mi1.wi      = -ray.d;
+        mi1.p       = sampling.pCam;
+        Float rayPF             = pf->eval(phase_ctx, mi1, dir);
+        auto [sigmaSRay, sigmaNRay, sigmaTRay] = m_medium->get_scattering_coefficients(mi1, active);
 
+        mi1.wi                                 = -direction;
+        mi1.p                                  = sampling.pVRL;
+        Float vrlPF                            = pf->eval(phase_ctx, mi1, -dir);
         auto [sigmaSVRL, sigmaNVRL, sigmaTVRL] = m_medium->get_scattering_coefficients(mi1, active);
-        auto [sigmaSRay, sigmaNRay, sigmaTRay] = m_medium->get_scattering_coefficients(mi2, active);
 
         Spectrum result = flux * fallOff                             // = nan
                           * vrlPF                                    // Fs(theta u0)
@@ -584,7 +587,7 @@ template <typename Float, typename Spectrum> struct VRL {
                           * vrlTrans                                 // 1.0 if short beams
                           * rayTrans                                 // = 0
                           * vrlToRayTrans                            // = 0
-                          * sigmaSRay * sigmaSVRL * sampling.invPDF; // = nan
+                          * sigmaSRay * sigmaSVRL * sampling.invPDF(); // = nan
 #if VRL_DEBUG
         if (true)
 #else
@@ -592,10 +595,27 @@ template <typename Float, typename Spectrum> struct VRL {
 #endif
         {
             std::ostringstream stream;
-            stream << "Contrib VRL = [ray:" << ray << ", flux:" << flux << ", fallOff:" << fallOff << ", vrlTrans:" << vrlTrans << ", vrlPF:" << vrlPF << ", rayPF:" << rayPF << ", rayTrans:" << rayTrans
-                   << ", vrlToRayTrans:" << vrlToRayTrans << ", sigmaSRay:" << sigmaSRay << ", sigmaSVRL:" << sigmaSVRL << ", invPDF:" << sampling.invPDF << ", result = " << result;
+            stream << "Contrib VRL = [ray:" << ray << ", flux:" << flux << ", fallOff:" << fallOff << ", vrlTrans:" << vrlTrans << ", vrlPF:" << vrlPF << ", rayPF:" << rayPF << ", rayTrans:" << rayTrans << ", vrlToRayTrans:" << vrlToRayTrans << ", sigmaSRay:" << sigmaSRay << ", sigmaSVRL:" << sigmaSVRL << ", invPDF:" << sampling.invPDF()
+                   << ", result = " << result;
             std::string str = stream.str();
             Log(LogLevel::Info, str.c_str());
+        }
+
+        // Direct Illumination
+        // Accumulate the contribution of the photon
+
+        // Accumulate the results
+        if (useDirectIllum && is_direct)
+        {
+            // TODO: Derive radius from relative volume lookup radius...
+            float radius = 4.722149;
+            if (lengthPtoP < radius) {
+                mi1.wi         = -direction;
+                Float photonPF  = pf->eval(phase_ctx, mi1, ray.d);
+
+                Spectrum direct = flux * vrlTrans * (sigmaSVRL / sigmaTVRL) * (photonPF / (UNIT_SPHERE_VOLUME * enoki::pow(radius, 3)));
+                result += direct;
+            }
         }
 
         return result;
@@ -607,6 +627,7 @@ public:
     Vector3f direction;
     Float length;
     Spectrum flux;
+    bool is_direct;
 
 protected:
     UInt32 m_channel;
