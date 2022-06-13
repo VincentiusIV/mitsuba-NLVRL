@@ -120,7 +120,7 @@ public:
         m_data = DynamicBuffer<Float>::copy(bitmap->data(), hprod(m_resolution) * 4);
 
         m_scale = props.float_("scale", 1.f);
-        m_warp = Warp(luminance.get(), m_resolution);
+        m_warp =  Warp(luminance.get(), m_resolution);
         m_d65 = Texture::D65(1.f);
         m_flags = EmitterFlags::Infinite | EmitterFlags::SpatiallyVarying;
     }
@@ -153,13 +153,49 @@ public:
     std::pair<Ray3f, Spectrum> sample_ray(Float time, Float wavelength_sample,
                                           const Point2f &sample2, const Point2f &sample3,
                                           Mask active) const override {
+        // This method leads to mostly samples from sides and causes green/yellow glow at bottom of glass
+        /**/
+
+        Float dist     = 10.0f * m_bsphere.radius;
+
+        Float u      = sample3.x();
+        Float v      = sample3.y();
+        Float theta  = u * 2.0 * math::Pi<Float>;
+        Float phi    = acos(2.0 * v - 1.0);
+        Float r      = enoki::cbrt(wavelength_sample);
+        Float sinTheta = sin(theta);
+        Float cosTheta = cos(theta);
+        Float sinPhi   = sin(phi);
+        Float cosPhi   = cos(phi);
+        Float x        = r * sinPhi * cosTheta;
+        Float y        = r * sinPhi * sinTheta;
+        Float z        = r * cosPhi;
+        Vector3f rand_sphere_dir(x, y, z);
+        Point3f sphere_pos  = rand_sphere_dir * dist;
+
         Interaction3f it;
-        it.p = Point3f(0.0);
-        it.time = time;
-        it.wavelengths = zero<Wavelength>();
+        it.p                = sphere_pos;
+        it.time             = time;
+        it.wavelengths      = zero<Wavelength>();
         auto [ds, radiance] = sample_direction(it, sample2, active);
-        Point3f o = -ds.n * m_bsphere.radius * 100.0f;
+        Point3f o           = -ds.n * dist;
         return std::make_pair(Ray3f(o, ds.n, time), radiance);
+
+        /*SurfaceInteraction3f si;
+        si.wavelengths = zero<Wavelength>();
+        si.wi          = rand_sphere_dir;
+        si.time        = time;
+        return std::make_pair(Ray3f(sphere_pos, sphere_dir, time), eval(si, active) * math::InvTwoPi<Float>);*/
+    }
+
+    Vector3f randSphere(const Point2f& sample) const {
+        Float phi      = lerp(0, math::TwoPi<Float>, sample.x());
+        Float costheta = lerp(-1, 1, sample.y());
+        Float theta    = enoki::acos(costheta);
+        Float x        = sin(theta) * cos(phi);
+        Float y        = sin(theta) * sin(phi);
+        Float z        = cos(theta);
+        return Vector3f(x, y, z);
     }
 
     std::pair<DirectionSample3f, Spectrum>

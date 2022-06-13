@@ -4,7 +4,7 @@
 
 	<integrator type="vrl">
 		<integer name="light_emissions" value="1000000"/>
-		<integer name="target_vrls" value="0"/>
+		<integer name="target_vrls" value="100"/>
 		<integer name="samples_per_query" value="1"/>
 		<float name="volume_lookup_radius_relative" value="0.1"/>
 		<boolean name="use_uniform_sampling" value="false"/>
@@ -37,7 +37,7 @@
 
     <emitter type="envmap" id="theEnvMap">
         <string name="filename" value="../envmap.exr"/>
-        <float name="scale" value="0.16"/>
+        <float name="scale" value="0.8"/>
     </emitter>
 
     <!-- World units are in meters -->
@@ -56,8 +56,8 @@
     -->
     <medium id="grapefruitJuiceIsotropic" type="homogeneous" >
         <float name="scale" value="100"/>
-        <rgb name="albedo" value="0.45, 0.32, 0.23"/>
-        <rgb name="sigma_t" value="0.41, 0.95, 0.73"/>
+        <rgb name="albedo" value="0.7, 0.7, 0.7"/>
+        <rgb name="sigma_t" value="0.4, 0.6, 0.73"/>
     </medium>
 
     <!-- Very mildly absorbing glass to suppress very long internally 

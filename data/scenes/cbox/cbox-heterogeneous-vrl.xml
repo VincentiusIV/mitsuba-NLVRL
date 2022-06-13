@@ -2,10 +2,12 @@
     <include filename="hetero-scene.xml"/>
 
 	<integrator type="vrl">
-		<integer name="lightEmissions" value="1000000"/>
-		<integer name="targetVRLs" value="100"/>
-		<boolean name="useUniformSampling" value="true"/>
-		<boolean name="useLightCut" value="false"/>
+		<integer name="light_emissions" value="1000000"/>
+		<integer name="target_vrls" value="100"/>
+		<integer name="samples_per_query" value="1"/>
+		<float name="volume_lookup_radius_relative" value="0.1"/>
+		<boolean name="use_uniform_sampling" value="true"/>
+		<boolean name="use_light_cut" value="false"/>
     </integrator>
 	
 </scene>

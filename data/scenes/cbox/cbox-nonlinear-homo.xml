@@ -7,7 +7,7 @@
 	
 	
     <default name="cbox_x" value="-275"/>
-    <default name="cbox_y" value="-275"/>
+    <default name="cbox_y" value="-199"/>
     <default name="cbox_z" value="-30"/>
 	
     <sensor type="perspective">
@@ -17,7 +17,7 @@
         <float name="focus_distance" value="1000"/>
         <float name="fov" value="39.3077"/>
         <transform name="to_world">
-            <lookat origin="0, 0, -800"
+            <lookat origin="0, 0, -1200"
                     target="0, 0, -799"
                     up    ="  0,   1,    0"/>
         </transform>
@@ -35,7 +35,7 @@
 	<shape type="obj">
         <string name="filename" value="meshes/cbox_luminaire.obj"/>
         <transform name="to_world">
-            <translate x="-280" y="-340" z="-280"/>
+            <translate x="-280" y="0" z="-280"/>
         </transform>
         <ref id="light"/>
         <ref id="area-emitter"/>
@@ -52,21 +52,11 @@
         <rgb name="sigma_t" value="0.1"/>
         <rgb name="albedo" value="1.0, 1.0, 1.0"/>
         <phase type="isotropic" />
+        <integer name="res_x" value="32"/>
+        <integer name="res_y" value="16"/>
+        <integer name="res_z" value="16"/>
     </medium>
-	
-	
-	<shape type="obj">
-        <string name="filename" value="meshes/cbox_floor.obj"/>
-		<transform name="to_world">
-            <translate x="$cbox_x" y="$cbox_y" z="$cbox_z"/>
-        </transform>
-		
-		
-        <bsdf type="conductor">
-            <spectrum name="eta" value="0.789000"/>
-            <spectrum name="k" value="6.150000"/>
-        </bsdf>
-    </shape>
+
 	
 	<!-- Fog -->
 	<shape type="obj">
@@ -74,7 +64,7 @@
         <bsdf type="null">
         </bsdf>
 		<transform name="to_world">
-            <scale x="400" y="400" z="400"/>
+            <scale x="800" y="400" z="400"/>
         </transform>
         <ref id="medium1" name="interior"/>
     </shape>

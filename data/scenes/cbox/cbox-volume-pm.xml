@@ -2,11 +2,11 @@
     <include filename="cbox-volume.xml"/>
 	
 	<integrator type="photonmap">
-		<integer name="lightEmissions" value="10000000"/>
-		<float name="volumeLookupRadiusRelative" value="0.05"/>
-		<float name="globalLookupRadiusRelative" value="0.1"/>
-		<boolean name="useFirstPhoton" value="false"/>
-		<boolean name="stochasticGather" value="true"/>
+		<integer name="light_emissions" value="1000000"/>
+		<float name="volume_lookup_radius_relative" value="0.01"/>
+		<float name="global_lookup_radius_relative" value="0.1"/>
+		<boolean name="use_first_photon" value="false"/>
+		<boolean name="stochastic_gather" value="true"/>
     </integrator>
 
 </scene>

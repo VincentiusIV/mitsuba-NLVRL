@@ -34,31 +34,34 @@ public:
     typedef typename PhotonMap::PhotonData PhotonData;
 
     PhotonMapper(const Properties &props) : Base(props) {
-        m_numLightEmissions = props.int_("lightEmissions", 1000000);
+        m_numLightEmissions = props.int_("light_emissions", 1000000);
         m_globalPhotonMap = new PhotonMap(m_numLightEmissions);
         m_causticPhotonMap = new PhotonMap(m_numLightEmissions);
         m_volumePhotonMap = new PhotonMap(m_numLightEmissions);
-        m_directSamples = props.int_("directSamples", 16);
-        m_glossySamples = props.int_("glossySamples", 32);
-        m_rrDepth = props.int_("rrStartDepth", 5);
+        m_directSamples = props.int_("direct_samples", 16);
+        m_glossySamples = props.int_("glossy_samples", 32);
+        m_rrDepth = props.int_("rr_start_depth", 5);
         m_maxDepth = props.int_("max_depth", 512);
-        m_maxSpecularDepth = props.int_("maxSpecularDepth", 4);
+        m_maxSpecularDepth = props.int_("max_specular_depth", 4);
         m_granularity = props.int_("granularity", 0);
-        m_globalPhotons = props.int_("globalPhotons", 250000);
-        m_causticPhotons = props.int_("causticPhotons", 250000);
-        m_volumePhotons = props.int_("volumePhotons", 250000);
-        m_volumeLookupRadiusRelative = props.float_("volumeLookupRadiusRelative", 0.01f);
-        m_globalLookupRadiusRelative = props.float_("globalLookupRadiusRelative", 0.05f);
-        m_causticLookupRadiusRelative = props.float_("causticLookupRadiusRelative", 0.0125f);
-        m_globalLookupSize = props.int_("globalLookupSize", 120);
-        m_causticLookupSize = props.int_("causticLookupSize", 120);
-        m_volumeLookupSize = props.int_("volumeLookupSize", 120);
-        m_gatherLocally = props.bool_("gatherLocally", true);
-        m_autoCancelGathering         = props.bool_("autoCancelGathering", true);
-        m_stochasticGather            = props.bool_("stochasticGather", true);
-        m_useNonLinear                = props.bool_("useNonLinear", true);
-        m_useLaser                    = props.bool_("useLaser", false);
-        m_useFirstPhoton              = props.bool_("useFirstPhoton", false);
+        m_globalPhotons = props.int_("global_photons", 250000);
+        m_causticPhotons = props.int_("caustic_photons", 250000);
+        m_volumePhotons = props.int_("volume_photons", 250000);
+        m_volumeLookupRadiusRelative = props.float_("volume_lookup_radius_relative", 0.01f);
+        m_globalLookupRadiusRelative = props.float_("global_lookup_radius_relative", 0.05f);
+        m_causticLookupRadiusRelative = props.float_("caustic_lookup_radius_relative", 0.0125f);
+        m_globalLookupSize = props.int_("global_lookup_size", 120);
+        m_causticLookupSize = props.int_("caustic_lookup_size", 120);
+        m_volumeLookupSize = props.int_("volume_lookup_size", 120);
+        m_gatherLocally = props.bool_("gather_locally", true);
+        m_autoCancelGathering         = props.bool_("auto_cancel_gathering", true);
+        m_stochasticGather            = props.bool_("stochastic_gather", true);
+        m_useNonLinear                = props.bool_("use_non_linear", true);
+        m_useFirstPhoton              = props.bool_("use_first_photon", false);
+
+        m_useLaser                    = props.bool_("use_laser", false);
+        laserOrigin                   = props.vector3f("laser_origin", Vector3f());
+        laserDirection                = props.vector3f("laser_direction", Vector3f());
     }
 
     void preprocess(Scene* scene, Sensor* sensor) override {
@@ -119,24 +122,24 @@ public:
                 }
             }
             medium = emitter->medium();
-            
+
             if (m_useLaser) {
-                ray.o    = Point3f(-250.0f, 50.0f, 15.0f);
-                ray.d    = normalize(Vector3f(0.5f, -0.3f, 0.0f));
+                ray.o    = Point3f(laserOrigin);
+                ray.d    = normalize(laserDirection);
                 ray.mint = 0.0f;
                 ray.maxt = math::Infinity<Float>;
                 ray.update();
-            } 
+            }
 
-            
             float eta(1.0f);
             int nullInteractions = 0, mediumDepth = 0;
-            bool wasTransmitted = false;
+            bool wasTransmitted = false, volumePath = false;
             bool fromLight = true;
+
             //
             Mask active             = true;
             Mask needs_intersection = true;
-            UInt32 depth            = 1,  channel = 0;
+            UInt32 depth = 1, channel = 0;
             if (is_rgb_v<Spectrum>) {
                 uint32_t n_channels = (uint32_t) array_size_v<Spectrum>;
                 channel             = (UInt32) min(sampler->next_1d(active) * n_channels, n_channels - 1);
@@ -179,6 +182,12 @@ public:
 
                         for (size_t i = 0; i < 100; i++) {
                             if (nli.t > mi.t || !nli.is_valid)
+                                break;
+                            // check intersection
+                            Ray3f its_test(ray);
+                            its_test.maxt = nli.t;
+                            si            = scene->ray_intersect(its_test, active);
+                            if (si.is_valid())
                                 break;
 
                             Ray3f trans(ray);
@@ -427,7 +436,8 @@ public:
         float eta(1.0f);
         int nullInteractions = 0;
         bool delta     = false;
-        
+
+        Mask specular_chain     = active && !m_hide_emitters;
         Mask needs_intersection = true;
         UInt32 depth = 1, channel = 0;
         if (is_rgb_v<Spectrum>) {
@@ -498,7 +508,13 @@ public:
                             if (shouldGather) {
          
                                 Mask act_scatter = sampler->next_1d(active) < index_spectrum(mi.sigma_t, channel) / index_spectrum(mi.combined_extinction, channel);
+
+                                specular_chain &= !act_scatter;
+                                specular_chain |= act_scatter;
+
                                 if (act_scatter) {
+
+
                                     Spectrum estimate = m_volumePhotonMap->estimateRadianceVolume(gatherPoint, mediumRay.d, medium, sampler, radius, M);
          
                                     auto [tr, free_flight_pdf] = medium->eval_tr_and_pdf(mi, si, active);
@@ -510,7 +526,6 @@ public:
                                     MVol += M;
                                     volRadiance += estimate;
                                 }
-         
                             }
          
                             t += radius * 2;
@@ -538,6 +553,15 @@ public:
                 Mask intersect = active_surface && needs_intersection;
                 if (any_or<true>(intersect))
                     masked(si, intersect) = scene->ray_intersect(ray, intersect);
+
+                if (any_or<true>(active_surface)) {
+                    // ---------------- Intersection with emitters ----------------
+                    EmitterPtr emitter            = si.emitter(scene);
+                    Mask use_emitter_contribution = active_surface && specular_chain && neq(emitter, nullptr);
+                    if (any_or<true>(use_emitter_contribution))
+                        masked(radiance, use_emitter_contribution) += throughput * emitter->eval(si, use_emitter_contribution);
+                }
+
                 active_surface &= si.is_valid();
 
                 // -------------------- End RTE ----------------- //
@@ -565,7 +589,6 @@ public:
                         break;
                     }
 
-
                     throughput = throughput * bsdfVal;
                     active &= any(neq(depolarize(throughput), 0.f));
                     if (none_or<false>(active)) {
@@ -583,6 +606,9 @@ public:
                     masked(nullInteractions, !non_null_bsdf) += 1;
 
                     valid_ray |= non_null_bsdf;
+                    specular_chain |= non_null_bsdf && has_flag(bs.sampled_type, BSDFFlags::Delta);
+                    specular_chain &= !(active_surface && has_flag(bs.sampled_type, BSDFFlags::Smooth));
+
                     delta = non_null_bsdf && (has_flag(bs.sampled_type, BSDFFlags::Transmission) || has_flag(bs.sampled_type, BSDFFlags::Reflection));
 
                     Mask intersect2             = active_surface && needs_intersection;
@@ -665,6 +691,8 @@ private:
     PhotonMap *m_globalPhotonMap;
     PhotonMap *m_causticPhotonMap;
     PhotonMap *m_volumePhotonMap;
+
+    Vector3f laserOrigin, laserDirection;
 
     int m_numLightEmissions, m_directSamples, m_glossySamples, m_rrDepth, m_maxDepth,
         m_maxSpecularDepth, m_granularity;

@@ -45,18 +45,20 @@ public:
         m_samplesPerQuery             = props.int_("samples_per_query", 2);
         m_gatherLocally               = props.bool_("gather_locally", true);
         m_autoCancelGathering         = props.bool_("auto_cancel_gathering", true);
+        
 
         m_nbParticules = props.int_("nb_particules", 50);
         m_rrDepth      = props.int_("rr_depth", 5);
 
-
+        m_useLaser        = props.bool_("use_laser", false);
+        laserOrigin = props.vector3f("laser_origin", Vector3f());
+        laserDirection = props.vector3f("laser_direction", Vector3f());
 
         // VRL Options
         m_diceVRL             = props.int_("dice_vrl", 1);
         m_longVRL             = props.bool_("long_vrl", false);
         m_useUniformSampling  = props.bool_("use_uniform_sampling", false);
         m_useNonLinear        = props.bool_("use_non_linear", true);
-        m_useLaser        = props.bool_("use_laser", false);
         m_useLightCut = props.bool_("use_light_cut", false);
         m_RRVRL               = props.bool_("rr_vrl", false);
         m_scaleRR             = props.float_("scale_rr", 0.5); // 2 meters before 5%
@@ -124,16 +126,25 @@ public:
                 ray               = rayColorPair.first;
                 flux              = rayColorPair.second;
 
+               /* if (m_vrlMap->can_add()) {
+                    std::ostringstream stream;
+                    stream << "rand ray = " << ray;
+                    std::string str = stream.str();
+                    Log(LogLevel::Info, str.c_str());
+                }*/
+
                 if (neq(emitter->shape(), nullptr)) {
                     flux = emitter->getUniformRadiance();
                     flux *= math::Pi<float> * emitter->shape()->surface_area();
+                } else {
+                    Log(LogLevel::Error, "unable to scale radiance as emitter shape si null");
                 }
             }
             medium = emitter->medium();
 
             if (m_useLaser) {
-                ray.o    = Point3f(-250.0f, 50.0f, 15.0f);
-                ray.d    = normalize(Vector3f(0.5f, -0.3f, 0.0f));
+                ray.o    = Point3f(laserOrigin);
+                ray.d    = normalize(laserDirection);
                 ray.mint = 0.0f;
                 ray.maxt = math::Infinity<Float>;
                 ray.update();
@@ -185,8 +196,16 @@ public:
                         nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
 
                         for (size_t i = 0; i < 100; i++) {
+
                             if (nli.t > mi.t || !nli.is_valid)
                                 break;
+                            // check intersection
+                            Ray3f its_test(ray);
+                            its_test.maxt         = nli.t;
+                            si = scene->ray_intersect(its_test, active);
+                            if (si.is_valid())
+                                break;
+
                             // Move ray to nli.p + Eps
                             ray.o = ray(nli.t + math::RayEpsilon<Float>);
                             ray.d = nli.wo;
@@ -222,8 +241,6 @@ public:
                             ;
                             nli = std::move(new_nli);
                         }
-
-                        //break;
                     }
 
                     masked(ray.maxt, active_medium && medium->is_homogeneous() && mi.is_valid()) = mi.t;
@@ -233,6 +250,13 @@ public:
                     needs_intersection &= !active_medium;
 
                     // TODO: Non linear bug -> mi.t is reduced by nli, so transmittance here is now based on the last leftover which result in lower Tr than it should be.
+                    Spectrum vrlFlux = throughput * flux;
+
+                    tempVRL.setEndPoint(mi.p);
+                    volumePath |= m_vrlMap->push_back(std::move(tempVRL), false); /*
+                    if (m_vrlMap->push_back(std::move(tempVRL), false))
+                        ++volumeLightCount;*/
+                    tempVRL = VRL(mi.p, medium, vrlFlux, depth, channel);
 
                     masked(mi.t, active_medium && (si.t < mi.t)) = math::Infinity<Float>;
                     if (any_or<true>(is_spectral)) {
@@ -270,12 +294,6 @@ public:
                         masked(throughput, is_spectral && act_medium_scatter) *= mi.sigma_s * index_spectrum(mi.combined_extinction, channel) / index_spectrum(mi.sigma_t, channel);
                     if (any_or<true>(not_spectral))
                         masked(throughput, not_spectral && act_medium_scatter) *= mi.sigma_s / mi.sigma_t;
-
-                    tempVRL.setEndPoint(mi.p);
-                    volumePath |= m_vrlMap->push_back(std::move(tempVRL), false); /*
-                    if (m_vrlMap->push_back(std::move(tempVRL), false))
-                        ++volumeLightCount;*/
-                    tempVRL = VRL(mi.p, medium, throughput * flux, depth, channel);
 
                     PhaseFunctionContext phase_ctx(sampler);
                     auto phase = mi.medium->phase_function();
@@ -494,14 +512,13 @@ public:
                 gatherRay.mint = 0.0f;
 
                 if (si.is_valid()) {
-                    specular_chain = true;
                     valid_ray |= true;
                     while (t < si.t) {
                         float length = min(si.t - t, totalLength);
                         gatherRay.maxt = length;
                         auto [evaluations, color, intersections] =
                             m_vrlMap->query(gatherRay, scene, sampler, -1, length, m_useUniformSampling, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
-                        radiance += color * throughput;
+                        
 
                         t += length;
                         gatherRay.o = ray(t);
@@ -521,6 +538,9 @@ public:
                         mi.combined_extinction = combined_extinction;
 
                         auto [tr, free_flight_pdf] = medium->eval_tr_and_pdf(mi, si, active);
+                        Float tr_pdf               = index_spectrum(free_flight_pdf, channel);
+                        color *= throughput;
+                        radiance += color * 2;
                         throughput *= tr;
                     }
                 }
@@ -692,6 +712,8 @@ private:
     // ***************** Surface Illumination ***************** //
     PhotonMap *m_globalPhotonMap;
     PhotonMap *m_causticPhotonMap;
+
+    Vector3f laserOrigin, laserDirection;
 
     int m_directSamples, m_glossySamples, m_maxSpecularDepth, m_granularity;
     int m_minDepth = 1;

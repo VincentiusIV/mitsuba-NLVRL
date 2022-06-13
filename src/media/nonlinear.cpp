@@ -197,7 +197,9 @@ public:
         // 5. Refract ray using nli info
         nli.wo = refract(nli.wi, nli.n, nli.n1, nli.n2);
         if (norm(nli.wo) == 0.0f)
+        {
             nli.wo = reflect(nli.wi, nli.n);
+        }
 
         // Update mi since info should be gathered from a different point
         if (norm(nli.wo) == 0.0f || (norm(nli.n) == 0.0f) || validNeighbour && neighbour.aabb == node.aabb) {
