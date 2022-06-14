@@ -150,7 +150,7 @@ public:
     // TODO: Fix the specific parameters for RR
 
     // returns nb_evaluation, color, nb_BBIntersection
-    std::tuple<size_t, Spectrum, size_t> query(const Ray3f &ray, const Scene *scene, Sampler *sampler, int renderScatterDepth, Float lengthOfRay, bool useUniformSampling, bool useDirectIllum, const EVRLRussianRoulette strategyRR, Float scaleRR, UInt32 samples, UInt32 channel) const {
+    std::tuple<size_t, Spectrum, size_t> query(const Ray3f &ray, const Scene *scene, Sampler *sampler, int renderScatterDepth, Float lengthOfRay, bool useUniformSampling, bool useDirectIllum, Float directRadius, const EVRLRussianRoulette strategyRR, Float scaleRR, UInt32 samples, UInt32 channel) const {
         if (m_map.size() == 0)
             return { 0, Spectrum(0.0), 0 };
 
@@ -170,7 +170,7 @@ public:
                         }
                     }
                     if (strategyRR == ENoRussianRoulette) {
-                        Spectrum contrib = vrl.getContrib(scene, useUniformSampling, useDirectIllum, ray, lengthOfRay, sampler, channel) * m_scale;
+                        Spectrum contrib = vrl.getContrib(scene, useUniformSampling, useDirectIllum, directRadius, ray, lengthOfRay, sampler, channel) * m_scale;
 
                         if (std::isnan(contrib[0]) || std::isnan(contrib[1]) || std::isnan(contrib[2]) || std::isinf(contrib[0]) || std::isinf(contrib[1]) || std::isinf(contrib[2])) {
                             continue;
@@ -191,7 +191,7 @@ public:
                         Float min_distance_sqr = sqrt(computeMinRayToRayDistance());
                         Float rrWeight         = min(1 / (min_distance_sqr * scaleRR), 1.0);
                         if (rrWeight > sampler->next_1d()) {
-                            Spectrum contrib = (vrl.getContrib(scene, useUniformSampling, useDirectIllum, ray, lengthOfRay, sampler, channel) / rrWeight) * m_scale;
+                            Spectrum contrib = (vrl.getContrib(scene, useUniformSampling, useDirectIllum, directRadius, ray, lengthOfRay, sampler, channel) / rrWeight) * m_scale;
                             if (std::isnan(contrib[0]) || std::isnan(contrib[1]) || std::isnan(contrib[2]) || std::isinf(contrib[0]) || std::isinf(contrib[1]) || std::isinf(contrib[2])) {
                                 continue;
                             }
@@ -210,7 +210,7 @@ public:
                 VRLPercentagePruned.incrementBase(m_map.size());*/
             } else if (m_accel == ELightCutAcceleration) {
                 VRLLightCut::LCQuery query{ ray, sampler, 0 };
-                Li += m_lc->query(scene, sampler, query, nb_BBIntersection, useUniformSampling, useDirectIllum, channel) * m_scale;
+                Li += m_lc->query(scene, sampler, query, nb_BBIntersection, useUniformSampling, useDirectIllum, directRadius, channel) * m_scale;
                 nb_evaluation += query.nb_evaluation;
             } else {
                 Log(LogLevel::Error, "query for acceleration is not implemented");

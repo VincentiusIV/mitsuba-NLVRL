@@ -15,6 +15,7 @@
 #include <mitsuba/render/phase.h>
 #include <mitsuba/render/records.h>
 #include <mitsuba/core/warp.h>
+#include <mitsuba/core/timer.h>
 #include <random>
 #include "photonmap.h"
 
@@ -67,6 +68,8 @@ public:
     void preprocess(Scene* scene, Sensor* sensor) override {
         Log(LogLevel::Info, "Pre Processing Photon Map...");
 
+        m_preprocess_timer.reset();
+
         for each (auto shape in scene->shapes()) {
             if (shape->interior_medium() != nullptr)
             {
@@ -118,7 +121,7 @@ public:
 
                 if (neq(emitter->shape(), nullptr)) {
                     flux = emitter->getUniformRadiance();
-                    flux *= math::Pi<float> * emitter->shape()->surface_area();
+                    flux *= math::Pi<float> * emitter->shape()->surface_area() * 0.5f;
                 }
 
                 medium = emitter->medium();
@@ -193,8 +196,12 @@ public:
                             trans.maxt = nli.t;
                             throughput *= medium->evalMediumTransmittance(trans, sampler, active);
 
+
                             // Move ray to nli.p + Eps
-                            ray.o = ray(nli.t + math::RayEpsilon<Float>);                            
+                            ray.o = ray(nli.t + math::RayEpsilon<Float>); 
+
+                            //handleMediumInteraction(depth - nullInteractions, wasTransmitted, ray.o, medium, -ray.d, flux * throughput);
+
                             ray.d = nli.wo;
                             ray.update();
                             mi.sh_frame = Frame3f(ray.d);
@@ -220,8 +227,9 @@ public:
                             std::tie(mi.sigma_s, mi.sigma_n, mi.sigma_t) = medium->get_scattering_coefficients(mi, valid_mi);
                             mi.combined_extinction                       = combined_extinction;
 
+
                             Medium::NonLinearInteraction new_nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);;
-                            nli = std::move(new_nli);        
+                            nli = std::move(new_nli);
 
                         }
                     }
@@ -264,7 +272,11 @@ public:
                     masked(ray.o, act_null_scatter)    = mi.p;
                     masked(ray.mint, act_null_scatter) = 0.f;
                     masked(si.t, act_null_scatter)     = si.t - mi.t;
-                    fromLight                          = false;
+
+                    if (!fromLight || m_useFirstPhoton) {
+                        handleMediumInteraction(depth - nullInteractions, wasTransmitted, mi.p, medium, -ray.d, flux * throughput);
+                    }
+                    fromLight = false;
                 }
 
                 if (any_or<true>(act_medium_scatter)) {
@@ -278,7 +290,7 @@ public:
 
                     if (!fromLight || m_useFirstPhoton)
                     {
-                        handleMediumInteraction(depth - nullInteractions, wasTransmitted, mi, medium, -ray.d, flux * throughput);
+                        handleMediumInteraction(depth - nullInteractions, wasTransmitted, mi.p, medium, -ray.d, flux * throughput);
                     }
                     fromLight = false;
                     // ------------------ Phase function sampling -----------------
@@ -397,7 +409,7 @@ public:
         } else {
             Log(LogLevel::Info, "No volume photons");
         }
-        Log(LogLevel::Info, "Pre Processing done.");     
+        Log(Info, "Pre-process finished. (took %s)", util::time_string(m_preprocess_timer.value(), true));
     }
 
     std::pair<Spectrum, Mask> sample(const Scene *scene, Sampler *sampler,
@@ -533,6 +545,8 @@ public:
 
                 escaped_medium = true;
                 needs_intersection= true;
+                medium             = nullptr;
+                active_surface |= si.is_valid();
             }
 
             active &= depth < (uint32_t) m_maxDepth;
@@ -653,10 +667,10 @@ public:
     }
 
     void handleMediumInteraction(int depth, bool delta,
-                                 const MediumInteraction3f &mi,
+                                 const Point3f &p,
                                  const Medium *medium, const Vector3f &wi,
                                  const Spectrum &weight) const {
-        m_volumePhotonMap->insert(mi.p, PhotonData(Normal3f(0.0f, 0.0f, 0.0f), -wi, weight, depth));
+        m_volumePhotonMap->insert(p, PhotonData(Normal3f(0.0f, 0.0f, 0.0f), -wi, weight, depth));
     }
 
     MTS_INLINE
@@ -695,6 +709,8 @@ private:
     /* Indicates if the gathering steps should be canceled if not enough photons
      * are generated. */
     bool m_autoCancelGathering;
+
+    Timer m_preprocess_timer;
 };
 
 MTS_IMPLEMENT_CLASS_VARIANT(PhotonMapper, SamplingIntegrator);

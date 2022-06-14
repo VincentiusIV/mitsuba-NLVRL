@@ -83,7 +83,9 @@ public:
     /// Return the capacity of the kd-tree
     inline size_t capacity() const { return m_kdtree.capacity(); }
     /// Append a kd-tree photonData to the photonData array
-    inline void push_back(const Photon &photon) { m_kdtree.push_back(photon); }
+    inline void push_back(const Photon &photon) { 
+        m_kdtree.push_back(photon); 
+    }
     /// Return one of the photons by index
     inline Photon &operator[](size_t idx) { return m_kdtree[idx]; }
     /// Return one of the photons by index (const version)
@@ -97,6 +99,8 @@ public:
     inline size_t getDepth() const { return m_kdtree.getDepth(); }
 
     inline void build(bool recomputeAABB = false) {
+
+
         m_kdtree.build(recomputeAABB);
     }
 

@@ -8,6 +8,7 @@
 #include <mitsuba/render/medium.h>
 #include <mitsuba/render/phase.h>
 #include <mitsuba/render/records.h>
+#include <mitsuba/core/timer.h>
 #include <random>
 
 #include "../photonmapper/photonmap.h"
@@ -54,7 +55,7 @@ public:
         laserOrigin = props.vector3f("laser_origin", Vector3f());
         laserDirection = props.vector3f("laser_direction", Vector3f());
 
-        m_useDirectIllum = props.bool_("use_direct_illum", false);
+        m_useDirectIllum = props.bool_("use_direct_illum", true);
         // VRL Options
         m_diceVRL             = props.int_("dice_vrl", 1);
         m_longVRL             = props.bool_("long_vrl", false);
@@ -76,6 +77,8 @@ public:
 
     void preprocess(Scene *scene, Sensor *sensor) override {
         Log(LogLevel::Info, "Pre Processing Photon Map...");
+
+        m_preprocess_timer.reset();
 
         for each (auto shape in scene->shapes()) {
             if (shape->interior_medium() != nullptr) {
@@ -435,7 +438,7 @@ public:
             Log(LogLevel::Info, "No VRLs");
         }
 
-        Log(LogLevel::Info, "Pre Processing done.");
+        Log(Info, "Pre-process finished. (took %s)", util::time_string(m_preprocess_timer.value(), true));
     }
 
     std::pair<Spectrum, Mask> sample(const Scene *scene, Sampler *sampler, const RayDifferential3f &_ray, const Medium *_medium, Float *aovs, Mask active) const override {
@@ -502,8 +505,7 @@ public:
             }
 
             if (any_or<true>(active_medium)) {
-
-                Float totalLength = min(m_volumeLookupRadius, si.t);
+                Float totalLength = si.t;
                 Float t           = 0;
 
                 Ray3f gatherRay(ray.o, ray.d, 0.0f);
@@ -514,8 +516,7 @@ public:
                     while (t < si.t) {
                         float length = min(si.t - t, totalLength);
                         gatherRay.maxt = length;
-                        auto [evaluations, color, intersections] =
-                            m_vrlMap->query(gatherRay, scene, sampler, -1, length, m_useUniformSampling, m_useDirectIllum, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
+                        auto [evaluations, color, intersections] = m_vrlMap->query(gatherRay, scene, sampler, -1, length, m_useUniformSampling, m_useDirectIllum, m_volumeLookupRadius, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
                         
 
                         t += length;
@@ -545,6 +546,8 @@ public:
                 }
 
                 escaped_medium = true;
+                needs_intersection = true;
+                //medium = nullptr;
                 active_surface |= si.is_valid();
             }
 
@@ -726,6 +729,9 @@ private:
     /* Indicates if the gathering steps should be canceled if not enough photons
      * are generated. */
     bool m_autoCancelGathering;
+
+    
+    Timer m_preprocess_timer;
 };
 
 MTS_IMPLEMENT_CLASS_VARIANT(VRLIntegrator, SamplingIntegrator);

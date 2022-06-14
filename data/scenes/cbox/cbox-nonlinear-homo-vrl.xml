@@ -5,7 +5,7 @@
 		<integer name="light_emissions" value="10000"/>
 		<integer name="target_vrls" value="10000"/>
 		<integer name="samples_per_query" value="1"/>
-		<float name="volume_lookup_radius_relative" value="0.1"/>
+		<float name="volume_lookup_radius_relative" value="0.02"/>
 		<boolean name="use_uniform_sampling" value="false"/>
 		<boolean name="use_light_cut" value="true"/>
 		<boolean name="use_non_linear" value="true"/>

@@ -50,6 +50,9 @@ MTS_VARIANT std::vector<std::string> SamplingIntegrator<Float, Spectrum>::aov_na
 
 MTS_VARIANT bool SamplingIntegrator<Float, Spectrum>::render(Scene *scene, Sensor *sensor) {
 
+    Log(LogLevel::Info, "Starting pre process...");
+    preprocess(scene, sensor);
+    
     ScopedPhase sp(ProfilerPhase::Render);
     m_stop = false;
 
@@ -73,8 +76,6 @@ MTS_VARIANT bool SamplingIntegrator<Float, Spectrum>::render(Scene *scene, Senso
         channels.insert(channels.begin() + i, std::string(1, "XYZAW"[i]));
     film->prepare(channels);
 
-    Log(LogLevel::Info, "Starting pre process...");
-    preprocess(scene, sensor);
 
     Log(LogLevel::Info, "Pre process finished..."); 
 
