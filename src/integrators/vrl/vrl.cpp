@@ -481,8 +481,7 @@ public:
         }
 
         for (int bounce = 0;; ++bounce) {
-            if (bounce > 1000)
-                Log(LogLevel::Error, "over 1k bounces, that cant be right");
+            
             active &= any(neq(depolarize(throughput), 0.f));
 
             Mask exceeded_max_depth = depth >= (uint32_t) m_maxDepth;
@@ -495,6 +494,17 @@ public:
             Mask active_medium  = active && neq(medium, nullptr);
             Mask active_surface = active && !active_medium;
             Mask escaped_medium = false;
+
+            if (bounce > 1000) {
+                std::ostringstream stream;
+                stream << "over 1k bounces, that cant be right: " << std::endl
+                       << "active: " << active << std::endl
+                       << "active_medium: " << active_medium << std::endl
+                       << "active_surface: " << active_surface << std::endl
+                       << "ray: " << ray << std::endl;
+                std::string str = stream.str();
+                Log(LogLevel::Error, str.c_str());
+            }
 
 #pragma region RTE
             Mask is_spectral  = active_medium;
@@ -547,7 +557,7 @@ public:
 
                 escaped_medium = true;
                 needs_intersection = true;
-                //medium = nullptr;
+                medium = nullptr;
                 active_surface |= si.is_valid();
             }
 

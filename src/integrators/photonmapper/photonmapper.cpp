@@ -121,7 +121,7 @@ public:
 
                 if (neq(emitter->shape(), nullptr)) {
                     flux = emitter->getUniformRadiance();
-                    flux *= math::Pi<float> * emitter->shape()->surface_area() * 0.5f;
+                    flux *= math::Pi<float> * emitter->shape()->surface_area();
                 }
 
                 medium = emitter->medium();
@@ -518,14 +518,24 @@ public:
                             specular_chain &= !act_scatter;
                             specular_chain |= act_scatter;
 
+                            Spectrum tr = 1.0;
+                            Float tr_pdf = 1.0;
+
+                            if (any_or<true>(is_spectral)) {
+                                auto [_tr, free_flight_pdf] = medium->eval_tr_and_pdf(mi, si, active);
+                                tr = _tr;
+                                tr_pdf               = index_spectrum(free_flight_pdf, channel);                     
+                            }
+
                             if (act_scatter) {
                                 Spectrum estimate = m_volumePhotonMap->estimateRadianceVolume(mediumRay(radius), mediumRay.d, medium, sampler, radius, M);
+                                if (medium->is_homogeneous())
+                                    estimate *= select(tr_pdf > 0, tr / tr_pdf, 0.0f);
+                                else // homogeneous look way too bright with this, but hetero needs it?
+                                    throughput *= select(tr_pdf > 0, tr / tr_pdf, 0.0f);
 
-                                auto [tr, free_flight_pdf] = medium->eval_tr_and_pdf(mi, si, active);
-                                Float tr_pdf               = index_spectrum(free_flight_pdf, channel);
-                                estimate *= select(tr_pdf > 0, tr / tr_pdf, 0.0f);
                                 estimate *= throughput;
-                                throughput *= tr;
+
 
                                 MVol += M;
                                 volRadiance += estimate;
