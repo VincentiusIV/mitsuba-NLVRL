@@ -135,7 +135,9 @@ public:
             Float I2 = (hmax(children[1]->represent.flux) * children[1]->represent.length);
 
             // F(x, w) = G(x)M(x, w)
-            auto F = []() -> Float {
+            auto F = [](const Ray3f ray, const VRL vrl) -> Float {
+
+
                 return 1.0f;
             };
 
@@ -143,8 +145,8 @@ public:
                 return 1.0f;  
             };
 
-            Float w1 = I1;
-            Float w2 = I2;
+            Float w1 = F(ray, children[0]->represent) * I1 ;
+            Float w2 = F(ray, children[0]->represent) * I2;
 
             Float p1 = w1 / (w1 + w2);
             Float p2 = 1.0f - p1;

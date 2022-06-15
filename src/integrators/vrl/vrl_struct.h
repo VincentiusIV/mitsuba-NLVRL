@@ -613,25 +613,28 @@ template <typename Float, typename Spectrum> struct VRL {
             //ClosestPointInfo closestPoint = findClosetPoint(ray);
             //float dist =             
             if (lengthPtoP < directRadius) {
-                //Float photonPF  = pf->eval(phase_ctx, mi1, ray.d);
+                mi1.wi = direction;
+                Float photonPF  = pf->eval(phase_ctx, mi1, -ray.d);
                 mi1.combined_extinction = m_medium->get_combined_extinction(mi1, true);
                 Spectrum throughput(1.0);
 
                 SurfaceInteraction3f si;
                 si.t = math::Infinity<Float>;
                 Mask is_spectral = m_medium->has_spectral_extinction();
-                 if (any_or<true>(is_spectral)) {
+
                     auto [tr, free_flight_pdf] = m_medium->eval_tr_and_pdf(mi1, si, is_spectral);
                     Float tr_pdf               = index_spectrum(free_flight_pdf, channel);
                     throughput *= select(tr_pdf > 0.f, tr / tr_pdf, 0.f);
-                }
+                
 
                  if (any_or<true>(is_spectral))
                     throughput *= sigmaSVRL * index_spectrum(mi1.combined_extinction, channel) / index_spectrum(sigmaTVRL, channel);
                 else
                     throughput *= sigmaSVRL / sigmaTVRL;
 
-                Spectrum direct = flux * throughput * vrlPF / (UNIT_SPHERE_VOLUME * enoki::pow(directRadius, 3));
+                Float invSinTheta = 1.0f / sqrt(max(0.0f, 1.0f - sqr(dot(ray.d, direction))));
+                Spectrum direct = flux * throughput * photonPF / (UNIT_SPHERE_VOLUME * enoki::pow(directRadius, 3));
+                //Spectrum direct = sigmaTRay * invSinTheta / (2.0f * directRadius) * photonPF * tr * flux;
                 result += direct;
             }
         } 
