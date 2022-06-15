@@ -1,7 +1,7 @@
 <scene version="2.0.0">
     <include filename="fragments/bsdfs-rgb.xml"/>
 	
-	<default name="spp" value="1"/>
+	<default name="spp" value="400"/>
     <default name="res" value="256"/>
     <default name="max_depth" value="6"/>
 	
@@ -41,7 +41,16 @@
         <ref id="area-emitter"/>
     </shape>
 
-
+    <shape type="obj">
+        <string name="filename" value="meshes/cbox_floor.obj"/>
+        
+        <transform name="to_world">
+            <scale x="1" y="1" z="1"/>
+            <translate x="-275" y="-199" z="0"/>
+        </transform>
+        <bsdf type="conductor"/>
+    </shape>
+	
 	<emitter type="area" id="area-emitter">
         <rgb name="radiance" value="18.387, 10.9873, 2.75357"/>
 		<vector name="radcolor" value="2.387, 18.9873, 2.75357"/>

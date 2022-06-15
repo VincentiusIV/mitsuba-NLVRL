@@ -196,7 +196,7 @@ public:
                     if (m_useNonLinear && medium->is_nonlinear()) {
                         nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
 
-                        for (size_t i = 0; i < 100; i++) {
+                        for (size_t i = 0; i < 10000; i++) {
 
                             if (nli.t > mi.t || !nli.is_valid)
                                 break;
@@ -436,9 +436,11 @@ public:
             // If needed, an acceleration data structure is build on the fly
 
             // is this correct?
+            m_vrlmap_build_timer.reset();
             m_vrlMap->setScaleFactor(1.0f / volumeLightCount);
             m_vrlMap->build(scene, m_useLightCut ? ELightCutAcceleration : ENoVRLAcceleration, sampler, m_thresholdBetterDist, m_thresholdError, m_useUniformSampling, m_useDirectIllum,
                             m_stochasticLightcut, m_lightcutSamples);
+            Log(Info, "VRL Map Created. (took %s)", util::time_string(m_preprocess_timer.value(), true));
         } else {
             Log(LogLevel::Info, "No VRLs");
         }
@@ -748,7 +750,7 @@ private:
     bool m_autoCancelGathering;
 
     
-    Timer m_preprocess_timer;
+    Timer m_preprocess_timer, m_vrlmap_build_timer;
 };
 
 MTS_IMPLEMENT_CLASS_VARIANT(VRLIntegrator, SamplingIntegrator);

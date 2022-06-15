@@ -3,9 +3,8 @@
 	
 	<integrator type="vrl">
 		<integer name="light_emissions" value="100000"/>
-		<integer name="target_vrls" value="20000"/>
+		<integer name="target_vrls" value="10000"/>
 		<integer name="samples_per_query" value="1"/>
-		<integer name="lightcut_samples" value="1"/>
 		<float name="volume_lookup_radius_relative" value="0.02"/>
 		<boolean name="use_uniform_sampling" value="false"/>
 		<boolean name="use_light_cut" value="true"/>
@@ -13,6 +12,9 @@
 		<boolean name="use_laser" value="true"/>
 		<vector name="laser_origin" value="-810, 100, 69"/>
 		<vector name="laser_direction" value="0.9, -0.05, 0.0"/>
+		<integer name="lightcut_samples" value="1"/>
+		<boolean name="stochastic_lightcut" value="true"/>
+		<boolean name="use_direct_illum" value="false"/>
     </integrator>
 
 </scene>

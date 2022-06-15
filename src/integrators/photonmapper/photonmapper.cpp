@@ -198,9 +198,7 @@ public:
 
 
                             // Move ray to nli.p + Eps
-                            ray.o = ray(nli.t + math::RayEpsilon<Float>); 
-
-                            //handleMediumInteraction(depth - nullInteractions, wasTransmitted, ray.o, medium, -ray.d, flux * throughput);
+                            ray.o = ray(nli.t + math::RayEpsilon<Float>);
 
                             ray.d = nli.wo;
                             ray.update();
