@@ -60,8 +60,12 @@ public:
         m_diceVRL             = props.int_("dice_vrl", 1);
         m_longVRL             = props.bool_("long_vrl", false);
         m_useUniformSampling  = props.bool_("use_uniform_sampling", false);
+
+
         m_useNonLinear        = props.bool_("use_non_linear", true);
         m_useLightCut = props.bool_("use_light_cut", false);
+        m_stochasticLightcut  = props.bool_("stochastic_lightcut", false);
+        m_lightcutSamples = props.int_("lightcut_samples", 1);
         m_RRVRL               = props.bool_("rr_vrl", false);
         m_scaleRR             = props.float_("scale_rr", 0.5); // 2 meters before 5%
         m_nbSamplesRay        = props.int_("nb_samples_ray", 1);
@@ -433,7 +437,8 @@ public:
 
             // is this correct?
             m_vrlMap->setScaleFactor(1.0f / volumeLightCount);
-            m_vrlMap->build(scene, m_useLightCut ? ELightCutAcceleration : ENoVRLAcceleration, sampler, m_thresholdBetterDist, m_thresholdError);
+            m_vrlMap->build(scene, m_useLightCut ? ELightCutAcceleration : ENoVRLAcceleration, sampler, m_thresholdBetterDist, m_thresholdError, m_useUniformSampling, m_useDirectIllum,
+                            m_stochasticLightcut, m_lightcutSamples);
         } else {
             Log(LogLevel::Info, "No VRLs");
         }
@@ -701,6 +706,8 @@ private:
     bool m_longVRL;
     int m_diceVRL;
     bool m_useUniformSampling;
+    bool m_stochasticLightcut;
+    int m_lightcutSamples;
     bool m_useNonLinear;
     bool m_useLaser;
     bool m_RRVRL;

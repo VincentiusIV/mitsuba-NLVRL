@@ -104,7 +104,7 @@ public:
         file.close();
     }
 
-    void build(const Scene *scene, EVRLAcceleration accel, Sampler *sampler, int thresholdBetterDist, Float thresholdError) {
+    void build(const Scene *scene, EVRLAcceleration accel, Sampler *sampler, int thresholdBetterDist, Float thresholdError, bool _uniform, bool _directIllum, bool _stochastic, int lightcutSamples) {
         m_accel = accel;
         std::ostringstream stream;
         stream << "Building VRL map... Scale factor = " << m_scale;
@@ -115,7 +115,7 @@ public:
             // Nothing to do
         } else if (m_accel == ELightCutAcceleration) {
             Log(LogLevel::Info, "Building VRL lightcut acceleration.");
-            m_lc = new VRLLightCut(scene, m_map, sampler, thresholdBetterDist, thresholdError);
+            m_lc = new VRLLightCut(scene, m_map, sampler, thresholdBetterDist, thresholdError, _uniform, _directIllum, _stochastic, lightcutSamples);
         } else {
             Log(LogLevel::Error, "build for acceleration is not implemented");
         }
@@ -210,7 +210,7 @@ public:
                 VRLPercentagePruned.incrementBase(m_map.size());*/
             } else if (m_accel == ELightCutAcceleration) {
                 VRLLightCut::LCQuery query{ ray, sampler, 0 };
-                Li += m_lc->query(scene, sampler, query, nb_BBIntersection, useUniformSampling, useDirectIllum, directRadius, channel) * m_scale;
+                Li += m_lc->query(scene, query, nb_BBIntersection, directRadius, channel) * m_scale;
                 nb_evaluation += query.nb_evaluation;
             } else {
                 Log(LogLevel::Error, "query for acceleration is not implemented");

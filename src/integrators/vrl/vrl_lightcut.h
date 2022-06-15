@@ -36,11 +36,13 @@ public:
         Node *children[2] = { nullptr, nullptr };
         bool isLeaf       = true;
         // Node information for omnidirectional
-        bool isSame[2] = { false, false };
 
         BoundingBox<Point3f> aabb; //< AABB of the cluster
 
-        VRL represent; //< representative
+        mutable VRL represent; //< representative
+        mutable Spectrum addFlux;
+        mutable bool isSame[2] = { false, false };
+
         Float maxVRLLenght;
 
         // For better computation of the upper bound
@@ -90,7 +92,7 @@ public:
                 aabb.expand(n1->aabb);
             }
             isLeaf       = false;
-            maxVRLLenght = std::max(n1->maxVRLLenght, n2->maxVRLLenght);
+            maxVRLLenght = enoki::max(n1->maxVRLLenght, n2->maxVRLLenght);
 
             // Update the node representation
             children[0] = n1;
@@ -108,8 +110,8 @@ public:
             }
 
             // Select randomly the representative child
-            Float leftWM  = (hmax(n1->represent.flux) * n1->represent.length) / 1000;
-            Float rightWM = (hmax(n2->represent.flux) * n2->represent.length) / 1000;
+            Float leftWM  = (hmax(n1->represent.flux) * n1->represent.length);
+            Float rightWM = (hmax(n2->represent.flux) * n2->represent.length);
             Float totalWM = leftWM + rightWM;
             Float ratio   = leftWM / totalWM;
             int index     = v < ratio ? 0 : 1;
@@ -117,15 +119,55 @@ public:
             // Update the VRL, scale it flux and mark which child is representative
             represent = children[index]->represent; // Make a copy of the VRL
             ratio     = children[1 - index]->represent.length / children[index]->represent.length;
-            represent.flux += children[1 - index]->represent.flux * ratio;
-            isSame[index]     = true;
+            addFlux = children[1 - index]->represent.flux * ratio;
+            represent.flux += addFlux;
+            isSame[index] = true;
             isSame[1 - index] = false;
+        }
+
+        Float shuffleRepresentativeLight(const Ray3f ray, Sampler *sampler) const {
+            if (children[0] == nullptr || children[1] == nullptr)
+                return 1.0;
+
+            const Float alpha = 1.0; // scaling coefficient
+
+            Float I1 = (hmax(children[0]->represent.flux) * children[0]->represent.length);
+            Float I2 = (hmax(children[1]->represent.flux) * children[1]->represent.length);
+
+            // F(x, w) = G(x)M(x, w)
+            auto F = []() -> Float {
+                return 1.0f;
+            };
+
+            auto attenuate = []() -> Float {
+                return 1.0f;  
+            };
+
+            Float w1 = I1;
+            Float w2 = I2;
+
+            Float p1 = w1 / (w1 + w2);
+            Float p2 = 1.0f - p1;
+
+            int index = sampler->next_1d() < p1 ? 0 : 1;
+
+            // Update the VRL, scale it flux and mark which child is representative
+            represent.flux -= addFlux;
+
+            represent = children[index]->represent; // Make a copy of the VRL
+            Float ratio = children[1 - index]->represent.length / children[index]->represent.length;
+            addFlux = children[1 - index]->represent.flux *ratio;
+            represent.flux += addFlux;
+            isSame[index] = true;
+            isSame[1 - index] = false;
+
+            return w1 + w2;
         }
     };
 
 public:
-    VRLLightCut(const Scene *scene, const std::vector<VRL> &vrls, Sampler *sampler, int thresholdBetterDist, Float thresholdError)
-        : m_thresholdBetterDist(thresholdBetterDist), m_errorRatio(thresholdError) {
+    VRLLightCut(const Scene *scene, const std::vector<VRL> &vrls, Sampler *sampler, int thresholdBetterDist, Float thresholdError, bool _uniform, bool _directIllum, bool _stochastic, int lightcutSamples)
+        : m_thresholdBetterDist(thresholdBetterDist), m_errorRatio(thresholdError), uniform(_uniform), directIllum(_directIllum), stochastic(_stochastic), m_lightcutSamples(lightcutSamples) {
         std::vector<Node *> nodes;
         nodes.reserve(vrls.size());
         for (const VRL &vrl : vrls) {
@@ -155,7 +197,7 @@ public:
         size_t nb_evaluation;
     };
 
-    Spectrum query(const Scene *scene, Sampler *sampler, LCQuery &query, size_t &nb_BBIntersection, bool useUniformSampling, bool useDirectIllum, Float directRadius, UInt32 channel) const {
+    Spectrum query(const Scene *scene, LCQuery &query, size_t &nb_BBIntersection, Float directRadius, UInt32 channel) const {
         if (m_root == nullptr)
             return Spectrum(0.f);
 
@@ -168,12 +210,18 @@ public:
         auto compare_cut = [](const CutCluster &a, const CutCluster &b) { return a.bound < b.bound; };
         typedef std::priority_queue<CutCluster, std::vector<CutCluster>, decltype(compare_cut)> LightCutPriorityQueue;
         LightCutPriorityQueue refiningCut(compare_cut);
+        Float weight = 1.0f;
+        if (stochastic) {
+            weight = m_root->shuffleRepresentativeLight(query.ray, query.sampler);
+            if (weight == 0.0f)
+                return Spectrum(0.0f);
+        }
 
         // TODO: This might be not necessary if we only use the query to accumulate the values...
         // TODO: However, it might be too complex to do it
         // Get the root node and put it inside the queue
-        refiningCut.emplace(CutCluster{ m_root, getClusterUpperBound(scene, sampler, *m_root, query.ray, channel, nb_BBIntersection),
-                                        m_root->represent.getContrib(scene, useUniformSampling, useDirectIllum, directRadius, query.ray, query.ray.maxt, query.sampler, channel) });
+        refiningCut.emplace(CutCluster{ m_root, getClusterUpperBound(scene, query.sampler, *m_root, query.ray, channel, nb_BBIntersection),
+                                        m_root->represent.getContrib(scene, uniform, directIllum, directRadius, query.ray, query.ray.maxt, query.sampler, channel) });
         Spectrum Li = refiningCut.top().estimate;
 
 #if DEBUG_VRL_LC
@@ -181,7 +229,7 @@ public:
         stome << "estimate: " << Li;
         Log(LogLevel::Info, stome.str().c_str());*/
 #endif
-
+        int leafSamples = 0;
         // Starting to dive inside the light tree
         while (!refiningCut.empty()) {
             // + Get node with largest error
@@ -212,17 +260,28 @@ public:
             }
 #endif
 
+            if (stochastic && leafSamples > m_lightcutSamples)
+                break;
+
             Spectrum childrenEstimates(0.f);
             for (int i = 0; i < 2; i++) {
                 if (current_cluster->children[i]) {
                     const Node *child_cluster = current_cluster->children[i];
-                    Spectrum estimate         = child_cluster->represent.flux;
+
+                    if (stochastic) {
+                        weight = child_cluster->shuffleRepresentativeLight(query.ray, query.sampler);
+                        // Stop at a dead branch
+                        if (weight == 0.0)
+                            break;
+                    }
+
+                    Spectrum estimate = child_cluster->represent.flux;
                     if (current_cluster->isSame[i]) {
                         estimate /= current_cluster->represent.flux;
                         estimate *= current_element.estimate;
                     } else {
                         query.nb_evaluation += 1;
-                        estimate = child_cluster->represent.getContrib(scene, useUniformSampling, useDirectIllum, directRadius, query.ray, query.ray.maxt, query.sampler, channel);
+                        estimate = child_cluster->represent.getContrib(scene, uniform, directIllum, directRadius, query.ray, query.ray.maxt, query.sampler, channel);
                     }
                     if (std::isnan(estimate[0]) || std::isnan(estimate[1]) || std::isnan(estimate[2])) {
                         Log(LogLevel::Warn, "Invalid sample!");
@@ -233,10 +292,12 @@ public:
                     if (!child_cluster->isLeaf) {
                         CutCluster new_cut = { 
                             child_cluster, 
-                            getClusterUpperBound(scene, sampler, *child_cluster, query.ray, channel, nb_BBIntersection), 
+                            getClusterUpperBound(scene, query.sampler, *child_cluster, query.ray, channel, nb_BBIntersection), 
                             std::move(estimate) 
                         };
                         refiningCut.emplace(std::move(new_cut));
+                    } else {
+                        ++leafSamples;
                     }
                 }
             }
@@ -271,7 +332,7 @@ public:
 
 #endif
 
-        return Li;
+        return enoki::max(Li, Spectrum(0.0f));
     }
 
     std::string getObj(const int level) const {
@@ -376,8 +437,8 @@ private:
 
         // Sanity check
         Spectrum tmpLi = invPdf * cluster.represent.flux * material * transmittance;
-        if (tmpLi[0] != tmpLi[0] || tmpLi[1] != tmpLi[1] || tmpLi[2] != tmpLi[2] || tmpLi[0] < 0.f || tmpLi[1] < 0.f || tmpLi[2] < 0.f || std::isnan(tmpLi[0]) || std::isnan(tmpLi[1]) ||
-            std::isnan(tmpLi[2])) {
+        Float mag      = squared_norm(tmpLi);
+        if (std::isnan(mag) || mag < 0.0) {
             Log(LogLevel::Info, "ERROR!");
         }
 
@@ -706,6 +767,8 @@ protected:
     Node *m_root              = nullptr;
     Float m_errorRatio        = 0.1;
     int m_thresholdBetterDist = 8;
+    int m_lightcutSamples     = 100;
+    bool uniform, directIllum, stochastic;
 };
 
 NAMESPACE_END(mitsuba)
