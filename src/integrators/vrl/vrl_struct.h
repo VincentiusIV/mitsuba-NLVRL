@@ -49,7 +49,7 @@ template <typename Float, typename Spectrum> struct VRL {
                 auto _ray = ray;
                 _ray.maxt = dist;
                 Mask active             = true;
-                return m_medium->evalMediumTransmittance(_ray, sampler, active);
+                return m_medium->evalTransmittance(_ray, sampler, active);
             }
         };
 
@@ -285,7 +285,7 @@ template <typename Float, typename Spectrum> struct VRL {
                 tCam = enoki::clamp(tCam, 0.0f, ray.maxt);
                 tVRL = enoki::clamp(tVRL, 0.0f, length);
 
-                if (tCam < 0 || tVRL < 0 || tCam > ray.maxt || tVRL > length) {
+                /*if (tCam < 0 || tVRL < 0 || tCam > ray.maxt * 1.1|| tVRL > length * 1.1) {
                     std::ostringstream oss;
                     oss << "t out of range [" << std::endl
                         << "  ray  = " << string::indent(ray) << std::endl
@@ -298,7 +298,7 @@ template <typename Float, typename Spectrum> struct VRL {
                         << "  ClosestPointInfo.tVRL  = " << string::indent(closest_point.tVRL) << std::endl
                         << "]";
                     Log(LogLevel::Error, oss.str().c_str());
-                }
+                }*/
 
 
                 return SamplingInfo{ pCam, tCam, pVRL, tVRL, sampling_vrl.invPDF, sampling_ray.invPDF };
@@ -479,7 +479,7 @@ template <typename Float, typename Spectrum> struct VRL {
                 Ray3f mediumRay = Ray3f(ray);
                 mediumRay.mint = 0;
                 mediumRay.maxt = std::min(si.t, remaining);
-                transmittance *= medium->evalMediumTransmittance(mediumRay, sampler, active);
+                transmittance *= medium->evalTransmittance(mediumRay, sampler, active);
             }
 
             if (!surface || transmittance[0] == 0.0)
@@ -558,12 +558,12 @@ template <typename Float, typename Spectrum> struct VRL {
         mediumRay.mint = 0;
         mediumRay.maxt = sampling.tCam;
 
-        Spectrum rayTrans = m_medium->evalMediumTransmittance(mediumRay, sampler, active);
+        Spectrum rayTrans = m_medium->evalTransmittance(mediumRay, sampler, active);
 
         Ray3f mediumVRL(origin, direction, 0);
         mediumVRL.mint    = 0;
         mediumVRL.maxt    = sampling.tVRL;
-        Spectrum vrlTrans = m_medium->evalMediumTransmittance(mediumVRL, sampler, active);
+        Spectrum vrlTrans = m_medium->evalTransmittance(mediumVRL, sampler, active);
 
         Float fallOff = 1.0f / (lengthPtoP * lengthPtoP);
 
@@ -590,7 +590,9 @@ template <typename Float, typename Spectrum> struct VRL {
                   * vrlTrans                                   // 1.0 if short beams
                   * rayTrans                                   // = 0
                   * vrlToRayTrans                              // = 0
-                  * sigmaSRay * sigmaSVRL * sampling.invPDF(); // = nan
+                  * sigmaSRay 
+                  * sigmaSVRL 
+                  * sampling.invPDF(); // = nan
 #if VRL_DEBUG
         if (true)
 #else
@@ -622,9 +624,9 @@ template <typename Float, typename Spectrum> struct VRL {
                 si.t = math::Infinity<Float>;
                 Mask is_spectral = m_medium->has_spectral_extinction();
 
-                    auto [tr, free_flight_pdf] = m_medium->eval_tr_and_pdf(mi1, si, is_spectral);
-                    Float tr_pdf               = index_spectrum(free_flight_pdf, channel);
-                    throughput *= select(tr_pdf > 0.f, tr / tr_pdf, 0.f);
+                auto [tr, free_flight_pdf] = m_medium->eval_tr_and_pdf(mi1, si, is_spectral);
+                Float tr_pdf               = index_spectrum(free_flight_pdf, channel);
+                throughput *= select(tr_pdf > 0.f, tr / tr_pdf, 0.f);
                 
 
                  if (any_or<true>(is_spectral))

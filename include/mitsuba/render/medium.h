@@ -99,6 +99,43 @@ public:
         return m;
     }
 
+    Spectrum evalTransmittance(const Ray3f& _ray, Sampler* sampler, Mask active) const {
+        Ray3f ray(_ray);
+        Float t = ray.mint;
+        Float maxt = ray.maxt;
+        MediumInteraction3f mi;
+        UInt32 channel = 0;
+        if (is_rgb_v<Spectrum>) {
+            uint32_t n_channels = (uint32_t) array_size_v<Spectrum>;
+            channel             = (UInt32) min(sampler->next_1d(active) * n_channels, n_channels - 1);
+        }
+        SurfaceInteraction3f si;
+        si.t = _ray.maxt;
+        Spectrum throughput(1.0f);
+        while (t < maxt) {
+            mi = sample_interaction(ray, sampler->next_1d(), channel, active);
+            if (!mi.is_valid())
+                break;
+
+            masked(mi.t, active && (si.t < mi.t)) = math::Infinity<Float>;
+            auto [tr, free_flight_pdf] = eval_tr_and_pdf(mi, si, active);
+            throughput *= tr;
+
+            t += mi.t;
+            si.t -= mi.t;
+
+            Ray3f new_ray = mi.spawn_ray(_ray.d);
+            new_ray.maxt = max(0.0f, maxt - t);
+            ray = std::move(new_ray);
+        }
+
+        if (std::isnan(throughput[0])) {
+            Log(LogLevel::Error, "huh");
+        }
+
+        return throughput;
+    }
+
     Spectrum evalMediumTransmittance(const Ray3f &_ray, Sampler *sampler, Mask active) const {
         /* When Woodcock tracking is selected as the sampling method,
                we can use this method to get a noisy (but unbiased) estimate

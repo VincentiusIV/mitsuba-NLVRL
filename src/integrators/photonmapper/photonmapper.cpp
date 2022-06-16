@@ -122,6 +122,7 @@ public:
                 if (neq(emitter->shape(), nullptr)) {
                     flux = emitter->getUniformRadiance();
                     flux *= math::Pi<float> * emitter->shape()->surface_area();
+                    flux *= 0.25f;// hack
                 }
 
                 medium = emitter->medium();
@@ -196,6 +197,12 @@ public:
                         masked(si, intersect) = scene->ray_intersect(ray, intersect);
                     needs_intersection &= !active_medium;
 
+                  
+                    if (!fromLight || m_useFirstPhoton) {
+                        handleMediumInteraction(depth - nullInteractions, wasTransmitted, mi.p, medium, -ray.d, flux * throughput);
+                    }
+                    fromLight = false;
+
                     masked(mi.t, active_medium && (si.t < mi.t)) = math::Infinity<Float>;
                     if (any_or<true>(is_spectral)) {
                         auto [tr, free_flight_pdf] = medium->eval_tr_and_pdf(mi, si, is_spectral);
@@ -241,14 +248,11 @@ public:
                     if (any_or<true>(not_spectral))
                         masked(throughput, not_spectral && act_medium_scatter) *= mi.sigma_s / mi.sigma_t;
 
+
                     PhaseFunctionContext phase_ctx(sampler);
                     auto phase = mi.medium->phase_function();
 
-                    if (!fromLight || m_useFirstPhoton)
-                    {
-                        handleMediumInteraction(depth - nullInteractions, wasTransmitted, mi.p, medium, -ray.d, flux * throughput);
-                    }
-                    fromLight = false;
+                    
                     // ------------------ Phase function sampling -----------------
                     masked(phase, !act_medium_scatter) = nullptr;
                     auto [wo, phase_pdf]               = phase->sample(phase_ctx, mi, sampler->next_2d(act_medium_scatter), act_medium_scatter);

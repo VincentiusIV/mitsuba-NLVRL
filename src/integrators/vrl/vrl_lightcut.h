@@ -409,7 +409,7 @@ private:
             rayOtoPonCluster.mint = 0;
             rayOtoPonCluster.maxt = min_length;
 
-            transmittance = medium->evalMediumTransmittance(rayOtoPonCluster, sampler, active);
+            transmittance = medium->evalTransmittance(rayOtoPonCluster, sampler, active);
 
             MediumInteraction3f ray_mi;
             ray_mi.p                         = r.o;

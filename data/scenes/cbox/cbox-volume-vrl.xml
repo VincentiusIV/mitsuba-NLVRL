@@ -5,11 +5,11 @@
 		<integer name="light_emissions" value="1000000"/>
 		<integer name="target_vrls" value="10000"/>
 		<integer name="samples_per_query" value="1"/>
-		<integer name="lightcut_samples" value="1"/>
-		<float name="volume_lookup_radius_relative" value="0.02"/>
+		<integer name="lightcut_samples" value="2"/>
+		<float name="volume_lookup_radius_relative" value="0.03"/>
 		<boolean name="use_uniform_sampling" value="false"/>
 		<boolean name="use_light_cut" value="true"/>
-		<boolean name="stochastic_lightcut" value="true"/>
+		<boolean name="stochastic_lightcut" value="false"/>
 		<boolean name="use_direct_illum" value="true"/>
     </integrator>
 
