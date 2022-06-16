@@ -181,54 +181,12 @@ public:
 
                     if (m_useNonLinear && medium->is_nonlinear()) {
                         nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
-
-                        for (size_t i = 0; i < 100; i++) {
-                            if (nli.t > mi.t || !nli.is_valid)
-                                break;
-                            // check intersection
-                            Ray3f its_test(ray);
-                            its_test.maxt = nli.t;
-                            si            = scene->ray_intersect(its_test, active);
-                            if (si.is_valid())
+                        while (nli.t < mi.t && nli.is_valid) {
+                            bool valid = medium->handleNonLinearInteraction(scene, sampler, nli, si, mi, ray, throughput, channel, active_medium);
+                            if (!valid)
                                 break;
 
-                            Ray3f trans(ray);
-                            trans.maxt = nli.t;
-                            throughput *= medium->evalMediumTransmittance(trans, sampler, active);
-
-
-                            // Move ray to nli.p + Eps
-                            ray.o = ray(nli.t + math::RayEpsilon<Float>);
-
-                            ray.d = nli.wo;
-                            ray.update();
-                            mi.sh_frame = Frame3f(ray.d);
-                            mi.wi = -ray.d;
-                            auto [aabb_its, mint, maxt] = medium->intersect_aabb(ray);
-                            aabb_its &= (enoki::isfinite(mint) || enoki::isfinite(maxt));
-                            active &= aabb_its;
-                            mint = max(ray.mint, mint);
-                            maxt = min(ray.maxt, maxt);
-                                
-                            auto combined_extinction = medium->get_combined_extinction(mi, active_medium);
-                            Float m                  = combined_extinction[0];
-                            if constexpr (is_rgb_v<Spectrum>) { // Handle RGB rendering
-                                masked(m, eq(channel, 1u)) = combined_extinction[1];
-                                masked(m, eq(channel, 2u)) = combined_extinction[2];
-                            } else {
-                                ENOKI_MARK_USED(channel);
-                            }
-
-                            Mask valid_mi = active && (mi.t <= maxt);
-                            mi.t -= (nli.t + math::RayEpsilon<Float>);
-                            mi.p                                         = ray(mi.t);
-                            std::tie(mi.sigma_s, mi.sigma_n, mi.sigma_t) = medium->get_scattering_coefficients(mi, valid_mi);
-                            mi.combined_extinction                       = combined_extinction;
-
-
-                            Medium::NonLinearInteraction new_nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);;
-                            nli = std::move(new_nli);
-
+                            nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
                         }
                     }
 

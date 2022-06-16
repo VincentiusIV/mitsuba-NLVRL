@@ -49,7 +49,7 @@ public:
         auto sigman = get_combined_extinction(mi, active) - sigmat;
         return { sigmas, sigman, sigmat };
     }
-
+    
     std::tuple<Mask, Float, Float>
     intersect_aabb(const Ray3f &ray) const override {
         return m_aabb.ray_intersect(ray);

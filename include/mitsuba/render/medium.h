@@ -128,6 +128,9 @@ public:
             return transmittance;
         }
 
+        // initialize basic medium interaction fields
+        
+
         int nSamples = 2; /// XXX make configurable
         Float result = 0;
         MediumInteraction3f mi;
@@ -163,10 +166,58 @@ public:
             }
         }
         return Spectrum(result / nSamples);
+
+        //UInt32 channel = 0;
+        //if (is_rgb_v<Spectrum>) {
+        //    uint32_t n_channels = (uint32_t) array_size_v<Spectrum>;
+        //    channel             = (UInt32) min(sampler->next_1d(active) * n_channels, n_channels - 1);
+        //}
+
+        //MediumInteraction3f mi;
+        //mi.sh_frame    = Frame3f(ray.d);
+        //mi.wi          = -ray.d;
+        //mi.time        = ray.time;
+        //mi.wavelengths = ray.wavelengths;
+
+        //auto [aabb_its, mint, maxt] = intersect_aabb(ray);
+        //aabb_its &= (enoki::isfinite(mint) || enoki::isfinite(maxt));
+        //active &= aabb_its;
+        //masked(mint, !active) = 0.f;
+        //masked(maxt, !active) = math::Infinity<Float>;
+
+        //mint = max(ray.mint, mint);
+        //maxt = min(ray.maxt, maxt);
+
+        //auto combined_extinction = get_combined_extinction(mi, active);
+        //Float m                  = combined_extinction[0];
+        //if constexpr (is_rgb_v<Spectrum>) { // Handle RGB rendering
+        //    masked(m, eq(channel, 1u)) = combined_extinction[1];
+        //    masked(m, eq(channel, 2u)) = combined_extinction[2];
+        //} else {
+        //    ENOKI_MARK_USED(channel);
+        //}
+
+        //Float sampled_t                              = maxt;
+        //Mask valid_mi                                = active && (sampled_t <= maxt);
+        //mi.t                                         = select(valid_mi, sampled_t, math::Infinity<Float>);
+        //mi.p                                         = ray(sampled_t);
+        //mi.medium                                    = this;
+        //mi.mint                                      = mint;
+        //std::tie(mi.sigma_s, mi.sigma_n, mi.sigma_t) = get_scattering_coefficients(mi, valid_mi);
+        //mi.combined_extinction                       = combined_extinction;
+
+        //SurfaceInteraction3f si;
+        //si.t              = math::Infinity<Float>;
+        //auto [tr, tr_pdf] = eval_tr_and_pdf(mi, si, active);
+        //return tr;
     }
 
     virtual NonLinearInteraction sampleNonLinearInteraction(const Ray3f &ray, UInt32 channel, Mask active) const{ 
-        return NonLinearInteraction();
+        return NonLinearInteraction(); }
+
+    virtual bool handleNonLinearInteraction(const Scene *scene, Sampler *sampler, NonLinearInteraction &nli, SurfaceInteraction3f &si, MediumInteraction3f &mi, Ray3f &ray, Spectrum &throughput,
+                                            UInt32 channel, Mask active) const {
+        return false;
     }
 
     virtual void build(Point3f min, Point3f max) {

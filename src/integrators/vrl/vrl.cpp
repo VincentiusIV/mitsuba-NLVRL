@@ -191,56 +191,28 @@ public:
                 }
 
                 if (any_or<true>(active_medium)) {
+
+                    static bool test = false;
+                    if (!test) {
+                            
+
+                        test = true;
+                    }
+
                     mi = medium->sample_interaction(ray, sampler->next_1d(active_medium), channel, active_medium);
 
                     if (m_useNonLinear && medium->is_nonlinear()) {
                         nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
-
-                        for (size_t i = 0; i < 10000; i++) {
-
-                            if (nli.t > mi.t || !nli.is_valid)
+                        while (nli.t < mi.t && nli.is_valid) {
+                            bool valid = medium->handleNonLinearInteraction(scene, sampler, nli, si, mi, ray, throughput, channel, active_medium);
+                            if (!valid)
                                 break;
-                            // check intersection
-                            Ray3f its_test(ray);
-                            its_test.maxt         = nli.t;
-                            si = scene->ray_intersect(its_test, active);
-                            if (si.is_valid())
-                                break;
-
-                            // Move ray to nli.p + Eps
-                            ray.o = ray(nli.t + math::RayEpsilon<Float>);
-                            ray.d = nli.wo;
-                            ray.update();
-                            mi.sh_frame                 = Frame3f(ray.d);
-                            mi.wi                       = -ray.d;
-                            auto [aabb_its, mint, maxt] = medium->intersect_aabb(ray);
-                            aabb_its &= (enoki::isfinite(mint) || enoki::isfinite(maxt));
-                            active &= aabb_its;
-                            mint = max(ray.mint, mint);
-                            maxt = min(ray.maxt, maxt);
-
-                            auto combined_extinction = medium->get_combined_extinction(mi, active_medium);
-                            Float m                  = combined_extinction[0];
-                            if constexpr (is_rgb_v<Spectrum>) { // Handle RGB rendering
-                                masked(m, eq(channel, 1u)) = combined_extinction[1];
-                                masked(m, eq(channel, 2u)) = combined_extinction[2];
-                            } else {
-                                ENOKI_MARK_USED(channel);
-                            }
-
-                            Mask valid_mi = active && (mi.t <= maxt);
-                            mi.t -= (nli.t + math::RayEpsilon<Float>);
-                            mi.p                                         = ray(mi.t);
-                            std::tie(mi.sigma_s, mi.sigma_n, mi.sigma_t) = medium->get_scattering_coefficients(mi, valid_mi);
-                            mi.combined_extinction                       = combined_extinction;
 
                             tempVRL.setEndPoint(ray.o);
                             volumePath |= m_vrlMap->push_back(std::move(tempVRL), true);
                             tempVRL = VRL(ray.o, medium, throughput * flux, depth, channel, is_direct);
 
-                            Medium::NonLinearInteraction new_nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
-                            ;
-                            nli = std::move(new_nli);
+                            nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
                         }
                     }
 
@@ -252,7 +224,6 @@ public:
 
                     // TODO: Non linear bug -> mi.t is reduced by nli, so transmittance here is now based on the last leftover which result in lower Tr than it should be.
 
-                    Spectrum vrlFlux = throughput * flux;
 
                     masked(mi.t, active_medium && (si.t < mi.t)) = math::Infinity<Float>;
                     if (any_or<true>(is_spectral)) {
@@ -270,14 +241,6 @@ public:
                     act_null_scatter |= null_scatter && active_medium;
                     act_medium_scatter |= !act_null_scatter && active_medium;
 
-                    if (act_medium_scatter)
-                    {
-                        tempVRL.setEndPoint(mi.p);
-                        volumePath |= m_vrlMap->push_back(std::move(tempVRL), false);
-                        if (volumePath)
-                            is_direct = false;
-                        tempVRL = VRL(mi.p, medium, vrlFlux, depth, channel, is_direct);
-                    }
 
                     if (any_or<true>(is_spectral && act_null_scatter))
                         masked(throughput, is_spectral && act_null_scatter) *= mi.sigma_n * index_spectrum(mi.combined_extinction, channel) / index_spectrum(mi.sigma_n, channel);
@@ -300,6 +263,15 @@ public:
                     if (any_or<true>(not_spectral))
                         masked(throughput, not_spectral && act_medium_scatter) *= mi.sigma_s / mi.sigma_t;
 
+                    if (act_medium_scatter) {
+                        Spectrum vrlFlux = throughput * flux;
+                        tempVRL.flux = vrlFlux;
+                        tempVRL.setEndPoint(mi.p);
+                        volumePath |= m_vrlMap->push_back(std::move(tempVRL), false);
+                        if (volumePath)
+                            is_direct = false;
+                        tempVRL = VRL(mi.p, medium, vrlFlux, depth, channel, is_direct);
+                    }
                     PhaseFunctionContext phase_ctx(sampler);
                     auto phase = mi.medium->phase_function();
                     // ------------------ Phase function sampling -----------------
@@ -440,7 +412,7 @@ public:
             m_vrlMap->setScaleFactor(1.0f / volumeLightCount);
             m_vrlMap->build(scene, m_useLightCut ? ELightCutAcceleration : ENoVRLAcceleration, sampler, m_thresholdBetterDist, m_thresholdError, m_useUniformSampling, m_useDirectIllum,
                             m_stochasticLightcut, m_lightcutSamples);
-            Log(Info, "VRL Map Created. (took %s)", util::time_string(m_preprocess_timer.value(), true));
+            Log(Info, "VRL Map Created. (took %s)", util::time_string(m_vrlmap_build_timer.value(), true));
         } else {
             Log(LogLevel::Info, "No VRLs");
         }
@@ -471,7 +443,7 @@ public:
         si.t                    = math::Infinity<Float>;
         MediumInteraction3f mi  = zero<MediumInteraction3f>();
         mi.t                    = math::Infinity<Float>;
-        Medium::NonLinearInteraction nlmi;
+        Medium::NonLinearInteraction nli;
 
         Mask valid_ray = !m_hide_emitters && neq(scene->environment(), nullptr);
 
@@ -531,6 +503,17 @@ public:
                 if (si.is_valid()) {
                     valid_ray |= true;
                     while (t < si.t) {
+                        /*if (m_useNonLinear && medium->is_nonlinear()) {
+                            nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
+                            while (nli.t < si.t && nli.is_valid) {
+                                bool valid = medium->handleNonLinearInteraction(scene, sampler, nli, si, mi, ray, throughput, channel, active_medium);
+                                if (!valid)
+                                    break;
+
+                                nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
+                            }
+                        }*/
+
                         float length = min(si.t - t, totalLength);
                         gatherRay.maxt = length;
                         auto [evaluations, color, intersections] = m_vrlMap->query(gatherRay, scene, sampler, -1, length, m_useUniformSampling, m_useDirectIllum, m_volumeLookupRadius, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);

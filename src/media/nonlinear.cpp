@@ -137,6 +137,47 @@ public:
             return normalize(eta * wi - (eta * N_dot_I + enoki::sqrt(k)) * n);
     }
 
+    bool handleNonLinearInteraction(const Scene *scene, Sampler* sampler, NonLinearInteraction &nli, SurfaceInteraction3f &si, MediumInteraction3f &mi, Ray3f &ray, Spectrum &throughput, UInt32 channel, Mask active) const override {
+        // check intersection
+        Ray3f its_test(ray);
+        its_test.maxt = nli.t;
+        si = scene->ray_intersect(its_test, active);
+        if (si.is_valid())
+            return false;
+
+        //throughput *= evalMediumTransmittance(its_test, sampler, active);
+
+        // Move ray to nli.p + Eps
+        ray.o = ray(nli.t + math::RayEpsilon<Float>);
+        ray.d = nli.wo;
+        ray.update();
+
+        // Update mi
+        mi.sh_frame                 = Frame3f(ray.d);
+        mi.wi                       = -ray.d;
+        auto [aabb_its, mint, maxt] = intersect_aabb(ray);
+        aabb_its &= (enoki::isfinite(mint) || enoki::isfinite(maxt));
+        active &= aabb_its;
+        mint = max(ray.mint, mint);
+        maxt = min(ray.maxt, maxt);
+
+        auto combined_extinction = get_combined_extinction(mi, active);
+        Float m                  = combined_extinction[0];
+        if constexpr (is_rgb_v<Spectrum>) { // Handle RGB rendering
+            masked(m, eq(channel, 1u)) = combined_extinction[1];
+            masked(m, eq(channel, 2u)) = combined_extinction[2];
+        } else {
+            ENOKI_MARK_USED(channel);
+        }
+
+        Mask valid_mi = active && (mi.t <= maxt);
+        mi.t -= (nli.t + math::RayEpsilon<Float>);
+        mi.p                                         = ray(mi.t);
+        std::tie(mi.sigma_s, mi.sigma_n, mi.sigma_t) = get_scattering_coefficients(mi, valid_mi);
+        mi.combined_extinction                       = combined_extinction;
+        return true;
+    }
+
     NonLinearInteraction sampleNonLinearInteraction(const Ray3f &ray, UInt32 channel, Mask active) const override { 
         NonLinearInteraction nli;
         nli.is_valid = false;
@@ -163,7 +204,6 @@ public:
         masked(maxt, !active) = math::Infinity<Float>;
         mint = max(ray.mint, mint);
         maxt = min(ray.maxt, maxt);
-
         
         if (maxt < math::RayEpsilon<Float>)
         {
