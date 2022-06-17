@@ -463,8 +463,8 @@ public:
             // -------------------- RTE ----------------- //
 
             Mask active_medium  = active && neq(medium, nullptr);
-            Mask active_surface = active && !active_medium;
-            Mask escaped_medium = false;
+            Mask active_surface   = active && !active_medium;
+            Mask act_null_scatter = false, act_medium_scatter = false, escaped_medium = false;
 
             if (bounce > 1000) {
                 std::ostringstream stream;
@@ -484,63 +484,69 @@ public:
                 is_spectral &= medium->has_spectral_extinction();
                 not_spectral = !is_spectral && active_medium;
             }
-
             if (any_or<true>(active_medium)) {
-                Float totalLength = si.t;
-                Float t           = 0;
+                mi                                                                           = medium->sample_interaction(ray, sampler->next_1d(active_medium), channel, active_medium);
+                masked(ray.maxt, active_medium && medium->is_homogeneous() && mi.is_valid()) = mi.t;
+                Mask intersect                                                               = needs_intersection && active_medium;
+                if (any_or<true>(intersect))
+                    masked(si, intersect) = scene->ray_intersect(ray, intersect);
+                needs_intersection &= !active_medium;
 
-                Ray3f gatherRay(ray.o, ray.d, 0.0f);
-                gatherRay.mint = 0.0f;
-
-                if (si.is_valid()) {
-                    valid_ray |= true;
-                    while (t < si.t) {
-                        /*if (m_useNonLinear && medium->is_nonlinear()) {
-                            nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
-                            while (nli.t < si.t && nli.is_valid) {
-                                bool valid = medium->handleNonLinearInteraction(scene, sampler, nli, si, mi, ray, throughput, channel, active_medium);
-                                if (!valid)
-                                    break;
-
-                                nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
-                            }
-                        }*/
-
-                        float length = min(si.t - t, totalLength);
-                        gatherRay.maxt = length;
-                        auto [evaluations, color, intersections] = m_vrlMap->query(gatherRay, scene, sampler, -1, length, m_useUniformSampling, m_useDirectIllum, m_volumeLookupRadius, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
-                        
-
-                        t += length;
-                        gatherRay.o = ray(t);
-
-                        //mi.t                       = length;
-                        //mi.p                       = gatherRay.o;
-                        //mi.wi = -gatherRay.d;
-
-                        //auto combined_extinction = medium->get_combined_extinction(mi, active_medium);
-                        //Float m                  = combined_extinction[0];
-                        //if constexpr (is_rgb_v<Spectrum>) { // Handle RGB rendering
-                        //    masked(m, eq(channel, 1u)) = combined_extinction[1];
-                        //    masked(m, eq(channel, 2u)) = combined_extinction[2];
-                        //} else {
-                        //    ENOKI_MARK_USED(channel);
-                        //}
-                        //mi.combined_extinction = combined_extinction;
-
-                        //auto [tr, free_flight_pdf] = medium->eval_tr_and_pdf(mi, si, active);
-                        //Float tr_pdf               = index_spectrum(free_flight_pdf, channel);
-                        //color *= select(tr_pdf > 0, tr / tr_pdf, 0.0f);
-                        color *= throughput;
-                        radiance += color;
-                        throughput *= medium->evalTransmittance(gatherRay, sampler, active_medium);
-                    }
+                if (si.t >= mi.t)
+                {
+                    auto [evaluations, color, intersections] = m_vrlMap->query(ray, scene, sampler, -1, ray.maxt, m_useUniformSampling, m_useDirectIllum, m_volumeLookupRadius,
+                                                                               m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
+                    radiance += color;
+                    break;
                 }
 
-                escaped_medium = true;
-                needs_intersection = true;
-                medium = nullptr;
-                active_surface |= si.is_valid();
+                masked(mi.t, active_medium && (si.t < mi.t)) = math::Infinity<Float>;
+                /*if (any_or<true>(is_spectral)) {
+                    auto [tr, free_flight_pdf] = medium->eval_tr_and_pdf(mi, si, is_spectral);
+                    Float tr_pdf               = index_spectrum(free_flight_pdf, channel);
+                    masked(throughput, is_spectral) *= select(tr_pdf > 0.f, tr / tr_pdf, 0.f);
+                }*/
+
+                escaped_medium = active_medium && !mi.is_valid();
+                active_medium &= mi.is_valid();
+
+                // Handle null and real scatter events
+                Mask null_scatter = sampler->next_1d(active_medium) >= index_spectrum(mi.sigma_t, channel) / index_spectrum(mi.combined_extinction, channel);
+
+                act_null_scatter |= null_scatter && active_medium;
+                act_medium_scatter |= !act_null_scatter && active_medium;
+
+                if (any_or<true>(is_spectral && act_null_scatter))
+                    masked(throughput, is_spectral && act_null_scatter) *= mi.sigma_n * index_spectrum(mi.combined_extinction, channel) / index_spectrum(mi.sigma_n, channel);
+
+                masked(depth, act_medium_scatter) += 1;
+            }
+
+            act_medium_scatter &= active;
+
+            if (any_or<true>(act_null_scatter)) {
+                masked(ray.o, act_null_scatter)    = mi.p;
+                masked(ray.mint, act_null_scatter) = 0.f;
+                masked(si.t, act_null_scatter)     = si.t - mi.t;
+            }
+
+            if (any_or<true>(act_medium_scatter)) {
+                if (any_or<true>(is_spectral))
+                    masked(throughput, is_spectral && act_medium_scatter) *= mi.sigma_s * index_spectrum(mi.combined_extinction, channel) / index_spectrum(mi.sigma_t, channel);
+                if (any_or<true>(not_spectral))
+                    masked(throughput, not_spectral && act_medium_scatter) *= mi.sigma_s / mi.sigma_t;
+
+                PhaseFunctionContext phase_ctx(sampler);
+                auto phase = mi.medium->phase_function();
+
+                // ------------------ Phase function sampling -----------------
+                masked(phase, !act_medium_scatter) = nullptr;
+                masked(phase, !act_medium_scatter) = nullptr;
+                auto [wo, phase_pdf]               = phase->sample(phase_ctx, mi, sampler->next_2d(act_medium_scatter), act_medium_scatter);
+                Ray3f new_ray                      = mi.spawn_ray(wo);
+                new_ray.mint                       = 0.0f;
+                masked(ray, act_medium_scatter)    = new_ray;
+                needs_intersection |= act_medium_scatter;
             }
 
             active &= depth < (uint32_t) m_maxDepth;

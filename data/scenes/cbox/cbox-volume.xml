@@ -1,7 +1,7 @@
 <scene version="2.0.0">
     <include filename="fragments/bsdfs-rgb.xml"/>
 	
-	<default name="spp" value="16"/>
+	<default name="spp" value="8"/>
     <default name="res" value="256"/>
     <default name="max_depth" value="6"/>
 	
@@ -40,48 +40,6 @@
         <ref id="area-emitter"/>
     </shape>
 	
-	<shape type="obj">
-        <string name="filename" value="meshes/cbox_floor.obj"/>
-        <ref id="white"/>
-        <transform name="to_world">
-            <translate x="$cbox_x" y="$cbox_y" z="$cbox_z"/>
-        </transform>
-    </shape>
-    <shape type="obj">
-        <string name="filename" value="meshes/cbox_ceiling.obj"/>
-        <ref id="white"/>
-        <transform name="to_world">
-            <translate x="$cbox_x" y="$cbox_y" z="$cbox_z"/>
-        </transform>
-    </shape>
-    <shape type="obj">
-        <string name="filename" value="meshes/cbox_back.obj"/>
-        <ref id="white"/>
-        <transform name="to_world">
-            <translate x="$cbox_x" y="$cbox_y" z="$cbox_z"/>
-        </transform>
-    </shape>
-    <shape type="obj">
-        <string name="filename" value="meshes/cbox_greenwall.obj"/>
-        <ref id="green"/>
-        <transform name="to_world">
-            <translate x="$cbox_x" y="$cbox_y" z="$cbox_z"/>
-        </transform>
-    </shape>
-    <shape type="obj">
-        <string name="filename" value="meshes/cbox_redwall.obj"/>
-        <ref id="red"/>
-        <transform name="to_world">
-            <translate x="$cbox_x" y="$cbox_y" z="$cbox_z"/>
-        </transform>
-    </shape>
-    <shape type="obj">
-        <string name="filename" value="meshes/cbox_smallbox.obj"/>
-        <ref id="box"/>
-        <transform name="to_world">
-            <translate x="$cbox_x" y="$cbox_y" z="$cbox_z"/>
-        </transform>
-    </shape>
 
 	
 	<shape type="sphere">
