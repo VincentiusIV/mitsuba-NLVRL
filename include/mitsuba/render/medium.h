@@ -99,117 +99,54 @@ public:
         return m;
     }
 
-    Spectrum evalMediumTransmittance(const Ray3f &_ray, Sampler *sampler, Mask active) const {
-        /* When Woodcock tracking is selected as the sampling method,
-               we can use this method to get a noisy (but unbiased) estimate
-               of the transmittance */
-
+    Spectrum evalTransmittance(const Ray3f &_ray, Sampler *sampler, Mask active, bool scaleTr = false) const {
         Ray3f ray(_ray);
-
-        if (ray.maxt < 0.0f) {
-            Log(LogLevel::Warn, "attempting to sample Tr for ray with negative maxt");
-        }
-
-        auto [valid, mint, maxt] = intersect_aabb(ray);
-        valid &= (enoki::isfinite(mint) || enoki::isfinite(maxt));
-        active &= valid;
-        masked(mint, !active) = 0.f;
-        masked(maxt, !active) = math::Infinity<Float>;
-        ray.mint = mint = max(mint, ray.mint);
-        ray.maxt = maxt = min(maxt, ray.maxt);
-
-        if (!active)
-            return Spectrum(1.0f);
-
         if (is_homogeneous()) {
             float negLength = ray.mint - ray.maxt;
-            Float val = enoki::exp(max_density() * negLength);
+            Float val       = enoki::exp(max_density() * negLength);
             Spectrum transmittance(max_density() != 0 ? val : (Float) 1.0f);
             return transmittance;
         }
-
-        // initialize basic medium interaction fields
-        
-
-        int nSamples = 2; /// XXX make configurable
-        Float result = 0;
+        Float t    = ray.mint;
+        Float maxt = ray.maxt;
         MediumInteraction3f mi;
-
-        for (int i = 0; i < nSamples; ++i) {
-            Float t = mint;
-
-            UInt32 channel = 0;
-            if (is_rgb_v<Spectrum>) {
-                uint32_t n_channels = (uint32_t) array_size_v<Spectrum>;
-                channel             = (UInt32) min(sampler->next_1d(active) * n_channels, n_channels - 1);
-            }
-
-            while (true) {
-
-                mi = sample_interaction(ray, sampler->next_1d(), channel, active);
-                t += mi.t;
-                maxt -= mi.t;
-                if (maxt <= 0.0f || t >= maxt || !mi.is_valid()) {
-                    result += 1;
-                    break;
-                }
-
-                Mask act_scatter = (sampler->next_1d(active) < index_spectrum(mi.sigma_t, channel) / index_spectrum(mi.combined_extinction, channel));
-                if (any_or<true>(act_scatter)) {
-                    break;
-                }
-
-                Ray3f newRay = mi.spawn_ray(ray.d);
-                newRay.mint  = 0.0f;
-                newRay.maxt  = maxt;
-                ray          = std::move(newRay);
-            }
+        UInt32 channel = 0;
+        if (is_rgb_v<Spectrum>) {
+            uint32_t n_channels = (uint32_t) array_size_v<Spectrum>;
+            channel             = (UInt32) min(sampler->next_1d(active) * n_channels, n_channels - 1);
         }
-        return Spectrum(result / nSamples);
 
-        //UInt32 channel = 0;
-        //if (is_rgb_v<Spectrum>) {
-        //    uint32_t n_channels = (uint32_t) array_size_v<Spectrum>;
-        //    channel             = (UInt32) min(sampler->next_1d(active) * n_channels, n_channels - 1);
-        //}
+        SurfaceInteraction3f si;
+        si.t = _ray.maxt;
+        Spectrum throughput(1.0f);
+        while (t < maxt) {
+            mi = sample_interaction(ray, sampler->next_1d(), channel, active);
+            if (!mi.is_valid())
+                break;
 
-        //MediumInteraction3f mi;
-        //mi.sh_frame    = Frame3f(ray.d);
-        //mi.wi          = -ray.d;
-        //mi.time        = ray.time;
-        //mi.wavelengths = ray.wavelengths;
+            masked(mi.t, active && (si.t < mi.t)) = math::Infinity<Float>;
+            auto [tr, free_flight_pdf]            = eval_tr_and_pdf(mi, si, active);
+            if (scaleTr) {
+                Float tr_pdf = index_spectrum(free_flight_pdf, channel);
+                throughput *= select(tr_pdf > 0, tr / tr_pdf, 0);
+            } else {
+                throughput *= tr;            
+            }
+           
 
-        //auto [aabb_its, mint, maxt] = intersect_aabb(ray);
-        //aabb_its &= (enoki::isfinite(mint) || enoki::isfinite(maxt));
-        //active &= aabb_its;
-        //masked(mint, !active) = 0.f;
-        //masked(maxt, !active) = math::Infinity<Float>;
+            t += mi.t;
+            si.t -= mi.t;
 
-        //mint = max(ray.mint, mint);
-        //maxt = min(ray.maxt, maxt);
+            Ray3f new_ray = mi.spawn_ray(_ray.d);
+            new_ray.maxt  = max(0.0f, maxt - t);
+            ray           = std::move(new_ray);
+        }
 
-        //auto combined_extinction = get_combined_extinction(mi, active);
-        //Float m                  = combined_extinction[0];
-        //if constexpr (is_rgb_v<Spectrum>) { // Handle RGB rendering
-        //    masked(m, eq(channel, 1u)) = combined_extinction[1];
-        //    masked(m, eq(channel, 2u)) = combined_extinction[2];
-        //} else {
-        //    ENOKI_MARK_USED(channel);
-        //}
+        if (std::isnan(throughput[0])) {
+            Log(LogLevel::Error, "huh");
+        }
 
-        //Float sampled_t                              = maxt;
-        //Mask valid_mi                                = active && (sampled_t <= maxt);
-        //mi.t                                         = select(valid_mi, sampled_t, math::Infinity<Float>);
-        //mi.p                                         = ray(sampled_t);
-        //mi.medium                                    = this;
-        //mi.mint                                      = mint;
-        //std::tie(mi.sigma_s, mi.sigma_n, mi.sigma_t) = get_scattering_coefficients(mi, valid_mi);
-        //mi.combined_extinction                       = combined_extinction;
-
-        //SurfaceInteraction3f si;
-        //si.t              = math::Infinity<Float>;
-        //auto [tr, tr_pdf] = eval_tr_and_pdf(mi, si, active);
-        //return tr;
+        return throughput;
     }
 
     virtual NonLinearInteraction sampleNonLinearInteraction(const Ray3f &ray, UInt32 channel, Mask active) const{ 

@@ -1,7 +1,7 @@
 <scene version="2.0.0">
     <include filename="fragments/bsdfs-rgb.xml"/>
 	
-	<default name="spp" value="100"/>
+	<default name="spp" value="1"/>
     <default name="res" value="256"/>
     <default name="max_depth" value="6"/>
 	
@@ -40,65 +40,16 @@
         <ref id="area-emitter"/>
     </shape>
 	
-	<shape type="sphere">
-        <transform name="to_world">
-            <scale value="100"/>
-            <translate x="75" y="50" z="-50"/>
-        </transform>
-
-        <bsdf type="dielectric"/>
-    </shape>
-<shape type="obj">
-        <string name="filename" value="meshes/cbox_floor.obj"/>
-        <ref id="white"/>
-        <transform name="to_world">
-            <translate x="$cbox_x" y="$cbox_y" z="$cbox_z"/>
-        </transform>
-    </shape>
-    <shape type="obj">
-        <string name="filename" value="meshes/cbox_ceiling.obj"/>
-        <ref id="white"/>
-        <transform name="to_world">
-            <translate x="$cbox_x" y="$cbox_y" z="$cbox_z"/>
-        </transform>
-    </shape>
-    <shape type="obj">
-        <string name="filename" value="meshes/cbox_back.obj"/>
-        <ref id="white"/>
-        <transform name="to_world">
-            <translate x="$cbox_x" y="$cbox_y" z="$cbox_z"/>
-        </transform>
-    </shape>
-    <shape type="obj">
-        <string name="filename" value="meshes/cbox_greenwall.obj"/>
-        <ref id="green"/>
-        <transform name="to_world">
-            <translate x="$cbox_x" y="$cbox_y" z="$cbox_z"/>
-        </transform>
-    </shape>
-    <shape type="obj">
-        <string name="filename" value="meshes/cbox_redwall.obj"/>
-        <ref id="red"/>
-        <transform name="to_world">
-            <translate x="$cbox_x" y="$cbox_y" z="$cbox_z"/>
-        </transform>
-    </shape>
-    <shape type="obj">
-        <string name="filename" value="meshes/cbox_smallbox.obj"/>
-        <ref id="box"/>
-        <transform name="to_world">
-            <translate x="$cbox_x" y="$cbox_y" z="$cbox_z"/>
-        </transform>
-    </shape>
+	
 	<emitter type="area" id="area-emitter">
-        <rgb name="radiance" value="36.387, 20.9873, 5.75357"/>
-		<vector name="radcolor" value="36.387, 20.9873, 5.75357"/>
+        <rgb name="radiance" value="0.1, 255, 255"/>
+		<vector name="radcolor" value="0.1, 255, 255"/>
     </emitter>
 	
 	<medium id="medium1" type="homogeneous">
         <float name="scale" value="0.01"/>
-        <rgb name="sigma_t" value="0.3"/>
-        <rgb name="albedo" value="0.5, 0.5, 0.7"/>
+        <rgb name="sigma_t" value="0.26"/>
+        <rgb name="albedo" value="0.6, 0.6, 0.6"/>
         <phase type="isotropic" />
     </medium>
 
@@ -112,4 +63,6 @@
         </transform>
         <ref id="medium1" name="interior"/>
     </shape>
+	
+
 </scene>

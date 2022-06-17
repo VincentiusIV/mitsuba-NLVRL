@@ -203,7 +203,8 @@ public:
             const PhaseFunction *pf      = medium->phase_function();
             // Test the radius
             Float lengthSqr = squared_norm(pos - photon.position);
-            if ((searchRadius * searchRadius - lengthSqr) < 0)
+            Float radiusSqr = searchRadius * searchRadius;
+            if ((radiusSqr - lengthSqr) < 0)
                 return;
 
             // Test the depth of the photon
@@ -220,7 +221,7 @@ public:
             Float photonPF = pf->eval(phase_ctx1, mi1, wo);
 
             // Accumulate the results
-            result += photonData.power * photonPF;
+            result += photonData.power *sqr(1.0f - lengthSqr/radiusSqr)/radiusSqr* photonPF;
         }
 
         // Information GP

@@ -49,7 +49,7 @@ template <typename Float, typename Spectrum> struct VRL {
                 auto _ray = ray;
                 _ray.maxt = dist;
                 Mask active             = true;
-                return m_medium->evalMediumTransmittance(_ray, sampler, active);
+                return m_medium->evalTransmittance(_ray, sampler, active);
             }
         };
 
@@ -479,7 +479,7 @@ template <typename Float, typename Spectrum> struct VRL {
                 Ray3f mediumRay = Ray3f(ray);
                 mediumRay.mint = 0;
                 mediumRay.maxt = std::min(si.t, remaining);
-                transmittance *= medium->evalMediumTransmittance(mediumRay, sampler, active);
+                transmittance *= medium->evalTransmittance(mediumRay, sampler, active, true);
             }
 
             if (!surface || transmittance[0] == 0.0)
@@ -558,12 +558,12 @@ template <typename Float, typename Spectrum> struct VRL {
         mediumRay.mint = 0;
         mediumRay.maxt = sampling.tCam;
 
-        Spectrum rayTrans = m_medium->evalMediumTransmittance(mediumRay, sampler, active);
+        Spectrum rayTrans = m_medium->evalTransmittance(mediumRay, sampler, active, true);
 
         Ray3f mediumVRL(origin, direction, 0);
         mediumVRL.mint    = 0;
         mediumVRL.maxt    = sampling.tVRL;
-        Spectrum vrlTrans = m_medium->evalMediumTransmittance(mediumVRL, sampler, active);
+        Spectrum vrlTrans = m_medium->evalTransmittance(mediumVRL, sampler, active, true);
 
         Float fallOff = 1.0f / (lengthPtoP * lengthPtoP);
 
@@ -575,12 +575,15 @@ template <typename Float, typename Spectrum> struct VRL {
         mi1.p       = sampling.pCam;
         Float rayPF             = pf->eval(phase_ctx, mi1, dir);
         auto [sigmaSRay, sigmaNRay, sigmaTRay] = m_medium->get_scattering_coefficients(mi1, active);
-
+        UnpolarizedSpectrum combined_extinction = m_medium->get_combined_extinction(mi1);
+        auto sigmaRay                           = sigmaSRay * index_spectrum(combined_extinction, channel) / index_spectrum(sigmaTRay, channel);
         mi1.wi                                 = -direction;
         mi1.t                                  = sampling.tVRL;
         mi1.p                                  = sampling.pVRL;
         Float vrlPF                            = pf->eval(phase_ctx, mi1, -dir);
         auto [sigmaSVRL, sigmaNVRL, sigmaTVRL] = m_medium->get_scattering_coefficients(mi1, active);
+        combined_extinction                     = m_medium->get_combined_extinction(mi1);
+        auto sigmaVRL                           = sigmaSVRL * index_spectrum(combined_extinction, channel) / index_spectrum(sigmaTVRL, channel);
 
         Spectrum result(0.0f);
 
@@ -590,7 +593,7 @@ template <typename Float, typename Spectrum> struct VRL {
                   * vrlTrans                                   // 1.0 if short beams
                   * rayTrans                                   // = 0
                   * vrlToRayTrans                              // = 0
-                  * sigmaSRay * sigmaSVRL * sampling.invPDF(); // = nan
+                  * sigmaRay * sigmaVRL * sampling.invPDF(); // = nan
 #if VRL_DEBUG
         if (true)
 #else
@@ -604,14 +607,7 @@ template <typename Float, typename Spectrum> struct VRL {
             Log(LogLevel::Info, str.c_str());
         }
 
-        // Direct Illumination
-        // Accumulate the contribution of the photon
-
-        // Accumulate the results
         if (useDirectIllum && is_direct) {
-            // TODO: Derive radius from relative volume lookup radius...
-            //ClosestPointInfo closestPoint = findClosetPoint(ray);
-            //float dist =             
             if (lengthPtoP < directRadius) {
                 mi1.wi = direction;
                 Float photonPF  = pf->eval(phase_ctx, mi1, -ray.d);
@@ -622,9 +618,9 @@ template <typename Float, typename Spectrum> struct VRL {
                 si.t = math::Infinity<Float>;
                 Mask is_spectral = m_medium->has_spectral_extinction();
 
-                    auto [tr, free_flight_pdf] = m_medium->eval_tr_and_pdf(mi1, si, is_spectral);
-                    Float tr_pdf               = index_spectrum(free_flight_pdf, channel);
-                    throughput *= select(tr_pdf > 0.f, tr / tr_pdf, 0.f);
+                auto [tr, free_flight_pdf] = m_medium->eval_tr_and_pdf(mi1, si, is_spectral);
+                Float tr_pdf               = index_spectrum(free_flight_pdf, channel);
+                throughput *= select(tr_pdf > 0.f, tr / tr_pdf, 0.f);
                 
 
                  if (any_or<true>(is_spectral))

@@ -396,6 +396,74 @@ public:
         return resultCount;
     }
 
+    template <typename Functor> 
+    size_t beamQuery(const PointType &p, Vector3f dir, Float farT, float searchRadius, Functor &functor) const {
+        if (m_nodes.size() == 0)
+            return 0;
+
+        IndexType *stack = (IndexType *) alloca((m_depth + 1) * sizeof(IndexType));
+        IndexType index = 0, stackPos = 1, found = 0;
+        float distSquared = searchRadius * searchRadius;
+        stack[0]          = 0;
+
+        Vector3f invDir = 1.0f / dir;
+
+        while (stackPos > 0) {
+            const NodeType &node = m_nodes[index];
+            IndexType nextIndex;
+
+            Vector3f mins = (node->minBounds - pos) * invDir;
+            Vector3f maxs = (node->maxBounds - pos) * invDir;
+            float minT = max(invDir[0] > 0.0f ? mins[0] : maxs[0], 
+                invDir[1] > 0.0f ? mins[1] : maxs[1], 
+                invDir[2] > 0.0f ? mins[2] : maxs[2]);
+            float maxT = min(invDir[0] > 0.0f ? maxs[0] : mins[0], 
+                invDir[1] > 0.0f ? maxs[1] : mins[1], 
+                invDir[2] > 0.0f ? maxs[2] : mins[2]);
+
+            /* Recurse on inner nodes */
+            if (!node.isLeaf()) {
+                float distToPlane = p[node.getAxis()] - node.getPosition()[node.getAxis()];
+
+                bool searchBoth = distToPlane * distToPlane <= distSquared;
+
+                if (distToPlane > 0) {
+                    /* The search query is located on the right side of the
+                       split. Search this side first. */
+                    if (hasRightChild(index)) {
+                        if (searchBoth)
+                            stack[stackPos++] = node.getLeftIndex(index);
+                        nextIndex = node.getRightIndex(index);
+                    } else if (searchBoth) {
+                        nextIndex = node.getLeftIndex(index);
+                    } else {
+                        nextIndex = stack[--stackPos];
+                    }
+                } else {
+                    /* The search query is located on the left side of the
+                       split. Search this side first. */
+                    if (searchBoth && hasRightChild(index))
+                        stack[stackPos++] = node.getRightIndex(index);
+
+                    nextIndex = node.getLeftIndex(index);
+                }
+            } else {
+                nextIndex = stack[--stackPos];
+            }
+
+            /* Check if the current point is within the query's search radius */
+            const float pointDistSquared = squared_norm(node.getPosition() - p);
+
+            if (pointDistSquared < distSquared) {
+                ++found;
+                functor(node);
+            }
+
+            index = nextIndex;
+        }
+        return (size_t) found;
+    }
+
     /**
      * \brief Run a k-nearest-neighbor search query and record statistics
      *
@@ -634,7 +702,7 @@ public:
                     } else if (searchBoth) {
                         nextIndex = node.getLeftIndex(index);
                     } else {
-                        nextIndex = stack[--stackPos];
+                        nextIndex = stack[--stackPos];                        
                     }
                 } else {
                     /* The search query is located on the left side of the

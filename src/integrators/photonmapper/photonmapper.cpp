@@ -59,6 +59,7 @@ public:
         m_stochasticGather            = props.bool_("stochastic_gather", true);
         m_useNonLinear                = props.bool_("use_non_linear", true);
         m_useFirstPhoton              = props.bool_("use_first_photon", false);
+        m_directOnly                  = props.bool_("direct_only", false);
 
         m_useLaser                    = props.bool_("use_laser", false);
         laserOrigin                   = props.vector3f("laser_origin", Vector3f());
@@ -121,7 +122,7 @@ public:
 
                 if (neq(emitter->shape(), nullptr)) {
                     flux = emitter->getUniformRadiance();
-                    flux *= math::Pi<float> * emitter->shape()->surface_area();
+                    flux *= math::Pi<float> * emitter->shape()->surface_area() * 2.0f;
                 }
 
                 medium = emitter->medium();
@@ -176,7 +177,6 @@ public:
                 }
 
                 if (any_or<true>(active_medium)) {
-                    ++mediumDepth;
                     mi = medium->sample_interaction(ray, sampler->next_1d(active_medium), channel, active_medium);
 
                     if (m_useNonLinear && medium->is_nonlinear()) {
@@ -206,9 +206,6 @@ public:
                     escaped_medium = active_medium && !mi.is_valid();
                     active_medium &= mi.is_valid();
 
-                    if (any_or<true>(escaped_medium))
-                        mediumDepth = 0;
-
                     // Handle null and real scatter events
                     Mask null_scatter = sampler->next_1d(active_medium) >= index_spectrum(mi.sigma_t, channel) / index_spectrum(mi.combined_extinction, channel);
 
@@ -228,9 +225,10 @@ public:
                     masked(ray.o, act_null_scatter)    = mi.p;
                     masked(ray.mint, act_null_scatter) = 0.f;
                     masked(si.t, act_null_scatter)     = si.t - mi.t;
-
                     if (!fromLight || m_useFirstPhoton) {
-                        handleMediumInteraction(depth - nullInteractions, wasTransmitted, mi.p, medium, -ray.d, flux * throughput);
+                        if (!m_directOnly || m_directOnly && mediumDepth == 0)
+                            handleMediumInteraction(depth - nullInteractions, wasTransmitted, mi.p, medium, -ray.d, flux * throughput);
+                        ++mediumDepth;
                     }
                     fromLight = false;
                 }
@@ -246,7 +244,9 @@ public:
 
                     if (!fromLight || m_useFirstPhoton)
                     {
-                        handleMediumInteraction(depth - nullInteractions, wasTransmitted, mi.p, medium, -ray.d, flux * throughput);
+                        if (!m_directOnly || m_directOnly && mediumDepth == 0)
+                            handleMediumInteraction(depth - nullInteractions, wasTransmitted, mi.p, medium, -ray.d, flux * throughput);
+                        ++mediumDepth;
                     }
                     fromLight = false;
                     // ------------------ Phase function sampling -----------------
@@ -447,7 +447,7 @@ public:
          
                 Ray3f mediumRay(ray);
                 mediumRay.mint = 0.0f;
-                mediumRay.maxt = radius * 2;
+                mediumRay.maxt = radius;
             
                 size_t MVol = 0;
                 size_t M    = 0;
@@ -460,58 +460,29 @@ public:
 
                 if (si.is_valid()) {
                     while (t < si.t) {
-                        mediumRay.o = ray(t);
 
-                        Mask shouldGather = !m_stochasticGather;
-                        if (m_stochasticGather) {
-                            mi = medium->sample_interaction(mediumRay, sampler->next_1d(), channel, active);
-                            shouldGather |= mi.is_valid();
-                        }
-                        if (shouldGather) {
+                        throughput *= medium->evalTransmittance(mediumRay, sampler, active);
+                        Point3f gatherPoint = mediumRay(mediumRay.maxt);
+                        Spectrum estimate = m_volumePhotonMap->estimateRadianceVolume(gatherPoint, mediumRay.d, medium, sampler, radius, M);
 
-                            Mask act_scatter = sampler->next_1d(active) < index_spectrum(mi.sigma_t, channel) / index_spectrum(mi.combined_extinction, channel);
+                        estimate *= throughput;
 
-                            specular_chain &= !act_scatter;
-                            specular_chain |= act_scatter;
+                        MVol += M;
+                        volRadiance += estimate;
 
-                            Spectrum tr = 1.0;
-                            Float tr_pdf = 1.0;
-
-                            if (any_or<true>(is_spectral)) {
-                                auto [_tr, free_flight_pdf] = medium->eval_tr_and_pdf(mi, si, active);
-                                tr = _tr;
-                                tr_pdf               = index_spectrum(free_flight_pdf, channel);                     
-                            }
-
-                            if (act_scatter) {
-                                Spectrum estimate = m_volumePhotonMap->estimateRadianceVolume(mediumRay(radius), mediumRay.d, medium, sampler, radius, M);
-                                if (medium->is_homogeneous())
-                                    estimate *= select(tr_pdf > 0, tr / tr_pdf, 0.0f);
-                                else // homogeneous look way too bright with this, but hetero needs it?
-                                    throughput *= select(tr_pdf > 0, tr / tr_pdf, 0.0f);
-
-                                estimate *= throughput;
-
-
-                                MVol += M;
-                                volRadiance += estimate;
-                            }
-                        }
-
-                        t += radius * 2;
+                        t += mediumRay.maxt;
+                        mediumRay.o = gatherPoint;
+                        mediumRay.maxt = radius * 2.0f;
                     }
                 }
 
-         
-                volRadiance /= UNIT_SPHERE_VOLUME * enoki::pow(radius, 3);
-                volRadiance *= m_volumePhotonMap->getScaleFactor();
+                volRadiance *= 3.0f * INV_PI * m_volumePhotonMap->getScaleFactor();
                 MVol += M;
          
                 radiance += volRadiance;
 
                 escaped_medium = true;
                 needs_intersection= true;
-                medium             = nullptr;
                 active_surface |= si.is_valid();
             }
 
@@ -671,6 +642,7 @@ private:
     bool m_useNonLinear;
     bool m_useLaser;
     bool m_useFirstPhoton;
+    bool m_directOnly;
     bool m_stochasticGather;
     /* Indicates if the gathering steps should be canceled if not enough photons
      * are generated. */

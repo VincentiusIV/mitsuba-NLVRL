@@ -136,7 +136,7 @@ public:
 
                 if (neq(emitter->shape(), nullptr)) {
                     flux = emitter->getUniformRadiance();
-                    flux *= math::Pi<float> * emitter->shape()->surface_area();
+                    flux *= math::Pi<float> * emitter->shape()->surface_area() * 2.0f;
                 }
 
                 medium = emitter->medium();
@@ -191,14 +191,6 @@ public:
                 }
 
                 if (any_or<true>(active_medium)) {
-
-                    static bool test = false;
-                    if (!test) {
-                            
-
-                        test = true;
-                    }
-
                     mi = medium->sample_interaction(ray, sampler->next_1d(active_medium), channel, active_medium);
 
                     if (m_useNonLinear && medium->is_nonlinear()) {
@@ -494,60 +486,23 @@ public:
             }
 
             if (any_or<true>(active_medium)) {
-                Float totalLength = si.t;
-                Float t           = 0;
-
-                Ray3f gatherRay(ray.o, ray.d, 0.0f);
-                gatherRay.mint = 0.0f;
-
                 if (si.is_valid()) {
                     valid_ray |= true;
-                    while (t < si.t) {
-                        /*if (m_useNonLinear && medium->is_nonlinear()) {
-                            nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
-                            while (nli.t < si.t && nli.is_valid) {
-                                bool valid = medium->handleNonLinearInteraction(scene, sampler, nli, si, mi, ray, throughput, channel, active_medium);
-                                if (!valid)
-                                    break;
+                    Ray3f gatherRay(ray);
+                    mi = medium->sample_interaction(ray, sampler->next_1d(active_medium), channel, active_medium);
+                    gatherRay.maxt = select(mi.is_valid(), mi.t, si.t);
 
-                                nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
-                            }
-                        }*/
+                    masked(mi.t, active_medium && (si.t < mi.t)) = math::Infinity<Float>;
 
-                        float length = min(si.t - t, totalLength);
-                        gatherRay.maxt = length;
-                        auto [evaluations, color, intersections] = m_vrlMap->query(gatherRay, scene, sampler, -1, length, m_useUniformSampling, m_useDirectIllum, m_volumeLookupRadius, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
-                        
-
-                        t += length;
-                        gatherRay.o = ray(t);
-
-                        mi.t                       = length;
-                        mi.p                       = gatherRay.o;
-                        mi.wi = -gatherRay.d;
-
-                        auto combined_extinction = medium->get_combined_extinction(mi, active_medium);
-                        Float m                  = combined_extinction[0];
-                        if constexpr (is_rgb_v<Spectrum>) { // Handle RGB rendering
-                            masked(m, eq(channel, 1u)) = combined_extinction[1];
-                            masked(m, eq(channel, 2u)) = combined_extinction[2];
-                        } else {
-                            ENOKI_MARK_USED(channel);
-                        }
-                        mi.combined_extinction = combined_extinction;
-
-                        auto [tr, free_flight_pdf] = medium->eval_tr_and_pdf(mi, si, active);
-                        Float tr_pdf               = index_spectrum(free_flight_pdf, channel);
-                        //color *= select(tr_pdf > 0, tr / tr_pdf, 0.0f);
-                        color *= throughput;
-                        radiance += color;
-                        throughput *= tr;
-                    }
+                    auto [evaluations, color, intersections] = m_vrlMap->query(gatherRay, scene, sampler, -1, ray.maxt, m_useUniformSampling, m_useDirectIllum, m_volumeLookupRadius,
+                                                                                m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
+                    radiance += color;
+                    if (mi.is_valid())
+                        break;
                 }
 
                 escaped_medium = true;
                 needs_intersection = true;
-                medium = nullptr;
                 active_surface |= si.is_valid();
             }
 

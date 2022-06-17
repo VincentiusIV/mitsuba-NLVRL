@@ -287,6 +287,11 @@ public:
                     }
                     if (std::isnan(estimate[0]) || std::isnan(estimate[1]) || std::isnan(estimate[2])) {
                         Log(LogLevel::Warn, "Invalid sample!");
+                        std::ostringstream stream;
+                        stream << "Invalid sample = [child_cluster->represent.flux:" << child_cluster->represent.flux << ", current_element.estimate:" << current_element.estimate
+                               << ", current_cluster->represent.flux:" << current_cluster->represent.flux;
+                        std::string str = stream.str();
+                        Log(LogLevel::Warn, str.c_str());
                         estimate = Spectrum(0.f);
                     }
                     childrenEstimates += estimate;
@@ -409,7 +414,7 @@ private:
             rayOtoPonCluster.mint = 0;
             rayOtoPonCluster.maxt = min_length;
 
-            transmittance = medium->evalMediumTransmittance(rayOtoPonCluster, sampler, active);
+            transmittance = medium->evalTransmittance(rayOtoPonCluster, sampler, active);
 
             MediumInteraction3f ray_mi;
             ray_mi.p                         = r.o;
