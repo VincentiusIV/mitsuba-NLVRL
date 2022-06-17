@@ -1,7 +1,7 @@
 <scene version="2.0.0">
     <include filename="fragments/bsdfs-rgb.xml"/>
 	
-	<default name="spp" value="1"/>
+	<default name="spp" value="100"/>
     <default name="res" value="256"/>
     <default name="max_depth" value="6"/>
 	
@@ -34,7 +34,7 @@
         <string name="filename" value="meshes/cbox_luminaire.obj"/>
         <transform name="to_world">
             <scale value="0.24"/>
-            <translate x="-63.72" y="142.09" z="-62.58"/>
+            <translate x="-63.72" y="141.99" z="-62.58"/>
         </transform>
         <ref id="light"/>
         <ref id="area-emitter"/>
@@ -43,12 +43,53 @@
 	<shape type="sphere">
         <transform name="to_world">
             <scale value="100"/>
-            <translate x="0" y="50" z="0"/>
+            <translate x="75" y="50" z="-50"/>
         </transform>
 
         <bsdf type="dielectric"/>
     </shape>
-
+<shape type="obj">
+        <string name="filename" value="meshes/cbox_floor.obj"/>
+        <ref id="white"/>
+        <transform name="to_world">
+            <translate x="$cbox_x" y="$cbox_y" z="$cbox_z"/>
+        </transform>
+    </shape>
+    <shape type="obj">
+        <string name="filename" value="meshes/cbox_ceiling.obj"/>
+        <ref id="white"/>
+        <transform name="to_world">
+            <translate x="$cbox_x" y="$cbox_y" z="$cbox_z"/>
+        </transform>
+    </shape>
+    <shape type="obj">
+        <string name="filename" value="meshes/cbox_back.obj"/>
+        <ref id="white"/>
+        <transform name="to_world">
+            <translate x="$cbox_x" y="$cbox_y" z="$cbox_z"/>
+        </transform>
+    </shape>
+    <shape type="obj">
+        <string name="filename" value="meshes/cbox_greenwall.obj"/>
+        <ref id="green"/>
+        <transform name="to_world">
+            <translate x="$cbox_x" y="$cbox_y" z="$cbox_z"/>
+        </transform>
+    </shape>
+    <shape type="obj">
+        <string name="filename" value="meshes/cbox_redwall.obj"/>
+        <ref id="red"/>
+        <transform name="to_world">
+            <translate x="$cbox_x" y="$cbox_y" z="$cbox_z"/>
+        </transform>
+    </shape>
+    <shape type="obj">
+        <string name="filename" value="meshes/cbox_smallbox.obj"/>
+        <ref id="box"/>
+        <transform name="to_world">
+            <translate x="$cbox_x" y="$cbox_y" z="$cbox_z"/>
+        </transform>
+    </shape>
 	<emitter type="area" id="area-emitter">
         <rgb name="radiance" value="36.387, 20.9873, 5.75357"/>
 		<vector name="radcolor" value="36.387, 20.9873, 5.75357"/>
