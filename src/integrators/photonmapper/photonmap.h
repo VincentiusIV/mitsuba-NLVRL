@@ -66,7 +66,7 @@ public:
     typedef typename PhotonTree::IndexType IndexType;
     typedef typename PhotonTree::SearchResult SearchResult;
 
-    PhotonMap(size_t photonCount) {
+    PhotonMap(size_t photonCount) : m_capacity(photonCount) {
         Log(LogLevel::Info, "Constructing PhotonMap...");
         m_scale = 1.0f;
         m_kdtree.reserve(photonCount);
@@ -109,9 +109,16 @@ public:
         return m_kdtree.nnSearch(p, sqrSearchRadius, k, results, M);
     }
 
-    inline void insert(const Point3f &position, const PhotonData &photon) {
+    inline bool is_full() const { 
+        return size() >= m_capacity; 
+    }
+
+    inline bool insert(const Point3f &position, const PhotonData &photon) {
+        if (is_full())
+            return false;
         Photon newNode(position, photon);
         push_back(newNode);
+        return true;
         /*std::ostringstream stream;
         stream << "Inserting photon, power = " << photon.power << ", depth:" << photon.depth;
         std::string str = stream.str();
@@ -248,6 +255,7 @@ public:
 protected:
     PhotonTree m_kdtree;
     float m_scale;
+    size_t m_capacity;
 };
 
 NAMESPACE_END(mitsuba)

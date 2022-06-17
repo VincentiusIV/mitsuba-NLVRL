@@ -180,17 +180,14 @@ template <typename Float, typename Spectrum> struct VRL {
         Float tCam;
         Point3f pVRL;
         Float tVRL;
-        Float vrl_invPDF;
-        Float ray_invPDF;
-
-        Float invPDF() { return ray_invPDF * vrl_invPDF; }
-        static SamplingInfo invalid() { return SamplingInfo{ Point3f(0.0), 0, Point3f(0.0), 0, 0, 0 }; }
+        Float invPDF;
+        static SamplingInfo invalid() { return SamplingInfo{ Point3f(0.0), 0, Point3f(0.0), 0, 0 }; }
     };
 
     SamplingInfo sampleMC(const Ray3f &ray, Sampler *sampler) const {
         Float tCam = sampler->next_1d() * ray.maxt;
         Float tVRL = sampler->next_1d() * length;
-        return SamplingInfo{ ray.o + ray.d * tCam, tCam, origin + direction * tVRL, tVRL, length, ray.maxt };
+        return SamplingInfo{ ray.o + ray.d * tCam, tCam, origin + direction * tVRL, tVRL, length * ray.maxt };
     }
 
 #define USE_PEAK_SAMPLING 0
@@ -301,7 +298,7 @@ template <typename Float, typename Spectrum> struct VRL {
                 }
 
 
-                return SamplingInfo{ pCam, tCam, pVRL, tVRL, sampling_vrl.invPDF, sampling_ray.invPDF };
+                return SamplingInfo{ pCam, tCam, pVRL, tVRL, sampling_vrl.invPDF * sampling_ray.invPDF };
             } else {
                 // Anisotropic phase function
                 // Note this code is not "battle" tested.
@@ -536,7 +533,7 @@ template <typename Float, typename Spectrum> struct VRL {
             return Spectrum(0.0);
         }
 
-        if (std::isnan(sampling.invPDF())) {
+        if (std::isnan(sampling.invPDF)) {
 #if VRL_DEBUG
             Log(LogLevel::Warn, "invalid VRL/sensor sample");
 #endif
@@ -593,7 +590,7 @@ template <typename Float, typename Spectrum> struct VRL {
                   * vrlTrans                                   // 1.0 if short beams
                   * rayTrans                                   // = 0
                   * vrlToRayTrans                              // = 0
-                  * sigmaRay * sigmaVRL * sampling.invPDF(); // = nan
+                  * sigmaRay * sigmaVRL * sampling.invPDF; // = nan
 #if VRL_DEBUG
         if (true)
 #else
@@ -601,7 +598,7 @@ template <typename Float, typename Spectrum> struct VRL {
 #endif
         {
             std::ostringstream stream;
-            stream << "Contrib VRL = [ray:" << ray << ", flux:" << flux << ", fallOff:" << fallOff << ", vrlTrans:" << vrlTrans << ", vrlPF:" << vrlPF << ", rayPF:" << rayPF << ", rayTrans:" << rayTrans << ", vrlToRayTrans:" << vrlToRayTrans << ", sigmaSRay:" << sigmaSRay << ", sigmaSVRL:" << sigmaSVRL << ", invPDF:" << sampling.invPDF()
+            stream << "Contrib VRL = [ray:" << ray << ", flux:" << flux << ", fallOff:" << fallOff << ", vrlTrans:" << vrlTrans << ", vrlPF:" << vrlPF << ", rayPF:" << rayPF << ", rayTrans:" << rayTrans << ", vrlToRayTrans:" << vrlToRayTrans << ", sigmaSRay:" << sigmaSRay << ", sigmaSVRL:" << sigmaSVRL << ", invPDF:" << sampling.invPDF
                    << ", result = " << result;
             std::string str = stream.str();
             Log(LogLevel::Info, str.c_str());
@@ -622,7 +619,6 @@ template <typename Float, typename Spectrum> struct VRL {
                 Float tr_pdf               = index_spectrum(free_flight_pdf, channel);
                 throughput *= select(tr_pdf > 0.f, tr / tr_pdf, 0.f);
                 
-
                  if (any_or<true>(is_spectral))
                     throughput *= sigmaSVRL * index_spectrum(mi1.combined_extinction, channel) / index_spectrum(sigmaTVRL, channel);
                 else

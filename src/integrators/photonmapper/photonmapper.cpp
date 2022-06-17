@@ -36,18 +36,19 @@ public:
 
     PhotonMapper(const Properties &props) : Base(props) {
         m_numLightEmissions = props.int_("light_emissions", 1000000);
-        m_globalPhotonMap = new PhotonMap(m_numLightEmissions);
-        m_causticPhotonMap = new PhotonMap(m_numLightEmissions);
-        m_volumePhotonMap = new PhotonMap(m_numLightEmissions);
+        m_globalPhotons     = props.int_("global_photons", 1000);
+        m_causticPhotons    = props.int_("caustic_photons", 1000);
+        m_volumePhotons     = props.int_("volume_photons", 1000);
+        m_globalPhotonMap   = new PhotonMap(m_globalPhotons);
+        m_causticPhotonMap  = new PhotonMap(m_causticPhotons);
+        m_volumePhotonMap   = new PhotonMap(m_volumePhotons);
         m_directSamples = props.int_("direct_samples", 16);
         m_glossySamples = props.int_("glossy_samples", 32);
         m_rrDepth = props.int_("rr_start_depth", 5);
         m_maxDepth = props.int_("max_depth", 512);
         m_maxSpecularDepth = props.int_("max_specular_depth", 4);
         m_granularity = props.int_("granularity", 0);
-        m_globalPhotons = props.int_("global_photons", 250000);
-        m_causticPhotons = props.int_("caustic_photons", 250000);
-        m_volumePhotons = props.int_("volume_photons", 250000);
+        
         m_volumeLookupRadiusRelative = props.float_("volume_lookup_radius_relative", 0.01f);
         m_globalLookupRadiusRelative = props.float_("global_lookup_radius_relative", 0.05f);
         m_causticLookupRadiusRelative = props.float_("caustic_lookup_radius_relative", 0.0125f);
@@ -99,7 +100,27 @@ public:
 
         static int greatestDepth = 0;
 
-        for (int index = 0; index < m_numLightEmissions; index++) {
+        int surfacePathCount = 0, volumePathCount = 0;
+        int count = 0;
+        while (!m_globalPhotonMap->is_full() || !m_volumePhotonMap->is_full()) {
+            if (count++ > 100000) {
+                Log(LogLevel::Warn, "100k iterations...");
+                std::ostringstream oss;
+                oss << "over 1 million iterations... [" << std::endl << "  global photons  = " << string::indent(m_globalPhotonMap->size()) << std::endl
+                    << "  caustic photons  = " << m_causticPhotonMap->size() << std::endl
+                    << "  volume photons  = " << m_volumePhotonMap->size() << std::endl
+                    << "]";
+                Log(LogLevel::Warn, oss.str().c_str());
+                count = 0;
+            }
+            bool surfacePath = false, volumePath = false;
+
+            if (m_globalPhotonMap->is_full() && m_volumePhotonMap->size() == 0)
+                break; // stop, no volume in this scene.
+
+            if (m_volumePhotonMap->is_full() && m_globalPhotonMap->size() == 0)
+                break; // stop no surfaces in this scene.
+
             sampler->advance();
             EmitterPtr emitter = nullptr;
             MediumPtr medium   = nullptr;
@@ -122,7 +143,7 @@ public:
 
                 if (neq(emitter->shape(), nullptr)) {
                     flux = emitter->getUniformRadiance();
-                    flux *= math::Pi<float> * emitter->shape()->surface_area() * 2.0f;
+                    flux *= math::Pi<float> * emitter->shape()->surface_area();
                 }
 
                 medium = emitter->medium();
@@ -138,7 +159,7 @@ public:
 
             float eta(1.0f);
             int nullInteractions = 0, mediumDepth = 0;
-            bool wasTransmitted = false, volumePath = false;
+            bool wasTransmitted = false;
             bool fromLight = true;
 
             //
@@ -227,7 +248,7 @@ public:
                     masked(si.t, act_null_scatter)     = si.t - mi.t;
                     if (!fromLight || m_useFirstPhoton) {
                         if (!m_directOnly || m_directOnly && mediumDepth == 0)
-                            handleMediumInteraction(depth - nullInteractions, wasTransmitted, mi.p, medium, -ray.d, flux * throughput);
+                            volumePath |= handleMediumInteraction(depth - nullInteractions, wasTransmitted, mi.p, medium, -ray.d, flux * throughput);
                         ++mediumDepth;
                     }
                     fromLight = false;
@@ -245,7 +266,7 @@ public:
                     if (!fromLight || m_useFirstPhoton)
                     {
                         if (!m_directOnly || m_directOnly && mediumDepth == 0)
-                            handleMediumInteraction(depth - nullInteractions, wasTransmitted, mi.p, medium, -ray.d, flux * throughput);
+                            volumePath |= handleMediumInteraction(depth - nullInteractions, wasTransmitted, mi.p, medium, -ray.d, flux * throughput);
                         ++mediumDepth;
                     }
                     fromLight = false;
@@ -274,7 +295,7 @@ public:
                     if (si.shape->is_emitter())
                         break;
 
-                    handleSurfaceInteraction(ray, depth, wasTransmitted, si, medium, flux * throughput);
+                    surfacePath |= handleSurfaceInteraction(ray, depth, wasTransmitted, si, medium, flux * throughput);
                     
                     BSDFContext bCtx;
                     BSDFPtr bsdf  = si.bsdf(ray);
@@ -314,18 +335,19 @@ public:
                     si = si_new;
                 }
 
-                if (depth >= greatestDepth)
-                    greatestDepth = depth;
-
                 active &= (active_surface | active_medium);
             }
-            
+
+            if (surfacePath)
+                ++surfacePathCount;
+            if (volumePath)
+                ++volumePathCount;
         }
 
         std::string desad = "greatest depth = " + std::to_string(greatestDepth);
         Log(LogLevel::Info, desad.c_str());
 
-        float scale          = 1.0 / m_numLightEmissions;
+        float scale          = 1.0 / surfacePathCount;
         std::string debugStr = "Global Photon scale: " + std::to_string(scale);
         Log(LogLevel::Info, debugStr.c_str());
         debugStr = "Num Light Emissions: " + std::to_string(m_numLightEmissions);
@@ -357,7 +379,7 @@ public:
         }
 
         if (m_volumePhotonMap->size() > 0) {
-            m_volumePhotonMap->setScaleFactor(scale);
+            m_volumePhotonMap->setScaleFactor(1.0f / volumePathCount);
             debugStr = "Building volume PM, size: " + std::to_string(m_volumePhotonMap->size());
             Log(LogLevel::Info, debugStr.c_str());
             m_volumePhotonMap->build();
@@ -588,26 +610,26 @@ public:
         return emitter;
     }
 
-    void handleSurfaceInteraction(const Ray3f &ray, int depth, bool wasTransmitted,
+    bool handleSurfaceInteraction(const Ray3f &ray, int depth, bool wasTransmitted,
                                   const SurfaceInteraction3f &si,
                                   const Medium *medium,
                                   const Spectrum &weight) const {
         BSDFPtr bsdf       = si.bsdf();
         uint32_t bsdfFlags = bsdf->flags();
         if (!has_flag(bsdf->flags(), BSDFFlags::Smooth))
-            return;
+            return false;
         if (!wasTransmitted) {
-            m_globalPhotonMap->insert(si.p, PhotonData(si.n, ray.d, weight, depth));
+            return m_globalPhotonMap->insert(si.p, PhotonData(si.n, ray.d, weight, depth));
         } else {
-            m_causticPhotonMap->insert(si.p, PhotonData(si.n, ray.d, weight, depth));
+            return m_causticPhotonMap->insert(si.p, PhotonData(si.n, ray.d, weight, depth));
         }
     }
 
-    void handleMediumInteraction(int depth, bool delta,
+    bool handleMediumInteraction(int depth, bool delta,
                                  const Point3f &p,
                                  const Medium *medium, const Vector3f &wi,
                                  const Spectrum &weight) const {
-        m_volumePhotonMap->insert(p, PhotonData(Normal3f(0.0f, 0.0f, 0.0f), -wi, weight, depth));
+        return m_volumePhotonMap->insert(p, PhotonData(Normal3f(0.0f, 0.0f, 0.0f), -wi, weight, depth));
     }
 
     MTS_INLINE
