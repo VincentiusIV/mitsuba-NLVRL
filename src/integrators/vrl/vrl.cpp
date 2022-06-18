@@ -136,7 +136,8 @@ public:
 
                 if (neq(emitter->shape(), nullptr)) {
                     flux = emitter->getUniformRadiance();
-                    flux *= math::Pi<float> * emitter->shape()->surface_area() * 2.0f;
+                    flux *= emitter->shape()->surface_area();
+
                 }
 
                 medium = emitter->medium();
@@ -489,16 +490,17 @@ public:
                 if (si.is_valid()) {
                     valid_ray |= true;
                     Ray3f gatherRay(ray);
-                    mi = medium->sample_interaction(ray, sampler->next_1d(active_medium), channel, active_medium);
+                    gatherRay.maxt = si.t;
+                    /*mi = medium->sample_interaction(ray, sampler->next_1d(active_medium), channel, active_medium);
                     gatherRay.maxt = select(mi.is_valid(), mi.t, si.t);
 
-                    masked(mi.t, active_medium && (si.t < mi.t)) = math::Infinity<Float>;
+                    masked(mi.t, active_medium && (si.t < mi.t)) = math::Infinity<Float>;*/
 
-                    auto [evaluations, color, intersections] = m_vrlMap->query(gatherRay, scene, sampler, -1, ray.maxt, m_useUniformSampling, m_useDirectIllum, m_volumeLookupRadius,
-                                                                                m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
+                    auto [evaluations, color, intersections] = m_vrlMap->query(gatherRay, scene, sampler, -1, ray.maxt, m_useUniformSampling, m_useDirectIllum, m_volumeLookupRadius, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
                     radiance += color;
-                    if (mi.is_valid())
-                        break;
+                    /*if (mi.is_valid())
+                        break;*/
+                    throughput *= medium->evalTransmittance(gatherRay, sampler, active);
                 }
 
                 escaped_medium = true;

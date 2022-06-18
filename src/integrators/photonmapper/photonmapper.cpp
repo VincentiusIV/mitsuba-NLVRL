@@ -102,7 +102,7 @@ public:
 
         int surfacePathCount = 0, volumePathCount = 0;
         int count = 0;
-        while (!m_globalPhotonMap->is_full() || !m_volumePhotonMap->is_full()) {
+        while (!m_globalPhotonMap->is_full()) {
             if (count++ > 100000) {
                 Log(LogLevel::Warn, "100k iterations...");
                 std::ostringstream oss;
@@ -143,7 +143,7 @@ public:
 
                 if (neq(emitter->shape(), nullptr)) {
                     flux = emitter->getUniformRadiance();
-                    flux *= math::Pi<float> * emitter->shape()->surface_area();
+                    flux *= emitter->shape()->surface_area();
                 }
 
                 medium = emitter->medium();
@@ -224,6 +224,7 @@ public:
                         masked(throughput, is_spectral) *= select(tr_pdf > 0.f, tr / tr_pdf, 0.f);
                     }
 
+
                     escaped_medium = active_medium && !mi.is_valid();
                     active_medium &= mi.is_valid();
 
@@ -246,12 +247,6 @@ public:
                     masked(ray.o, act_null_scatter)    = mi.p;
                     masked(ray.mint, act_null_scatter) = 0.f;
                     masked(si.t, act_null_scatter)     = si.t - mi.t;
-                    if (!fromLight || m_useFirstPhoton) {
-                        if (!m_directOnly || m_directOnly && mediumDepth == 0)
-                            volumePath |= handleMediumInteraction(depth - nullInteractions, wasTransmitted, mi.p, medium, -ray.d, flux * throughput);
-                        ++mediumDepth;
-                    }
-                    fromLight = false;
                 }
 
                 if (any_or<true>(act_medium_scatter)) {
@@ -262,9 +257,7 @@ public:
 
                     PhaseFunctionContext phase_ctx(sampler);
                     auto phase = mi.medium->phase_function();
-
-                    if (!fromLight || m_useFirstPhoton)
-                    {
+                    if (!fromLight || m_useFirstPhoton) {
                         if (!m_directOnly || m_directOnly && mediumDepth == 0)
                             volumePath |= handleMediumInteraction(depth - nullInteractions, wasTransmitted, mi.p, medium, -ray.d, flux * throughput);
                         ++mediumDepth;
@@ -319,6 +312,9 @@ public:
                     Mask non_null_bsdf = active_surface && !has_flag(bs.sampled_type, BSDFFlags::Null);
                     masked(depth, non_null_bsdf) += 1;
                     masked(nullInteractions, !non_null_bsdf) += 1;
+
+                    if (non_null_bsdf)
+                        fromLight = false;
 
                     valid_ray |= non_null_bsdf;
                     wasTransmitted = non_null_bsdf && (has_flag(bs.sampled_type, BSDFFlags::Transmission));
@@ -379,7 +375,7 @@ public:
         }
 
         if (m_volumePhotonMap->size() > 0) {
-            m_volumePhotonMap->setScaleFactor(1.0f / volumePathCount);
+            m_volumePhotonMap->setScaleFactor(scale);
             debugStr = "Building volume PM, size: " + std::to_string(m_volumePhotonMap->size());
             Log(LogLevel::Info, debugStr.c_str());
             m_volumePhotonMap->build();
@@ -474,20 +470,18 @@ public:
                 size_t MVol = 0;
                 size_t M    = 0;
                 Spectrum volRadiance(0.0f);
-                UInt32 channel = 0;
-                if (is_rgb_v<Spectrum>) {
-                    uint32_t n_channels = (uint32_t) array_size_v<Spectrum>;
-                    channel             = (UInt32) min(sampler->next_1d(active) * n_channels, n_channels - 1);
-                }
 
                 if (si.is_valid()) {
+                    Spectrum gatherThroughput = throughput;
+                    Ray3f gatherRay(ray);
+                    gatherRay.maxt = si.t;
                     while (t < si.t) {
 
-                        throughput *= medium->evalTransmittance(mediumRay, sampler, active);
+                        gatherThroughput *= medium->evalTransmittance(mediumRay, sampler, active);
                         Point3f gatherPoint = mediumRay(mediumRay.maxt);
                         Spectrum estimate = m_volumePhotonMap->estimateRadianceVolume(gatherPoint, mediumRay.d, medium, sampler, radius, M);
 
-                        estimate *= throughput;
+                        estimate *= gatherThroughput;
 
                         MVol += M;
                         volRadiance += estimate;
@@ -496,12 +490,14 @@ public:
                         mediumRay.o = gatherPoint;
                         mediumRay.maxt = radius * 2.0f;
                     }
+
+                    volRadiance *= 3.0f * INV_PI * m_volumePhotonMap->getScaleFactor();
+                    radiance += volRadiance;
+                    throughput *= medium->evalTransmittance(gatherRay, sampler, active);
                 }
 
-                volRadiance *= 3.0f * INV_PI * m_volumePhotonMap->getScaleFactor();
                 MVol += M;
          
-                radiance += volRadiance;
 
                 escaped_medium = true;
                 needs_intersection= true;

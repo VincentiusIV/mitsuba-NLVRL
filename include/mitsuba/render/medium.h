@@ -101,12 +101,7 @@ public:
 
     Spectrum evalTransmittance(const Ray3f &_ray, Sampler *sampler, Mask active, bool scaleTr = false) const {
         Ray3f ray(_ray);
-        if (is_homogeneous()) {
-            float negLength = ray.mint - ray.maxt;
-            Float val       = enoki::exp(max_density() * negLength);
-            Spectrum transmittance(max_density() != 0 ? val : (Float) 1.0f);
-            return transmittance;
-        }
+        
         Float t    = ray.mint;
         Float maxt = ray.maxt;
         MediumInteraction3f mi;
@@ -115,9 +110,20 @@ public:
             uint32_t n_channels = (uint32_t) array_size_v<Spectrum>;
             channel             = (UInt32) min(sampler->next_1d(active) * n_channels, n_channels - 1);
         }
-
+        
         SurfaceInteraction3f si;
         si.t = _ray.maxt;
+
+        /*if (is_homogeneous()) {
+            float negLength = ray.mint - ray.maxt;
+            Float val       = enoki::exp(max_density() * negLength);
+            Spectrum transmittance(max_density() != 0 ? val : (Float) 1.0f);
+            if (scaleTr) {
+                UnpolarizedSpectrum pdf = select(si.t < mi.t, tr, tr * mi.combined_extinction);
+            }
+            return transmittance;
+        }*/
+
         Spectrum throughput(1.0f);
         while (t < maxt) {
             mi = sample_interaction(ray, sampler->next_1d(), channel, active);

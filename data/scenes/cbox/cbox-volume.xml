@@ -1,7 +1,7 @@
 <scene version="2.0.0">
     <include filename="fragments/bsdfs-rgb.xml"/>
 	
-	<default name="spp" value="128"/>
+	<default name="spp" value="8"/>
     <default name="res" value="256"/>
     <default name="max_depth" value="6"/>
 	
@@ -40,16 +40,24 @@
         <ref id="area-emitter"/>
     </shape>
 	
-	
 	<emitter type="area" id="area-emitter">
         <rgb name="radiance" value="0.1, 255, 255"/>
 		<vector name="radcolor" value="0.1, 255, 255"/>
     </emitter>
 	
+	<shape type="sphere">
+        <transform name="to_world">
+            <scale value="100"/>
+            <translate x="0" y="50" z="0"/>
+            <translate x="50" y="50" z="-50"/>
+		</transform>
+        <bsdf type="dielectric"/>
+    </shape>
+	
 	<medium id="medium1" type="homogeneous">
-        <float name="scale" value="0.01"/>
-        <rgb name="sigma_t" value="0.26"/>
-        <rgb name="albedo" value="0.6, 0.6, 0.6"/>
+        <float name="scale" value="0.011"/>
+        <rgb name="albedo" value="0.7, 0.7, 0.7"/>
+        <rgb name="sigma_t" value="0.4, 0.6, 0.73"/>
         <phase type="isotropic" />
     </medium>
 
