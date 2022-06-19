@@ -143,12 +143,6 @@ public:
                 ray               = rayColorPair.first;
                 flux              = rayColorPair.second;
 
-                /*if (neq(emitter->shape(), nullptr)) {
-                    flux = emitter->getUniformRadiance();
-                    flux *= emitter->shape()->surface_area() ;
-
-                }*/
-
                 medium = emitter->medium();
             }
 
@@ -224,9 +218,6 @@ public:
                         masked(si, intersect) = scene->ray_intersect(ray, intersect);
                     needs_intersection &= !active_medium;
 
-                    // TODO: Non linear bug -> mi.t is reduced by nli, so transmittance here is now based on the last leftover which result in lower Tr than it should be.
-
-
                     masked(mi.t, active_medium && (si.t < mi.t)) = math::Infinity<Float>;
                     if (any_or<true>(is_spectral)) {
                         auto [tr, free_flight_pdf] = medium->eval_tr_and_pdf(mi, si, is_spectral);
@@ -242,8 +233,6 @@ public:
 
                     act_null_scatter |= null_scatter && active_medium;
                     act_medium_scatter |= !act_null_scatter && active_medium;
-
-
 
                     if (any_or<true>(is_spectral && act_null_scatter))
                         masked(throughput, is_spectral && act_null_scatter) *= mi.sigma_n * index_spectrum(mi.combined_extinction, channel) / index_spectrum(mi.sigma_n, channel);
@@ -349,11 +338,8 @@ public:
                     needs_intersection &= !intersect2;
 
                     Mask has_medium_trans            = active_surface && si.is_medium_transition();
-
                     bool hadMedium = neq(medium, nullptr);
-
                     masked(medium, has_medium_trans) = si.target_medium(ray.d);
-
                     tempVRL = VRL(ray.o, medium, throughput * flux, depth, channel, is_direct);
 
                     si = si_new;
@@ -551,14 +537,15 @@ public:
                     // Gather VRLs for indirect
                     Ray3f gatherRay(ray);
                     gatherRay.maxt = si.t;
-                    mi = medium->sample_interaction(ray, sampler->next_1d(active_medium), channel, active_medium);
-                    gatherRay.maxt = select(si.t < mi.t, si.t, mi.t);
+                    /*mi = medium->sample_interaction(ray, sampler->next_1d(active_medium), channel, active_medium);
+                    gatherRay.maxt = select(si.t < mi.t, si.t, mi.t);*/
 
                     masked(mi.t, active_medium && (si.t < mi.t)) = math::Infinity<Float>;
                     auto [evaluations, color, intersections] = m_vrlMap->query(gatherRay, scene, sampler, -1, ray.maxt, m_useUniformSampling, m_useDirectIllum, m_volumeLookupRadius, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
 
                     radiance += color;
-                    break;
+                    /*if (mi.is_valid())
+                        break;*/
                     throughput *= medium->evalTransmittance(gatherRay, sampler, active);
                 }
 
@@ -660,6 +647,7 @@ public:
                << "Volume Query Time: " << util::time_string(volumeQueryTime) << std::endl
                << "Global Map Size: " << util::mem_string(m_globalPhotonMap->getSize()) << std::endl
                << "Caustic Map Size: " << util::mem_string(m_causticPhotonMap->getSize()) << std::endl
+                << "Volume Map Size: " << util::mem_string(m_volumePhotonMap->getSize()) << std::endl
                << "VRL Map Size: " << util::mem_string(m_vrlMap->getSize()) << std::endl;
         std::string str = stream.str();
         Log(LogLevel::Info, str.c_str());

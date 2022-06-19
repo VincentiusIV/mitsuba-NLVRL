@@ -127,7 +127,6 @@ public:
                 auto rayColorPair = emitter->sample_ray(0.0, sampler->next_1d(), sampler->next_2d(), sampler->next_2d());
                 ray               = rayColorPair.first;
                 flux              = rayColorPair.second;
-
                 medium = emitter->medium();
             }
 
@@ -218,7 +217,7 @@ public:
                     if (any_or<true>(is_spectral && act_null_scatter))
                         masked(throughput, is_spectral && act_null_scatter) *= mi.sigma_n * index_spectrum(mi.combined_extinction, channel) / index_spectrum(mi.sigma_n, channel);
 
-                   
+                    masked(depth, act_medium_scatter) += 1;
                 }
 
                 active &= depth < (uint32_t) m_maxDepth;
@@ -297,7 +296,7 @@ public:
                         fromLight = false;
 
                     valid_ray |= non_null_bsdf;
-                    wasTransmitted = non_null_bsdf && (has_flag(bs.sampled_type, BSDFFlags::Transmission) || has_flag(bs.sampled_type, BSDFFlags::Reflection));
+                    wasTransmitted = non_null_bsdf && (has_flag(bs.sampled_type, BSDFFlags::Transmission));
 
                     Mask intersect2             = active_surface && needs_intersection;
                     SurfaceInteraction3f si_new = si;
@@ -457,7 +456,7 @@ public:
                     while (t < si.t) {
                         ++localGatherCount;
 
-                        gatherThroughput *= medium->evalTransmittance(mediumRay, sampler, active);
+                        throughput *= medium->evalTransmittance(mediumRay, sampler, active);
                         Point3f gatherPoint = mediumRay(mediumRay.maxt);
                         Spectrum estimate = m_volumePhotonMap->estimateRadianceVolume(gatherPoint, mediumRay.d, medium, sampler, radius, M);
 
@@ -474,7 +473,7 @@ public:
                     volRadiance *= m_volumePhotonMap->getScaleFactor();
                     radiance += volRadiance;
 
-                    throughput *= medium->evalTransmittance(gatherRay, sampler, active);
+                    //throughput *= medium->evalTransmittance(gatherRay, sampler, active);
 
                     ++volumeQueryCount;
                     gatherCount += localGatherCount; 
