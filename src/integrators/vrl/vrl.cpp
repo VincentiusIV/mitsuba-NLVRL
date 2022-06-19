@@ -29,12 +29,16 @@ public:
     typedef typename PhotonMap::PhotonData PhotonData;
 
     VRLIntegrator(const Properties &props) : Base(props) {
-        m_numLightEmissions           = props.int_("light_emissions", 1000000);
+        m_globalPhotons               = props.int_("global_photons", 1000);
+        m_causticPhotons = props.int_("caustic_photons", 1000);
+        m_volumePhotons  = props.int_("volume_photons", 1000);
+
+        m_globalPhotonMap             = new PhotonMap(m_globalPhotons);
+        m_causticPhotonMap = new PhotonMap(m_causticPhotons);
+        m_volumePhotonMap  = new PhotonMap(m_volumePhotons);
+
         m_maxDepth                    = props.int_("max_depth", 512);
-        m_directSamples               = props.int_("direct_samples", 16);
-        m_glossySamples               = props.int_("glossy_samples", 32);
-        m_maxSpecularDepth            = props.int_("max_specular_depth", 4);
-        m_granularity                 = props.int_("granularity", 0);
+        
         m_globalPhotons               = props.int_("global_photons", 250000);
         m_causticPhotons              = props.int_("caustic_photons", 250000);
         m_targetVRLs                  = props.int_("target_vrls", 1000);
@@ -44,11 +48,7 @@ public:
         m_globalLookupSize            = props.int_("global_lookup_size", 120);
         m_causticLookupSize           = props.int_("caustic_lookup_size", 120);
         m_samplesPerQuery             = props.int_("samples_per_query", 2);
-        m_gatherLocally               = props.bool_("gather_locally", true);
-        m_autoCancelGathering         = props.bool_("auto_cancel_gathering", true);
         
-
-        m_nbParticules = props.int_("nb_particules", 50);
         m_rrDepth      = props.int_("rr_depth", 5);
 
         m_useLaser        = props.bool_("use_laser", false);
@@ -68,13 +68,10 @@ public:
         m_lightcutSamples = props.int_("lightcut_samples", 1);
         m_RRVRL               = props.bool_("rr_vrl", false);
         m_scaleRR             = props.float_("scale_rr", 0.5); // 2 meters before 5%
-        m_nbSamplesRay        = props.int_("nb_samples_ray", 1);
         m_thresholdBetterDist = props.int_("threshold_better_dist", 8);
         m_thresholdError      = props.float_("threshold_error", 0.02);
         m_shootCenter         = props.bool_("shoot_center", true);
 
-        m_globalPhotonMap  = new PhotonMap(m_numLightEmissions);
-        m_causticPhotonMap = new PhotonMap(m_numLightEmissions);
         Log(LogLevel::Info, "Constructing VRL Map...");
         m_vrlMap = new VRLMap(m_targetVRLs);
     }
@@ -82,7 +79,7 @@ public:
     void preprocess(Scene *scene, Sensor *sensor) override {
         Log(LogLevel::Info, "Pre Processing Photon Map...");
 
-        m_preprocess_timer.reset();
+        m_preprocessTimer.reset();
 
         for each (auto shape in scene->shapes()) {
             if (shape->interior_medium() != nullptr) {
@@ -95,9 +92,6 @@ public:
         sampler->seed(0);
 
         // ------------------- Debug Info -------------------------- //
-        std::vector<int> depthCounter;
-        std::string numPhotonsStr = "- Photon Count: " + std::to_string(m_numLightEmissions);
-        Log(LogLevel::Info, numPhotonsStr.c_str());
         host_vector<ref<Emitter>, Float> emitters = scene->emitters();
         std::string photonString                  = "- Emitter Count: " + std::to_string(emitters.size());
         Log(LogLevel::Info, photonString.c_str());
@@ -111,9 +105,24 @@ public:
 
         static int greatestDepth = 0;
         ScalarFloat emitter_pdf  = 1.f / scene->emitters().size();
-        int volumeLightCount = 0;
 
-        for (int index = 0; index < m_numLightEmissions; index++) {
+        int surfacePathCount = 0, volumePathCount = 0, directVolumePathCount = 0;
+        int count = 0;
+        while (!m_globalPhotonMap->is_full() || !m_vrlMap->is_full() || !m_volumePhotonMap->is_full()) {
+            if (count++ % 100000 == 0) {
+                std::ostringstream oss;
+                oss << "photons[global=" << string::indent(m_globalPhotonMap->size()) << ", caustic= " << m_causticPhotonMap->size() << ", volume=" << m_volumePhotonMap->size()
+                    << ", vrls=" << m_vrlMap->size() << "]";
+                Log(LogLevel::Info, oss.str().c_str());
+            }
+            bool surfacePath = false, volumePath = false, directVolumePath = false;
+
+            if (m_globalPhotonMap->is_full() && (m_vrlMap->size() == 0 && m_volumePhotonMap->size() == 0))
+                break; // stop, no volume in this scene.
+
+            if ((m_vrlMap->is_full() && m_volumePhotonMap->is_full()) && m_globalPhotonMap->size() == 0)
+                break; // stop no surfaces in this scene.
+
             sampler->advance();
             EmitterPtr emitter = nullptr;
             MediumPtr medium   = nullptr;
@@ -134,11 +143,11 @@ public:
                 ray               = rayColorPair.first;
                 flux              = rayColorPair.second;
 
-                if (neq(emitter->shape(), nullptr)) {
+                /*if (neq(emitter->shape(), nullptr)) {
                     flux = emitter->getUniformRadiance();
-                    flux *= emitter->shape()->surface_area();
+                    flux *= emitter->shape()->surface_area() ;
 
-                }
+                }*/
 
                 medium = emitter->medium();
             }
@@ -153,7 +162,7 @@ public:
 
             float eta(1.0f);
             int nullInteractions = 0, mediumDepth = 0;
-            bool wasTransmitted = false, volumePath = false;
+            bool wasTransmitted = false;
             bool is_direct = true;
 
             //
@@ -235,6 +244,7 @@ public:
                     act_medium_scatter |= !act_null_scatter && active_medium;
 
 
+
                     if (any_or<true>(is_spectral && act_null_scatter))
                         masked(throughput, is_spectral && act_null_scatter) *= mi.sigma_n * index_spectrum(mi.combined_extinction, channel) / index_spectrum(mi.sigma_n, channel);
 
@@ -256,15 +266,20 @@ public:
                     if (any_or<true>(not_spectral))
                         masked(throughput, not_spectral && act_medium_scatter) *= mi.sigma_s / mi.sigma_t;
 
+                    // mediumDepth is only 0 iff it came from a light source OR was transmitted 
+                    if (mediumDepth == 0) {
+                        directVolumePath |= handleMediumInteraction(depth - nullInteractions, wasTransmitted, mi.p, medium, -ray.d, flux * throughput);
+                    }
+                    ++mediumDepth;
+
                     if (act_medium_scatter) {
-                        Spectrum vrlFlux = throughput * flux;
-                        tempVRL.flux = vrlFlux;
                         tempVRL.setEndPoint(mi.p);
                         volumePath |= m_vrlMap->push_back(std::move(tempVRL), false);
                         if (volumePath)
                             is_direct = false;
-                        tempVRL = VRL(mi.p, medium, vrlFlux, depth, channel, is_direct);
+                        tempVRL = VRL(mi.p, medium, throughput * flux, depth, channel, is_direct);
                     }
+                    
                     PhaseFunctionContext phase_ctx(sampler);
                     auto phase = mi.medium->phase_function();
                     // ------------------ Phase function sampling -----------------
@@ -295,7 +310,7 @@ public:
                     tempVRL.setEndPoint(si.p);
                     volumePath |= m_vrlMap->push_back(std::move(tempVRL), false);
 
-                    handleSurfaceInteraction(ray, depth, wasTransmitted, si, medium, flux * throughput);
+                    surfacePath |= handleSurfaceInteraction(ray, depth, wasTransmitted, si, medium, flux * throughput);
 
                     BSDFContext bCtx;
                     BSDFPtr bsdf = si.bsdf(ray);
@@ -321,6 +336,8 @@ public:
 
                     valid_ray |= non_null_bsdf;
                     wasTransmitted = non_null_bsdf && (has_flag(bs.sampled_type, BSDFFlags::Transmission));
+                    if (wasTransmitted)
+                        mediumDepth = 0;
 
                     if (volumePath && !wasTransmitted)
                         is_direct = false;
@@ -348,25 +365,21 @@ public:
                 active &= (active_surface | active_medium);
             }
 
-            if (volumePath)
-                ++volumeLightCount;           
+            if (surfacePath && !m_globalPhotonMap->is_full())
+                ++surfacePathCount;
+            if (volumePath && !m_vrlMap->is_full())
+                ++volumePathCount;
+            if (directVolumePath && !m_volumePhotonMap->is_full())
+                ++directVolumePathCount;         
         }
 
         std::string desad = "greatest depth = " + std::to_string(greatestDepth);
         Log(LogLevel::Info, desad.c_str());
 
-        float scale          = 1.0 / m_numLightEmissions;
+        float scale          = 1.0 / surfacePathCount;
         std::string debugStr = "Global Photon scale: " + std::to_string(scale);
         Log(LogLevel::Info, debugStr.c_str());
-        debugStr = "Num Light Emissions: " + std::to_string(m_numLightEmissions);
-        Log(LogLevel::Info, debugStr.c_str());
-
-        Log(LogLevel::Info, "Depth Counter: ");
-        for (size_t i = 0; i < depthCounter.size(); i++) {
-            debugStr = "- d" + std::to_string(i + 1) + " = " + std::to_string(depthCounter[i]);
-            Log(LogLevel::Info, debugStr.c_str());
-        }
-
+        
         if (m_globalPhotonMap->size() > 0) {
             m_globalPhotonMap->setScaleFactor(scale);
             m_globalPhotonMap->build();
@@ -376,6 +389,8 @@ public:
             Log(LogLevel::Info, "No global photons");
         }
 
+        debugStr = "Caustic Photon scale: " + std::to_string(scale);
+        Log(LogLevel::Info, debugStr.c_str());
         if (m_causticPhotonMap->size() > 0) {
             m_causticPhotonMap->setScaleFactor(scale);
             debugStr = "Building caustic PM, size: " + std::to_string(m_causticPhotonMap->size());
@@ -386,6 +401,9 @@ public:
         }
 
         if (m_vrlMap->size() > 0) {
+            float vrlScale = 1.0f / volumePathCount;
+            debugStr       = "VRL scale: " + std::to_string(vrlScale);
+            Log(LogLevel::Info, debugStr.c_str());
             // If needed, we can change the VRL
             if (m_longVRL) {
                 Log(LogLevel::Info, "Transform short VRL into long...");
@@ -402,7 +420,7 @@ public:
 
             // is this correct?
             m_vrlmap_build_timer.reset();
-            m_vrlMap->setScaleFactor(1.0f / volumeLightCount);
+            m_vrlMap->setScaleFactor(vrlScale);
             m_vrlMap->build(scene, m_useLightCut ? ELightCutAcceleration : ENoVRLAcceleration, sampler, m_thresholdBetterDist, m_thresholdError, m_useUniformSampling, m_useDirectIllum,
                             m_stochasticLightcut, m_lightcutSamples);
             Log(Info, "VRL Map Created. (took %s)", util::time_string(m_vrlmap_build_timer.value(), true));
@@ -410,7 +428,17 @@ public:
             Log(LogLevel::Info, "No VRLs");
         }
 
-        Log(Info, "Pre-process finished. (took %s)", util::time_string(m_preprocess_timer.value(), true));
+        if (m_volumePhotonMap->size() > 0) {
+            m_volumePhotonMap->setScaleFactor(1.0f / directVolumePathCount);
+            debugStr = "Building volume PM, size: " + std::to_string(m_volumePhotonMap->size());
+            Log(LogLevel::Info, debugStr.c_str());
+            m_volumePhotonMap->build();
+            // m_bre->build(m_volumePhotonMap, m_volumeLookupSize);
+        } else {
+            Log(LogLevel::Info, "No volume photons");
+        }
+
+        Log(Info, "Pre-process finished. (took %s)", util::time_string(m_preprocessTimer.value(), true));
     }
 
     std::pair<Spectrum, Mask> sample(const Scene *scene, Sampler *sampler, const RayDifferential3f &_ray, const Medium *_medium, Float *aovs, Mask active) const override {
@@ -489,17 +517,48 @@ public:
             if (any_or<true>(active_medium)) {
                 if (si.is_valid()) {
                     valid_ray |= true;
+
+                    // Gather VPM for direct+caustic
+                    Float radius = m_volumeLookupRadius * enoki::lerp(0.5f, 1.5f, sampler->next_1d());
+                    Float t      = 0.0f;
+                    Ray3f mediumRay(ray);
+                    mediumRay.mint = 0.0f;
+                    mediumRay.maxt = radius;
+                    size_t MVol = 0;
+                    size_t M    = 0;
+                    Spectrum directIllum(0.0f);
+                    Spectrum gatherThroughput = throughput;
+                    int localGatherCount = 0;
+                    while (t < si.t) {
+                        ++localGatherCount;
+
+                        gatherThroughput *= medium->evalTransmittance(mediumRay, sampler, active);
+                        Point3f gatherPoint = mediumRay(mediumRay.maxt);
+                        Spectrum estimate   = m_volumePhotonMap->estimateRadianceVolume(gatherPoint, mediumRay.d, medium, sampler, radius, M);
+
+                        estimate *= gatherThroughput;
+
+                        MVol += M;
+                        directIllum += estimate;
+
+                        t += mediumRay.maxt;
+                        mediumRay.o    = gatherPoint;
+                        mediumRay.maxt = radius * 2.0f;
+                    }
+                    directIllum *= m_volumePhotonMap->getScaleFactor();
+                    radiance += directIllum;
+
+                    // Gather VRLs for indirect
                     Ray3f gatherRay(ray);
                     gatherRay.maxt = si.t;
-                    /*mi = medium->sample_interaction(ray, sampler->next_1d(active_medium), channel, active_medium);
-                    gatherRay.maxt = select(mi.is_valid(), mi.t, si.t);
+                    mi = medium->sample_interaction(ray, sampler->next_1d(active_medium), channel, active_medium);
+                    gatherRay.maxt = select(si.t < mi.t, si.t, mi.t);
 
-                    masked(mi.t, active_medium && (si.t < mi.t)) = math::Infinity<Float>;*/
-
+                    masked(mi.t, active_medium && (si.t < mi.t)) = math::Infinity<Float>;
                     auto [evaluations, color, intersections] = m_vrlMap->query(gatherRay, scene, sampler, -1, ray.maxt, m_useUniformSampling, m_useDirectIllum, m_volumeLookupRadius, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
+
                     radiance += color;
-                    /*if (mi.is_valid())
-                        break;*/
+                    break;
                     throughput *= medium->evalTransmittance(gatherRay, sampler, active);
                 }
 
@@ -590,7 +649,23 @@ public:
 
         return { radiance, valid_ray };
     }
-  
+
+    void postprocess(Scene *scene, Sensor *sensor) override {
+
+        std::ostringstream stream;
+        stream << "Surface Query Count: " << surfaceQueryCount << std::endl
+               << "Surface Query Time: " << util::time_string(surfaceQueryTime) << std::endl
+               << "Volume Query Count: " << volumeQueryCount << std::endl
+               << "Volume Gather Count: " << gatherCount << std::endl
+               << "Volume Query Time: " << util::time_string(volumeQueryTime) << std::endl
+               << "Global Map Size: " << util::mem_string(m_globalPhotonMap->getSize()) << std::endl
+               << "Caustic Map Size: " << util::mem_string(m_causticPhotonMap->getSize()) << std::endl
+               << "VRL Map Size: " << util::mem_string(m_vrlMap->getSize()) << std::endl;
+        std::string str = stream.str();
+        Log(LogLevel::Info, str.c_str());
+    }
+
+
     EmitterPtr sampleEmitter(const Scene *scene, const Point2f &sample_, Mask active) const {
         Point2f sample(sample_);
         EmitterPtr emitter = nullptr;
@@ -609,18 +684,21 @@ public:
         return emitter;
     }
 
-    void handleSurfaceInteraction(const Ray3f &ray, int depth, bool delta, const SurfaceInteraction3f &si, const Medium *medium, const Spectrum &weight) const {
+     bool handleSurfaceInteraction(const Ray3f &ray, int depth, bool wasTransmitted, const SurfaceInteraction3f &si, const Medium *medium, const Spectrum &weight) const {
         BSDFPtr bsdf       = si.bsdf();
         uint32_t bsdfFlags = bsdf->flags();
-        PhotonData photonData(si.n, ray.d, weight, depth);
         if (!has_flag(bsdf->flags(), BSDFFlags::Smooth))
-            return;
-        if (!delta) {
-            m_globalPhotonMap->insert(si.p, std::move(photonData));
+            return false;
+        if (!wasTransmitted) {
+            return m_globalPhotonMap->insert(si.p, PhotonData(si.n, ray.d, weight, depth));
         } else {
-            m_causticPhotonMap->insert(si.p, std::move(photonData));
+            return m_causticPhotonMap->insert(si.p, PhotonData(si.n, ray.d, weight, depth));
         }
     }
+
+     bool handleMediumInteraction(int depth, bool delta, const Point3f &p, const Medium *medium, const Vector3f &wi, const Spectrum &weight) const {
+         return m_volumePhotonMap->insert(p, PhotonData(Normal3f(0.0f, 0.0f, 0.0f), -wi, weight, depth));
+     }
 
     MTS_INLINE
     Float index_spectrum(const UnpolarizedSpectrum &spec, const UInt32 &idx) const {
@@ -637,7 +715,7 @@ public:
     MTS_DECLARE_CLASS()
 
 private:
-    int m_numLightEmissions, m_maxDepth;
+    int m_maxDepth;
 
     int m_samplesPerQuery = 2;
     int m_nbParticules;
@@ -654,7 +732,6 @@ private:
     bool m_useLaser;
     bool m_RRVRL;
     Float m_scaleRR;
-    int m_nbSamplesRay; //< Mostly for the VPL
     bool m_shootCenter;
     int m_rrDepth;
 
@@ -674,23 +751,20 @@ private:
     // ***************** Surface Illumination ***************** //
     PhotonMap *m_globalPhotonMap;
     PhotonMap *m_causticPhotonMap;
+    PhotonMap *m_volumePhotonMap; // only used for volume caustic and direct illumination
 
     Vector3f laserOrigin, laserDirection;
 
-    int m_directSamples, m_glossySamples, m_maxSpecularDepth, m_granularity;
     int m_minDepth = 1;
-    int m_globalPhotons, m_causticPhotons, m_targetVRLs;
+    int m_globalPhotons, m_causticPhotons, m_volumePhotons, m_targetVRLs;
     float m_globalLookupRadiusRelative, m_causticLookupRadiusRelative, m_volumeLookupRadiusRelative;
     float m_invEmitterSamples, m_invGlossySamples;
     int m_globalLookupSize, m_causticLookupSize, m_volumeLookupSize;
-    /* Should photon gathering steps exclusively run on the local machine? */
-    bool m_gatherLocally;
-    /* Indicates if the gathering steps should be canceled if not enough photons
-     * are generated. */
-    bool m_autoCancelGathering;
 
+    mutable std::atomic<int> surfaceQueryCount, volumeQueryCount, gatherCount;
+    mutable std::atomic<size_t> surfaceQueryTime, volumeQueryTime;
     
-    Timer m_preprocess_timer, m_vrlmap_build_timer;
+    Timer m_preprocessTimer, m_vrlmap_build_timer;
 };
 
 MTS_IMPLEMENT_CLASS_VARIANT(VRLIntegrator, SamplingIntegrator);

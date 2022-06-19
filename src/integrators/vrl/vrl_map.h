@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fstream>
+#include <mitsuba/core/timer.h>
 
 #include "vrl_lightcut.h"
 #include "vrl_struct.h"
@@ -29,38 +30,13 @@ public:
         m_map.reserve(nbVRL);
         m_maxSize = nbVRL;
         m_accel = ENoVRLAcceleration;
-
-        // MemoryPool memPool;
-        // m_map.clear();
-        // while (m_map.size() < nbVRL) {
-        //    Path p;
-        //    p.initialize(scene, 0.f, EImportance, memPool);
-        //    p.randomWalk(scene, sensorSampler, maxDepth, rrDepth, EImportance, memPool);
-        //    // Transform path into VPL
-        //    // Note that if the rendering type is only medium to medium
-        //    // Only relevant VPL are generated
-        //    Spectrum weight(1.f);
-        //    for (int idVertex = 0; idVertex < p.vertexCount() - 1; idVertex++) {
-        //        // Update the weight this the medium (potentially)
-        //        const PathVertex *vertex = p.vertex(idVertex);
-        //        const PathEdge *edge     = p.edge(idVertex);
-        //        const Medium *medium     = edge->medium;
-        //        weight *= vertex->rrWeight * vertex->weight[EImportance];
-        //        if (idVertex != 0 && medium != nullptr && edge->length != 0 && (!weight.isZero())) {
-        //            VRL vrl(vertex->getPosition(), medium, weight, idVertex);
-        //            Point3f next_point = vertex->getPosition() + edge->d * edge->length;
-        //            vrl.setEndPoint(next_point);
-        //            m_map.emplace_back(std::move(vrl));
-        //        }
-        //        weight *= p.edge(idVertex)->weight[EImportance];
-        //    } // Add vpl contribution
-        //    p.release(memPool);
-        //    m_scale += 1;
-        //}
     }
 
     bool can_add() {
         return (size() < m_maxSize);
+    }
+
+    bool is_full() { return !can_add();
     }
 
     bool push_back(VRL &vrl, bool log) {
@@ -147,12 +123,18 @@ public:
         m_map = dicedVRL;
     }
 
-    // TODO: Fix the specific parameters for RR
+    mutable int queryCount = 0;
+    mutable float totalQueryTime;
+    mutable Timer queryTimer;
 
     // returns nb_evaluation, color, nb_BBIntersection
     std::tuple<size_t, Spectrum, size_t> query(const Ray3f &ray, const Scene *scene, Sampler *sampler, int renderScatterDepth, Float lengthOfRay, bool useUniformSampling, bool useDirectIllum, Float directRadius, const EVRLRussianRoulette strategyRR, Float scaleRR, UInt32 samples, UInt32 channel) const {
+        queryTimer.reset();
+        ++queryCount;        
         if (m_map.size() == 0)
+        {
             return { 0, Spectrum(0.0), 0 };
+        }
 
         Spectrum Li(0.0);
         size_t nb_evaluation     = 0;
@@ -217,7 +199,10 @@ public:
             }
         }
         
-        Li /= samples;
+        if (samples > 1)
+            Li /= samples;
+
+        totalQueryTime += queryTimer.value();
 
         return { nb_evaluation, Li, nb_BBIntersection };
     }
@@ -232,6 +217,15 @@ public:
     inline void setScaleFactor(Float value) { m_scale = value; }
 
     const size_t getParticleCount() const { return m_scale; }
+
+    size_t getSize() {
+        size_t total = 0;
+        total += sizeof(m_maxSize) + sizeof(m_scale);
+        total += sizeof(m_map) + sizeof(VRL) * m_map.size();
+        if (m_accel == EVRLAcceleration::ELightCutAcceleration)
+            total += m_lc->getSize();
+        return total;
+    }
 
 protected:
     std::vector<VRL> m_map;

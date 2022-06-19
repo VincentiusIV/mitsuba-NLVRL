@@ -124,7 +124,7 @@ struct SurfaceInteraction : Interaction<Float_, Spectrum_> {
     /// Incident direction in the local shading frame
     Vector3f wi;
 
-    /// Primitive index, e.g. the triangle ID (if applicable)
+/// Primitive index, e.g. the triangle ID (if applicable)
     Index prim_index;
 
     /// Stores a pointer to the parent instance (if applicable)

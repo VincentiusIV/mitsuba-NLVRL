@@ -210,6 +210,13 @@ public:
     };
 
 public:
+    size_t getSize() {
+        size_t total = 0;
+        total += sizeof(m_nodes) + sizeof(NodeType) * m_nodes.size();
+        total += sizeof(m_aabb);
+        total += sizeof(m_depth);
+        return total;
+    }
     /**
      * \brief Create an empty KD-tree that can hold the specified
      * number of points
@@ -812,6 +819,8 @@ public:
         }
     }
 
+
+
 protected:
 
     struct CoordinateOrdering {
@@ -1043,6 +1052,7 @@ protected:
             m_aabb.min[axis] = temp;
         }
     }
+
 
 protected:
     std::vector<NodeType> m_nodes;

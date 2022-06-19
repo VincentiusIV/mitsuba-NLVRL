@@ -132,7 +132,8 @@ public:
     bool render(Scene *scene, Sensor *sensor) override;
     void cancel() override;
 
-    virtual void preprocess(Scene *scene, Sensor *sensor) { Log(LogLevel::Info, "Dummy pre process...");}
+    virtual void preprocess(Scene *scene, Sensor *sensor) { Log(LogLevel::Info, "Dummy pre process..."); }
+    virtual void postprocess(Scene *scene, Sensor *sensor) { Log(LogLevel::Info, "Dummy post process..."); }
 
     /**
      * Indicates whether \ref cancel() or a timeout have occured. Should be

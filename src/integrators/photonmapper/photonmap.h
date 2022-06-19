@@ -10,6 +10,7 @@
 #include <mitsuba/render/phase.h>
 #include <mitsuba/render/records.h>
 #include <mitsuba/render/medium.h>
+#include <mitsuba/core/timer.h>
 #include <random>
 #include "kdtree.h"
 #include "../vrl/vrl_struct.h"
@@ -72,6 +73,8 @@ public:
         m_kdtree.reserve(photonCount);
     }
 
+    mutable int queryCount = 0;
+    mutable float totalQueryTime;
     
     inline void clear() { m_kdtree.clear(); }
     /// Resize the kd-tree array
@@ -127,6 +130,10 @@ public:
 
     Spectrum estimateRadiance(const SurfaceInteraction3f &si,
                               float searchRadius, size_t maxPhotons, bool smooth = false) const {
+        ++queryCount;
+        Timer queryTimer;
+        queryTimer.reset();
+
         SearchResult *results  = new SearchResult[maxPhotons]; // this is really expensive, consider a buffer per thread
         float squaredRadius = searchRadius * searchRadius;
         size_t M = 0;
@@ -161,10 +168,15 @@ public:
         if (smooth)
             result *= 3;
 
+        totalQueryTime += queryTimer.value();
         return result;
     }
 
     Spectrum estimateCausticRadiance(const SurfaceInteraction3f &si, float searchRadius, size_t maxPhotons) const {
+        ++queryCount;
+        Timer queryTimer;
+        queryTimer.reset();
+
         SearchResult *results  = new SearchResult[maxPhotons]; // this is really expensive, consider a buffer per thread
         float squaredRadius    = searchRadius * searchRadius;
         size_t M               = 0;
@@ -194,6 +206,7 @@ public:
         delete[] results;
         result *= 3.0 * m_scale * INV_PI * invSquaredRadius;
 
+        totalQueryTime += queryTimer.value();
         return result;
     }
 
@@ -228,7 +241,7 @@ public:
             Float photonPF = pf->eval(phase_ctx1, mi1, wo);
 
             // Accumulate the results
-            result += photonData.power *sqr(1.0f - lengthSqr/radiusSqr)/radiusSqr* photonPF;
+            result += photonData.power * photonPF / (4/3 * M_PI * radiusSqr*searchRadius);//*sqr(1.0f - lengthSqr/radiusSqr)/radiusSqr
         }
 
         // Information GP
@@ -246,10 +259,20 @@ public:
     };
 
     Spectrum estimateRadianceVolume(Point3f gatherPoint, Vector3f wo, const Medium *medium, Sampler *sampler, float searchRadius, size_t &M) const {
+
         RadianceQueryVolume query(gatherPoint, wo, medium, sampler, -1, searchRadius);
         m_kdtree.executeQuery(gatherPoint, searchRadius, query);
         M = query.M;
+
         return query.result;
+    }
+
+    size_t getSize() {
+        size_t total = 0;
+        total += m_kdtree.getSize();
+        total += sizeof(m_scale);
+        total += sizeof(m_capacity);
+        return total;
     }
 
 protected:

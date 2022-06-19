@@ -26,7 +26,6 @@ public:
 
     SRGBReflectanceSpectrum(const Properties &props) : Texture(props) {
         ScalarColor3f color = props.color("color");
-        Log(LogLevel::Info, "SRGBReflectanceSpectrum spectrum");
 
         if (any(color < 0 || color > 1) && !props.bool_("unbounded", false))
             Throw("Invalid RGB reflectance value %s, must be in the range [0, 1]!", color);

@@ -179,8 +179,9 @@ MTS_VARIANT bool SamplingIntegrator<Float, Spectrum>::render(Scene *scene, Senso
     }
 
     if (!m_stop)
-        Log(Info, "Rendering finished. (took %s)",
-            util::time_string(m_render_timer.value(), true));
+        Log(Info, "Rendering finished. (took %s)", util::time_string(m_render_timer.value(), true));
+
+    postprocess(scene, sensor);
 
     return !m_stop;
 }

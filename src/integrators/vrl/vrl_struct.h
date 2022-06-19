@@ -279,8 +279,8 @@ template <typename Float, typename Spectrum> struct VRL {
                 Point3f pCam      = ray.o + ray.d * tCam;
 
                 // TODO: This shouldnt be necessary, but sometimes the value is slightly below/above 0.0/length
-                tCam = enoki::clamp(tCam, 0.0f, ray.maxt);
-                tVRL = enoki::clamp(tVRL, 0.0f, length);
+               /* tCam = enoki::clamp(tCam, 0.0f, ray.maxt);
+                tVRL = enoki::clamp(tVRL, 0.0f, length);*/
 
                 if (tCam < 0 || tVRL < 0 || tCam > ray.maxt || tVRL > length) {
                     std::ostringstream oss;
@@ -567,20 +567,23 @@ template <typename Float, typename Spectrum> struct VRL {
         MediumInteraction3f mi1;        
         PhaseFunctionContext phase_ctx(sampler);
         const PhaseFunction *pf = m_medium->phase_function();
+        Mask is_spectral        = m_medium->has_spectral_extinction();
+        Mask not_spectral       = !is_spectral;
 
         mi1.wi      = -ray.d;
         mi1.p       = sampling.pCam;
         Float rayPF             = pf->eval(phase_ctx, mi1, dir);
-        auto [sigmaSRay, sigmaNRay, sigmaTRay] = m_medium->get_scattering_coefficients(mi1, active);
+        UnpolarizedSpectrum sigmaSRay, sigmaNRay, sigmaTRay;
+        std::tie(sigmaSRay, sigmaNRay, sigmaTRay) = m_medium->get_scattering_coefficients(mi1, active);
         UnpolarizedSpectrum combined_extinction = m_medium->get_combined_extinction(mi1);
-        auto sigmaRay                           = sigmaSRay * index_spectrum(combined_extinction, channel) / index_spectrum(sigmaTRay, channel);
+
         mi1.wi                                 = -direction;
         mi1.t                                  = sampling.tVRL;
         mi1.p                                  = sampling.pVRL;
         Float vrlPF                            = pf->eval(phase_ctx, mi1, -dir);
-        auto [sigmaSVRL, sigmaNVRL, sigmaTVRL] = m_medium->get_scattering_coefficients(mi1, active);
-        combined_extinction                     = m_medium->get_combined_extinction(mi1);
-        auto sigmaVRL                           = sigmaSVRL * index_spectrum(combined_extinction, channel) / index_spectrum(sigmaTVRL, channel);
+        UnpolarizedSpectrum sigmaSVRL, sigmaNVRL, sigmaTVRL;
+        std::tie(sigmaSVRL, sigmaNVRL, sigmaTVRL) = m_medium->get_scattering_coefficients(mi1, active);
+        combined_extinction                                  = m_medium->get_combined_extinction(mi1);
 
         Spectrum result(0.0f);
 
@@ -590,7 +593,7 @@ template <typename Float, typename Spectrum> struct VRL {
                   * vrlTrans                                   // 1.0 if short beams
                   * rayTrans                                   // = 0
                   * vrlToRayTrans                              // = 0
-                  * sigmaRay * sigmaVRL * sampling.invPDF; // = nan
+                  * sigmaSRay * sigmaSVRL * sampling.invPDF; // = nan
 #if VRL_DEBUG
         if (true)
 #else

@@ -35,19 +35,15 @@ public:
     typedef typename PhotonMap::PhotonData PhotonData;
 
     PhotonMapper(const Properties &props) : Base(props) {
-        m_numLightEmissions = props.int_("light_emissions", 1000000);
         m_globalPhotons     = props.int_("global_photons", 1000);
         m_causticPhotons    = props.int_("caustic_photons", 1000);
         m_volumePhotons     = props.int_("volume_photons", 1000);
         m_globalPhotonMap   = new PhotonMap(m_globalPhotons);
         m_causticPhotonMap  = new PhotonMap(m_causticPhotons);
         m_volumePhotonMap   = new PhotonMap(m_volumePhotons);
-        m_directSamples = props.int_("direct_samples", 16);
-        m_glossySamples = props.int_("glossy_samples", 32);
+
         m_rrDepth = props.int_("rr_start_depth", 5);
         m_maxDepth = props.int_("max_depth", 512);
-        m_maxSpecularDepth = props.int_("max_specular_depth", 4);
-        m_granularity = props.int_("granularity", 0);
         
         m_volumeLookupRadiusRelative = props.float_("volume_lookup_radius_relative", 0.01f);
         m_globalLookupRadiusRelative = props.float_("global_lookup_radius_relative", 0.05f);
@@ -55,8 +51,7 @@ public:
         m_globalLookupSize = props.int_("global_lookup_size", 120);
         m_causticLookupSize = props.int_("caustic_lookup_size", 120);
         m_volumeLookupSize = props.int_("volume_lookup_size", 120);
-        m_gatherLocally = props.bool_("gather_locally", true);
-        m_autoCancelGathering         = props.bool_("auto_cancel_gathering", true);
+
         m_stochasticGather            = props.bool_("stochastic_gather", true);
         m_useNonLinear                = props.bool_("use_non_linear", true);
         m_useFirstPhoton              = props.bool_("use_first_photon", false);
@@ -70,7 +65,7 @@ public:
     void preprocess(Scene* scene, Sensor* sensor) override {
         Log(LogLevel::Info, "Pre Processing Photon Map...");
 
-        m_preprocess_timer.reset();
+        m_preprocessTimer.reset();
 
         for each (auto shape in scene->shapes()) {
             if (shape->interior_medium() != nullptr)
@@ -84,9 +79,6 @@ public:
         sampler->seed(0);
 
         // ------------------- Debug Info -------------------------- //
-        std::vector<int> depthCounter;
-        std::string numPhotonsStr = "- Photon Count: " + std::to_string(m_numLightEmissions);
-        Log(LogLevel::Info, numPhotonsStr.c_str());
         host_vector<ref<Emitter>, Float> emitters = scene->emitters();
         std::string photonString                  = "- Emitter Count: " + std::to_string(emitters.size());
         Log(LogLevel::Info, photonString.c_str());
@@ -97,21 +89,16 @@ public:
         }
 
         Mask valid_ray = !m_hide_emitters && neq(scene->environment(), nullptr);
-
+        Float time = 0;
         static int greatestDepth = 0;
 
         int surfacePathCount = 0, volumePathCount = 0;
         int count = 0;
-        while (!m_globalPhotonMap->is_full()) {
-            if (count++ > 100000) {
-                Log(LogLevel::Warn, "100k iterations...");
+        while (!m_globalPhotonMap->is_full() || !m_volumePhotonMap->is_full()) {
+            if (count++ % 100000 == 0) {
                 std::ostringstream oss;
-                oss << "over 1 million iterations... [" << std::endl << "  global photons  = " << string::indent(m_globalPhotonMap->size()) << std::endl
-                    << "  caustic photons  = " << m_causticPhotonMap->size() << std::endl
-                    << "  volume photons  = " << m_volumePhotonMap->size() << std::endl
-                    << "]";
-                Log(LogLevel::Warn, oss.str().c_str());
-                count = 0;
+                oss << "photons[global=" << string::indent(m_globalPhotonMap->size()) << ", caustic= " << m_causticPhotonMap->size() << ", volume=" << m_volumePhotonMap->size() << "]";
+                Log(LogLevel::Info, oss.str().c_str());
             }
             bool surfacePath = false, volumePath = false;
 
@@ -140,11 +127,6 @@ public:
                 auto rayColorPair = emitter->sample_ray(0.0, sampler->next_1d(), sampler->next_2d(), sampler->next_2d());
                 ray               = rayColorPair.first;
                 flux              = rayColorPair.second;
-
-                if (neq(emitter->shape(), nullptr)) {
-                    flux = emitter->getUniformRadiance();
-                    flux *= emitter->shape()->surface_area();
-                }
 
                 medium = emitter->medium();
             }
@@ -224,7 +206,6 @@ public:
                         masked(throughput, is_spectral) *= select(tr_pdf > 0.f, tr / tr_pdf, 0.f);
                     }
 
-
                     escaped_medium = active_medium && !mi.is_valid();
                     active_medium &= mi.is_valid();
 
@@ -237,7 +218,7 @@ public:
                     if (any_or<true>(is_spectral && act_null_scatter))
                         masked(throughput, is_spectral && act_null_scatter) *= mi.sigma_n * index_spectrum(mi.combined_extinction, channel) / index_spectrum(mi.sigma_n, channel);
 
-                    masked(depth, act_medium_scatter) += 1;
+                   
                 }
 
                 active &= depth < (uint32_t) m_maxDepth;
@@ -257,12 +238,11 @@ public:
 
                     PhaseFunctionContext phase_ctx(sampler);
                     auto phase = mi.medium->phase_function();
-                    if (!fromLight || m_useFirstPhoton) {
-                        if (!m_directOnly || m_directOnly && mediumDepth == 0)
-                            volumePath |= handleMediumInteraction(depth - nullInteractions, wasTransmitted, mi.p, medium, -ray.d, flux * throughput);
-                        ++mediumDepth;
+                    if (!fromLight || m_useFirstPhoton || m_directOnly && mediumDepth == 0) {
+                        volumePath |= handleMediumInteraction(depth - nullInteractions, wasTransmitted, mi.p, medium, -ray.d, flux * throughput);
                     }
                     fromLight = false;
+                    ++mediumDepth;
                     // ------------------ Phase function sampling -----------------
                     masked(phase, !act_medium_scatter) = nullptr;
                     auto [wo, phase_pdf]               = phase->sample(phase_ctx, mi, sampler->next_2d(act_medium_scatter), act_medium_scatter);
@@ -317,7 +297,7 @@ public:
                         fromLight = false;
 
                     valid_ray |= non_null_bsdf;
-                    wasTransmitted = non_null_bsdf && (has_flag(bs.sampled_type, BSDFFlags::Transmission));
+                    wasTransmitted = non_null_bsdf && (has_flag(bs.sampled_type, BSDFFlags::Transmission) || has_flag(bs.sampled_type, BSDFFlags::Reflection));
 
                     Mask intersect2             = active_surface && needs_intersection;
                     SurfaceInteraction3f si_new = si;
@@ -346,14 +326,6 @@ public:
         float scale          = 1.0 / surfacePathCount;
         std::string debugStr = "Global Photon scale: " + std::to_string(scale);
         Log(LogLevel::Info, debugStr.c_str());
-        debugStr = "Num Light Emissions: " + std::to_string(m_numLightEmissions);
-        Log(LogLevel::Info, debugStr.c_str());
-
-        Log(LogLevel::Info, "Depth Counter: ");
-        for (size_t i = 0; i < depthCounter.size(); i++) {
-            debugStr = "- d" + std::to_string(i + 1) + " = " + std::to_string(depthCounter[i]);
-            Log(LogLevel::Info, debugStr.c_str());
-        }
 
         if (m_globalPhotonMap->size() > 0) {
             m_globalPhotonMap->setScaleFactor(scale);
@@ -374,8 +346,9 @@ public:
             Log(LogLevel::Info, "No caustic photons");
         }
 
+        volumePreprocessTimer.reset();
         if (m_volumePhotonMap->size() > 0) {
-            m_volumePhotonMap->setScaleFactor(scale);
+            m_volumePhotonMap->setScaleFactor(1.0f / volumePathCount);
             debugStr = "Building volume PM, size: " + std::to_string(m_volumePhotonMap->size());
             Log(LogLevel::Info, debugStr.c_str());
             m_volumePhotonMap->build();
@@ -383,7 +356,8 @@ public:
         } else {
             Log(LogLevel::Info, "No volume photons");
         }
-        Log(Info, "Pre-process finished. (took %s)", util::time_string(m_preprocess_timer.value(), true));
+        Log(Info, "Volume Map Constructed. (took %s)", util::time_string(volumePreprocessTimer.value(), true));
+        Log(Info, "Pre-process finished. (took %s)", util::time_string(m_preprocessTimer.value(), true));
     }
 
     std::pair<Spectrum, Mask> sample(const Scene *scene, Sampler *sampler,
@@ -472,10 +446,16 @@ public:
                 Spectrum volRadiance(0.0f);
 
                 if (si.is_valid()) {
+                    Timer volumeQueryTimer;
+                    volumeQueryTimer.reset();
+
                     Spectrum gatherThroughput = throughput;
                     Ray3f gatherRay(ray);
                     gatherRay.maxt = si.t;
+
+                    int localGatherCount = 0;
                     while (t < si.t) {
+                        ++localGatherCount;
 
                         gatherThroughput *= medium->evalTransmittance(mediumRay, sampler, active);
                         Point3f gatherPoint = mediumRay(mediumRay.maxt);
@@ -491,9 +471,15 @@ public:
                         mediumRay.maxt = radius * 2.0f;
                     }
 
-                    volRadiance *= 3.0f * INV_PI * m_volumePhotonMap->getScaleFactor();
+                    volRadiance *= m_volumePhotonMap->getScaleFactor();
                     radiance += volRadiance;
+
                     throughput *= medium->evalTransmittance(gatherRay, sampler, active);
+
+                    ++volumeQueryCount;
+                    gatherCount += localGatherCount; 
+                    volumeQueryTime += volumeQueryTimer.value();
+                   
                 }
 
                 MVol += M;
@@ -540,8 +526,16 @@ public:
                 // && !has_flag(bs.sampled_type, BSDFFlags::Reflection);
                 // Photon Map Sampling
                 if (likely(any_or<true>(active_e))) {
+                    Timer surfaceQueryTimer;
+                    surfaceQueryTimer.reset();
+
                     radiance[active_surface] += m_causticPhotonMap->estimateCausticRadiance(si, m_causticLookupRadius, m_causticLookupSize) * throughput;
                     radiance[active_surface] += m_globalPhotonMap->estimateRadiance(si, m_globalLookupRadius, m_globalLookupSize) * throughput;
+
+                    
+                    ++surfaceQueryCount;
+                    surfaceQueryTime += surfaceQueryTimer.value();
+                    
                     break;
                 }
 
@@ -606,6 +600,21 @@ public:
         return emitter;
     }
 
+    void postprocess(Scene *scene, Sensor *sensor) override {
+
+        std::ostringstream stream;
+        stream << "Surface Query Count: " << surfaceQueryCount << std::endl
+               << "Surface Query Time: " <<  util::time_string(surfaceQueryTime) << std::endl
+               << "Volume Query Count: " <<  volumeQueryCount << std::endl
+               << "Volume Gather Count: " <<  gatherCount << std::endl
+               << "Volume Query Time: " << util::time_string(volumeQueryTime) << std::endl
+               << "Global Map Size: " << util::mem_string(m_globalPhotonMap->getSize()) << std::endl
+               << "Caustic Map Size: " << util::mem_string(m_causticPhotonMap->getSize()) << std::endl
+               << "Volume Map Size: " << util::mem_string(m_volumePhotonMap->getSize()) << std::endl;
+        std::string str = stream.str();
+        Log(LogLevel::Info, str.c_str());
+    }
+
     bool handleSurfaceInteraction(const Ray3f &ray, int depth, bool wasTransmitted,
                                   const SurfaceInteraction3f &si,
                                   const Medium *medium,
@@ -648,25 +657,22 @@ private:
 
     Vector3f laserOrigin, laserDirection;
 
-    int m_numLightEmissions, m_directSamples, m_glossySamples, m_rrDepth, m_maxDepth,
-        m_maxSpecularDepth, m_granularity;
+    int m_rrDepth, m_maxDepth;
     int m_minDepth = 1;
     int m_globalPhotons, m_causticPhotons, m_volumePhotons;
     float m_globalLookupRadiusRelative, m_causticLookupRadiusRelative, m_volumeLookupRadiusRelative;
-    float m_invEmitterSamples, m_invGlossySamples;
     int m_globalLookupSize, m_causticLookupSize, m_volumeLookupSize;
-    /* Should photon gathering steps exclusively run on the local machine? */
-    bool m_gatherLocally;
+
     bool m_useNonLinear;
     bool m_useLaser;
     bool m_useFirstPhoton;
     bool m_directOnly;
     bool m_stochasticGather;
-    /* Indicates if the gathering steps should be canceled if not enough photons
-     * are generated. */
-    bool m_autoCancelGathering;
 
-    Timer m_preprocess_timer;
+    mutable std::atomic<int> surfaceQueryCount, volumeQueryCount, gatherCount;
+    mutable std::atomic<size_t> surfaceQueryTime, volumeQueryTime;
+
+    Timer m_preprocessTimer, volumePreprocessTimer;
 };
 
 MTS_IMPLEMENT_CLASS_VARIANT(PhotonMapper, SamplingIntegrator);

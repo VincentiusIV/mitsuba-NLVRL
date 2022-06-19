@@ -185,6 +185,16 @@ public:
             // This strategy is too slow.
          //m_root = buildTreeStable(scene, nodes, sampler);
     }
+
+    
+    size_t getSize() {
+        size_t total = 0;
+        total += sizeof(int) * 2 + sizeof(bool) * 3;
+        total += sizeof(Float);
+        total += sizeof(*m_root);
+        return total;
+    }
+
     /// Release all memory
     virtual ~VRLLightCut() {
         // TODO: Need to recursively delete all the nodes
@@ -769,6 +779,7 @@ private:
         Vector3f dP = w + (sc * u) - (tc * v); // =  S1(sc) - S2(tc)
         return squared_norm(dP);
     }
+
 
 protected:
     Node *m_root              = nullptr;
