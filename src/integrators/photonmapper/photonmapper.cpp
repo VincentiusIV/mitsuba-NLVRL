@@ -473,7 +473,7 @@ public:
                     volRadiance *= m_volumePhotonMap->getScaleFactor();
                     radiance += volRadiance;
 
-                    //throughput *= medium->evalTransmittance(gatherRay, sampler, active);
+                    throughput *= medium->evalTransmittance(gatherRay, sampler, active);
 
                     ++volumeQueryCount;
                     gatherCount += localGatherCount; 

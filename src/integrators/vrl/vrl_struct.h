@@ -237,7 +237,8 @@ template <typename Float, typename Spectrum> struct VRL {
                 auto A = [](Float x, Float h, Float sinTheta) -> Float {
                     // TODO: Check if a better and more efficient alternative is available
                     //  for computing the asinh function
-                    auto asinh = [](const Float value) -> Float { return enoki::log(value + enoki::sqrt(value * value + 1)); };
+                    auto asinh = [](const Float value) -> Float { return 
+                        enoki::log(value + enoki::sqrt(value * value + 1)); };
                     return asinh((x / h) * sinTheta);
                 };
                 // Equation 13
@@ -279,8 +280,8 @@ template <typename Float, typename Spectrum> struct VRL {
                 Point3f pCam      = ray.o + ray.d * tCam;
 
                 // TODO: This shouldnt be necessary, but sometimes the value is slightly below/above 0.0/length
-               /* tCam = enoki::clamp(tCam, 0.0f, ray.maxt);
-                tVRL = enoki::clamp(tVRL, 0.0f, length);*/
+                tCam = enoki::clamp(tCam, 0.0f, ray.maxt);
+                tVRL = enoki::clamp(tVRL, 0.0f, length);
 
                 if (tCam < 0 || tVRL < 0 || tCam > ray.maxt || tVRL > length) {
                     std::ostringstream oss;
@@ -290,13 +291,14 @@ template <typename Float, typename Spectrum> struct VRL {
                         << "  vrl.d  = " << direction << std::endl
                         << "  vrl.length  = " << length << std::endl
                         << "  tCam  = " << string::indent(tCam) << std::endl
+                        << "  pCam  = " << string::indent(pCam) << std::endl
                         << "  ClosestPointInfo.tCam  = " << string::indent(closest_point.tCam) << std::endl
                         << "  tVRL  = " << string::indent(tVRL) << std::endl
+                        << "  pVRL  = " << string::indent(pVRL) << std::endl
                         << "  ClosestPointInfo.tVRL  = " << string::indent(closest_point.tVRL) << std::endl
                         << "]";
-                    Log(LogLevel::Error, oss.str().c_str());
+                    Log(LogLevel::Warn, oss.str().c_str());
                 }
-
 
                 return SamplingInfo{ pCam, tCam, pVRL, tVRL, sampling_vrl.invPDF * sampling_ray.invPDF };
             } else {

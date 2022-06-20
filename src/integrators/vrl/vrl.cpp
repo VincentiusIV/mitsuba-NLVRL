@@ -537,10 +537,10 @@ public:
                     // Gather VRLs for indirect
                     Ray3f gatherRay(ray);
                     gatherRay.maxt = si.t;
-                    /*mi = medium->sample_interaction(ray, sampler->next_1d(active_medium), channel, active_medium);
+                   /* mi = medium->sample_interaction(ray, sampler->next_1d(active_medium), channel, active_medium);
                     gatherRay.maxt = select(si.t < mi.t, si.t, mi.t);*/
 
-                    masked(mi.t, active_medium && (si.t < mi.t)) = math::Infinity<Float>;
+                    //masked(mi.t, active_medium && (si.t < mi.t)) = math::Infinity<Float>;
                     auto [evaluations, color, intersections] = m_vrlMap->query(gatherRay, scene, sampler, -1, ray.maxt, m_useUniformSampling, m_useDirectIllum, m_volumeLookupRadius, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
 
                     radiance += color;
@@ -592,8 +592,14 @@ public:
                 Mask active_e = active_surface && has_flag(bsdf->flags(), BSDFFlags::Smooth) && !has_flag(bsdf->flags(), BSDFFlags::Transmission);
 
                 if (likely(any_or<true>(active_e))) {
+                    Timer surfaceQueryTimer;
+                    surfaceQueryTimer.reset();
+
                     radiance[active_surface] += m_causticPhotonMap->estimateCausticRadiance(si, m_causticLookupRadius, m_causticLookupSize) * throughput;
                     radiance[active_surface] += m_globalPhotonMap->estimateRadiance(si, m_globalLookupRadius, m_globalLookupSize) * throughput;
+
+                    ++surfaceQueryCount;
+                    surfaceQueryTime += surfaceQueryTimer.value();                    
                     break;
                 }
 

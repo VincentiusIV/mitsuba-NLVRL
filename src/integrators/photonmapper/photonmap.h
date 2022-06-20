@@ -241,7 +241,7 @@ public:
             Float photonPF = pf->eval(phase_ctx1, mi1, wo);
 
             // Accumulate the results
-            result += photonData.power * photonPF / (4/3 * M_PI * radiusSqr*searchRadius);//*sqr(1.0f - lengthSqr/radiusSqr)/radiusSqr
+            result += photonData.power * photonPF * sqr(1.0f - lengthSqr / radiusSqr) / radiusSqr* INV_PI * 3.0F;
         }
 
         // Information GP
