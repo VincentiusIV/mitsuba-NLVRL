@@ -545,28 +545,8 @@ template <typename Float, typename Spectrum> struct VRL {
         dir /= lengthPtoP;
 
         Mask active = true;
-        Ray3f mediumPtoP(sampling.pCam, dir, 0);
-        mediumPtoP.mint = 0;
-        mediumPtoP.maxt = lengthPtoP;
-
-        int interactions = -1;
-
-        Spectrum vrlToRayTrans = evalTransmittance(scene, sampling.pCam, false, sampling.pVRL, false, m_medium, interactions, sampler, channel, active);
-
-        Ray3f mediumRay(ray.o, ray.d, 0);
-        mediumRay.mint = 0;
-        mediumRay.maxt = sampling.tCam;
-
-        Spectrum rayTrans = m_medium->evalTransmittance(mediumRay, sampler, active);
-
-        Ray3f mediumVRL(origin, direction, 0);
-        mediumVRL.mint    = 0;
-        mediumVRL.maxt    = sampling.tVRL;
-        Spectrum vrlTrans = m_medium->evalTransmittance(mediumVRL, sampler, active);
-
-        Float fallOff = 1.0f / (lengthPtoP * lengthPtoP);
-
-        MediumInteraction3f mi1;        
+        
+        MediumInteraction3f mi1;
         PhaseFunctionContext phase_ctx(sampler);
         const PhaseFunction *pf = m_medium->phase_function();
         Mask is_spectral        = m_medium->has_spectral_extinction();
@@ -574,67 +554,91 @@ template <typename Float, typename Spectrum> struct VRL {
 
         mi1.wi      = -ray.d;
         mi1.p       = sampling.pCam;
-        Float rayPF             = pf->eval(phase_ctx, mi1, dir);
-        UnpolarizedSpectrum sigmaSRay, sigmaNRay, sigmaTRay;
-        std::tie(sigmaSRay, sigmaNRay, sigmaTRay) = m_medium->get_scattering_coefficients(mi1, active);
-        UnpolarizedSpectrum combined_extinction = m_medium->get_combined_extinction(mi1);
+        Float rayPF = pf->eval(phase_ctx, mi1, dir);
+        if (rayPF == 0)
+            return Spectrum(0.0f);
+        auto [sigmaSRay, sigmaNRay, sigmaTRay] = m_medium->get_scattering_coefficients(mi1, active);
 
-        mi1.wi                                 = -direction;
-        mi1.t                                  = sampling.tVRL;
-        mi1.p                                  = sampling.pVRL;
-        Float vrlPF                            = pf->eval(phase_ctx, mi1, -dir);
-        UnpolarizedSpectrum sigmaSVRL, sigmaNVRL, sigmaTVRL;
-        std::tie(sigmaSVRL, sigmaNVRL, sigmaTVRL) = m_medium->get_scattering_coefficients(mi1, active);
-        combined_extinction                                  = m_medium->get_combined_extinction(mi1);
+        mi1.wi      = -direction;
+        mi1.t       = sampling.tVRL;
+        mi1.p       = sampling.pVRL;
+        Float vrlPF = pf->eval(phase_ctx, mi1, -dir);
+        if (vrlPF == 0)
+            return Spectrum(0.0f);
+        auto [sigmaSVRL, sigmaNVRL, sigmaTVRL] = m_medium->get_scattering_coefficients(mi1, active);
 
-        Spectrum result(0.0f);
+        Ray3f mediumPtoP(sampling.pCam, dir, 0);
+        mediumPtoP.mint = 0;
+        mediumPtoP.maxt = lengthPtoP;
 
-        result += flux * fallOff                               // = nan
+        int interactions = -1;
+
+        Spectrum vrlToRayTrans = evalTransmittance(scene, sampling.pCam, false, sampling.pVRL, false, m_medium, interactions, sampler, channel, active);
+        if (vrlToRayTrans[0] == 0.0f && vrlToRayTrans[1] == 0.0f && vrlToRayTrans[2] == 0.0f)
+            return Spectrum(0.0f);
+
+        Ray3f mediumRay(ray.o, ray.d, 0);
+        mediumRay.mint = 0;
+        mediumRay.maxt = sampling.tCam;
+
+        Spectrum rayTrans = m_medium->evalTransmittance(mediumRay, sampler, active);
+        if (rayTrans[0] == 0.0f && rayTrans[1] == 0.0f && rayTrans[2] == 0.0f)
+            return Spectrum(0.0f);
+
+        Ray3f mediumVRL(origin, direction, 0);
+        mediumVRL.mint    = 0;
+        mediumVRL.maxt    = sampling.tVRL;
+        Spectrum vrlTrans = m_medium->evalTransmittance(mediumVRL, sampler, active);
+        if (vrlTrans[0] == 0.0f && vrlTrans[1] == 0.0f && vrlTrans[2] == 0.0f)
+            return Spectrum(0.0f);
+
+        Float fallOff   = 1.0f / (lengthPtoP * lengthPtoP);
+        Spectrum result = flux * fallOff                               // = nan
                   * vrlPF                                      // Fs(theta u0)
                   * rayPF                                      // Fs(theta uv)
                   * vrlTrans                                   // 1.0 if short beams
                   * rayTrans                                   // = 0
                   * vrlToRayTrans                              // = 0
                   * sigmaSRay * sigmaSVRL * sampling.invPDF; // = nan
-#if VRL_DEBUG
-        if (true)
-#else
-        if (std::isnan(result[0]) || std::isnan(result[1]) || std::isnan(result[2]) || std::isinf(result[0]) || std::isinf(result[1]) || std::isinf(result[2]))
-#endif
-        {
-            std::ostringstream stream;
-            stream << "Contrib VRL = [ray:" << ray << ", flux:" << flux << ", fallOff:" << fallOff << ", vrlTrans:" << vrlTrans << ", vrlPF:" << vrlPF << ", rayPF:" << rayPF << ", rayTrans:" << rayTrans << ", vrlToRayTrans:" << vrlToRayTrans << ", sigmaSRay:" << sigmaSRay << ", sigmaSVRL:" << sigmaSVRL << ", invPDF:" << sampling.invPDF
-                   << ", result = " << result;
-            std::string str = stream.str();
-            Log(LogLevel::Info, str.c_str());
-        }
-
-        if (useDirectIllum && is_direct) {
-            if (lengthPtoP < directRadius) {
-                mi1.wi = direction;
-                Float photonPF  = pf->eval(phase_ctx, mi1, -ray.d);
-                mi1.combined_extinction = m_medium->get_combined_extinction(mi1, true);
-                Spectrum throughput(1.0);
-
-                SurfaceInteraction3f si;
-                si.t = math::Infinity<Float>;
-                Mask is_spectral = m_medium->has_spectral_extinction();
-
-                auto [tr, free_flight_pdf] = m_medium->eval_tr_and_pdf(mi1, si, is_spectral);
-                Float tr_pdf               = index_spectrum(free_flight_pdf, channel);
-                throughput *= select(tr_pdf > 0.f, tr / tr_pdf, 0.f);
-                
-                 if (any_or<true>(is_spectral))
-                    throughput *= sigmaSVRL * index_spectrum(mi1.combined_extinction, channel) / index_spectrum(sigmaTVRL, channel);
-                else
-                    throughput *= sigmaSVRL / sigmaTVRL;
-
-                Float invSinTheta = 1.0f / sqrt(max(0.0f, 1.0f - sqr(dot(ray.d, direction))));
-                Spectrum direct = flux * throughput * photonPF / (UNIT_SPHERE_VOLUME * enoki::pow(directRadius, 3));
-                //Spectrum direct = sigmaTRay * invSinTheta / (2.0f * directRadius) * photonPF * tr * flux;
-                result += direct;
-            }
-        } 
+//#if VRL_DEBUG
+//        if (true)
+//#else
+//        if (std::isnan(result[0]) || std::isnan(result[1]) || std::isnan(result[2]) || std::isinf(result[0]) || std::isinf(result[1]) || std::isinf(result[2]))
+//#endif
+//        {
+//            std::ostringstream stream;
+//            stream << "Contrib VRL = [ray:" << ray << ", flux:" << flux << ", fallOff:" << fallOff << ", vrlTrans:" << vrlTrans << ", vrlPF:" << vrlPF << ", rayPF:" << rayPF << ", rayTrans:" << rayTrans << ", vrlToRayTrans:" << vrlToRayTrans << ", sigmaSRay:" << sigmaSRay << ", sigmaSVRL:" << sigmaSVRL << ", invPDF:" << sampling.invPDF
+//                   << ", result = " << result;
+//            std::string str = stream.str();
+//            Log(LogLevel::Info, str.c_str());
+//        }
+//
+//        if (useDirectIllum && is_direct) {
+//            if (lengthPtoP < directRadius) {
+//                mi1.wi = direction;
+//                Float photonPF  = pf->eval(phase_ctx, mi1, -ray.d);
+//                mi1.combined_extinction = m_medium->get_combined_extinction(mi1, true);
+//                Spectrum throughput(1.0);
+//
+//                SurfaceInteraction3f si;
+//                si.t = math::Infinity<Float>;
+//                Mask is_spectral = m_medium->has_spectral_extinction();
+//
+//                auto [tr, free_flight_pdf] = m_medium->eval_tr_and_pdf(mi1, si, is_spectral);
+//                Float tr_pdf               = index_spectrum(free_flight_pdf, channel);
+//                throughput *= select(tr_pdf > 0.f, tr / tr_pdf, 0.f);
+//                
+//                 if (any_or<true>(is_spectral))
+//                    throughput *= sigmaSVRL * index_spectrum(mi1.combined_extinction, channel) / index_spectrum(sigmaTVRL, channel);
+//                else
+//                    throughput *= sigmaSVRL / sigmaTVRL;
+//
+//                Float invSinTheta = 1.0f / sqrt(max(0.0f, 1.0f - sqr(dot(ray.d, direction))));
+//                Spectrum direct = flux * throughput * photonPF / (UNIT_SPHERE_VOLUME * enoki::pow(directRadius, 3));
+//                //Spectrum direct = sigmaTRay * invSinTheta / (2.0f * directRadius) * photonPF * tr * flux;
+//                result += direct;
+//            }
+//        } 
 
         return result;
     }

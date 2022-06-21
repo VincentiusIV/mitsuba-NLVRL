@@ -188,7 +188,7 @@ public:
 
     
     size_t getSize() {
-        size_t total = 0;
+        size_t total = nodesSize;
         total += sizeof(int) * 2 + sizeof(bool) * 3;
         total += sizeof(Float);
         total += sizeof(*m_root);
@@ -563,7 +563,7 @@ private:
                 }
             }
         }
-
+        nodesSize = sizeof(Node)*nodes.size();
         Node *root = nullptr;
         for (auto i = 0; i < nodes.size(); i++) {
             if (nodes[i] != nullptr) {
@@ -787,6 +787,7 @@ protected:
     int m_thresholdBetterDist = 8;
     int m_lightcutSamples     = 100;
     bool uniform, directIllum, stochastic;
+    mutable size_t nodesSize;
 };
 
 NAMESPACE_END(mitsuba)

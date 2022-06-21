@@ -1,8 +1,8 @@
 <scene version="2.0.0">
     <include filename="fragments/bsdfs-rgb.xml"/>
 	
-	<default name="spp" value="64"/>
-    <default name="res" value="256"/>
+	<default name="spp" value="128"/>
+    <default name="res" value="512"/>
     <default name="max_depth" value="10"/>
 	
     <default name="cbox_x" value="-275"/>

@@ -33,10 +33,6 @@ public:
         m_causticPhotons = props.int_("caustic_photons", 1000);
         m_volumePhotons  = props.int_("volume_photons", 1000);
 
-        m_globalPhotonMap             = new PhotonMap(m_globalPhotons);
-        m_causticPhotonMap = new PhotonMap(m_causticPhotons);
-        m_volumePhotonMap  = new PhotonMap(m_volumePhotons);
-
         m_maxDepth                    = props.int_("max_depth", 512);
         
         m_globalPhotons               = props.int_("global_photons", 250000);
@@ -61,7 +57,6 @@ public:
         m_longVRL             = props.bool_("long_vrl", false);
         m_useUniformSampling  = props.bool_("use_uniform_sampling", false);
 
-
         m_useNonLinear        = props.bool_("use_non_linear", true);
         m_useLightCut = props.bool_("use_light_cut", false);
         m_stochasticLightcut  = props.bool_("stochastic_lightcut", false);
@@ -73,7 +68,10 @@ public:
         m_shootCenter         = props.bool_("shoot_center", true);
 
         Log(LogLevel::Info, "Constructing VRL Map...");
-        m_vrlMap = new VRLMap(m_targetVRLs);
+        m_vrlMap           = new VRLMap(m_targetVRLs);
+        m_globalPhotonMap  = new PhotonMap(m_globalPhotons);
+        m_causticPhotonMap = new PhotonMap(m_causticPhotons);
+        m_volumePhotonMap  = new PhotonMap(m_useDirectIllum ? m_volumePhotons : 0);
     }
 
     void preprocess(Scene *scene, Sensor *sensor) override {
@@ -141,7 +139,7 @@ public:
             if (neq(emitter, nullptr)) {
                 auto rayColorPair = emitter->sample_ray(0.0, sampler->next_1d(), sampler->next_2d(), sampler->next_2d());
                 ray               = rayColorPair.first;
-                flux              = rayColorPair.second;
+                flux              = rayColorPair.second ;
 
                 medium = emitter->medium();
             }
@@ -199,13 +197,13 @@ public:
 
                     if (m_useNonLinear && medium->is_nonlinear()) {
                         nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
+                        std::vector<VRL> splitVRLs;
                         while (nli.t < mi.t && nli.is_valid) {
                             bool valid = medium->handleNonLinearInteraction(scene, sampler, nli, si, mi, ray, throughput, channel, active_medium);
                             if (!valid)
                                 break;
-
                             tempVRL.setEndPoint(ray.o);
-                            volumePath |= m_vrlMap->push_back(std::move(tempVRL), true);
+                            volumePath |= m_vrlMap->push_back(std::move(tempVRL), false);
                             tempVRL = VRL(ray.o, medium, throughput * flux, depth, channel, is_direct);
 
                             nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
@@ -359,7 +357,7 @@ public:
                 ++directVolumePathCount;         
         }
 
-        std::string desad = "greatest depth = " + std::to_string(greatestDepth);
+        std::string desad = "total emissions = " + std::to_string(count);
         Log(LogLevel::Info, desad.c_str());
 
         float scale          = 1.0 / surfacePathCount;
@@ -455,7 +453,7 @@ public:
         Mask valid_ray = !m_hide_emitters && neq(scene->environment(), nullptr);
 
         float eta(1.0f);
-        int nullInteractions = 0;
+        int nullInteractions = 0, mediumDepth = 0;
         bool delta           = false;
 
         Mask specular_chain     = active && !m_hide_emitters;
@@ -481,9 +479,9 @@ public:
             Mask active_surface = active && !active_medium;
             Mask escaped_medium = false;
 
-            if (bounce > 1000) {
+            if (bounce > 100000) {
                 std::ostringstream stream;
-                stream << "over 1k bounces, that cant be right: " << std::endl
+                stream << "over 100k bounces, that cant be right: " << std::endl
                        << "active: " << active << std::endl
                        << "active_medium: " << active_medium << std::endl
                        << "active_surface: " << active_surface << std::endl
@@ -503,7 +501,7 @@ public:
             if (any_or<true>(active_medium)) {
                 if (si.is_valid()) {
                     valid_ray |= true;
-
+                    
                     // Gather VPM for direct+caustic
                     Float radius = m_volumeLookupRadius * enoki::lerp(0.5f, 1.5f, sampler->next_1d());
                     Float t      = 0.0f;
@@ -514,6 +512,7 @@ public:
                     size_t M    = 0;
                     Spectrum directIllum(0.0f);
                     Spectrum gatherThroughput = throughput;
+
                     int localGatherCount = 0;
                     while (t < si.t) {
                         ++localGatherCount;
@@ -537,13 +536,15 @@ public:
                     // Gather VRLs for indirect
                     Ray3f gatherRay(ray);
                     gatherRay.maxt = si.t;
-                   /* mi = medium->sample_interaction(ray, sampler->next_1d(active_medium), channel, active_medium);
-                    gatherRay.maxt = select(si.t < mi.t, si.t, mi.t);*/
+                    /*mi = medium->sample_interaction(ray, sampler->next_1d(active_medium), channel, active_medium);
+                    gatherRay.maxt                               = select(si.t < mi.t, si.t, mi.t);
+                    masked(mi.t, active_medium && (si.t < mi.t)) = math::Infinity<Float>;*/
 
-                    //masked(mi.t, active_medium && (si.t < mi.t)) = math::Infinity<Float>;
-                    auto [evaluations, color, intersections] = m_vrlMap->query(gatherRay, scene, sampler, -1, ray.maxt, m_useUniformSampling, m_useDirectIllum, m_volumeLookupRadius, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
-
+                    auto [evaluations, color, intersections]     = m_vrlMap->query(gatherRay, scene, sampler, -1, ray.maxt, m_useUniformSampling, m_useDirectIllum, m_volumeLookupRadius,
+                                                                                m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
                     radiance += color;
+                    
+                    ++mediumDepth;
                     /*if (mi.is_valid())
                         break;*/
                     throughput *= medium->evalTransmittance(gatherRay, sampler, active);
@@ -552,6 +553,8 @@ public:
                 escaped_medium = true;
                 needs_intersection = true;
                 active_surface |= si.is_valid();
+                if (!si.is_valid())
+                    break;
             }
 
             active &= depth < (uint32_t) m_maxDepth;
@@ -577,19 +580,13 @@ public:
             // -------------------- End RTE ----------------- //
 
             if (any_or<true>(active_surface)) {
-
                 if (si.shape->is_emitter())
                     break;
-
-                // sample global/caustic map
 
                 BSDFContext bCtx;
                 BSDFPtr bsdf = si.bsdf(ray);
 
-                auto [bs, bsdfVal] = bsdf->sample(bCtx, si, sampler->next_1d(active_surface), sampler->next_2d(active_surface), active_surface);
-                bsdfVal            = si.to_world_mueller(bsdfVal, -bs.wo, si.wi);
-
-                Mask active_e = active_surface && has_flag(bsdf->flags(), BSDFFlags::Smooth) && !has_flag(bsdf->flags(), BSDFFlags::Transmission);
+                Mask active_e = active_surface && has_flag(bsdf->flags(), BSDFFlags::Smooth);
 
                 if (likely(any_or<true>(active_e))) {
                     Timer surfaceQueryTimer;
@@ -602,6 +599,9 @@ public:
                     surfaceQueryTime += surfaceQueryTimer.value();                    
                     break;
                 }
+
+                auto [bs, bsdfVal] = bsdf->sample(bCtx, si, sampler->next_1d(active_surface), sampler->next_2d(active_surface), active_surface);
+                bsdfVal            = si.to_world_mueller(bsdfVal, -bs.wo, si.wi);
 
                 throughput = throughput * bsdfVal;
                 active &= any(neq(depolarize(throughput), 0.f));

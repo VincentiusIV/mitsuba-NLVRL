@@ -126,7 +126,7 @@ public:
             if (neq(emitter, nullptr)) {
                 auto rayColorPair = emitter->sample_ray(0.0, sampler->next_1d(), sampler->next_2d(), sampler->next_2d());
                 ray               = rayColorPair.first;
-                flux              = rayColorPair.second;
+                flux              = rayColorPair.second * M_PI * 0.5;
                 medium = emitter->medium();
             }
 
@@ -292,11 +292,11 @@ public:
                     masked(depth, non_null_bsdf) += 1;
                     masked(nullInteractions, !non_null_bsdf) += 1;
 
-                    if (non_null_bsdf)
-                        fromLight = false;
-
                     valid_ray |= non_null_bsdf;
-                    wasTransmitted = non_null_bsdf && (has_flag(bs.sampled_type, BSDFFlags::Transmission));
+                    wasTransmitted = non_null_bsdf && (has_flag(bs.sampled_type, BSDFFlags::Transmission) || has_flag(bs.sampled_type, BSDFFlags::Reflection));
+
+                    if (non_null_bsdf && (m_useFirstPhoton || !wasTransmitted))
+                        fromLight = false;
 
                     Mask intersect2             = active_surface && needs_intersection;
                     SurfaceInteraction3f si_new = si;
@@ -318,8 +318,7 @@ public:
             if (volumePath)
                 ++volumePathCount;
         }
-
-        std::string desad = "greatest depth = " + std::to_string(greatestDepth);
+        std::string desad = "total emissions = " + std::to_string(count);
         Log(LogLevel::Info, desad.c_str());
 
         float scale          = 1.0 / surfacePathCount;
@@ -444,6 +443,7 @@ public:
                 size_t M    = 0;
                 Spectrum volRadiance(0.0f);
 
+                // Gather along the entire ray
                 if (si.is_valid()) {
                     Timer volumeQueryTimer;
                     volumeQueryTimer.reset();
@@ -482,8 +482,13 @@ public:
                 }
 
                 MVol += M;
-         
 
+                // Sample medium interaction to see if we can continue
+                mi = medium->sample_interaction(ray, sampler->next_1d(active_medium), channel, active_medium);
+                masked(mi.t, active_medium && (si.t < mi.t)) = math::Infinity<Float>;
+                if (mi.is_valid())
+                    break;
+                
                 escaped_medium = true;
                 needs_intersection= true;
                 active_surface |= si.is_valid();
@@ -505,9 +510,6 @@ public:
                 Mask use_emitter_contribution = active_surface && specular_chain && neq(emitter, nullptr);
                 if (any_or<true>(use_emitter_contribution))
                     masked(radiance, use_emitter_contribution) += throughput * emitter->eval(si, use_emitter_contribution);
-
-                if (neq(emitter, nullptr))
-                    break;
             }
 
             active_surface &= si.is_valid();
@@ -515,9 +517,9 @@ public:
             // -------------------- End RTE ----------------- //
 
             if (any_or<true>(active_surface)) {
-
-                // sample global/caustic map
-
+                if (si.shape->is_emitter())
+                    break;
+                
                 BSDFContext bCtx;
                 BSDFPtr bsdf = si.bsdf(ray);
 
