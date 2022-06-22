@@ -202,6 +202,8 @@ public:
                             bool valid = medium->handleNonLinearInteraction(scene, sampler, nli, si, mi, ray, throughput, channel, active_medium);
                             if (!valid)
                                 break;
+
+
                             tempVRL.setEndPoint(ray.o);
                             volumePath |= m_vrlMap->push_back(std::move(tempVRL), false);
                             tempVRL = VRL(ray.o, medium, throughput * flux, depth, channel, is_direct);

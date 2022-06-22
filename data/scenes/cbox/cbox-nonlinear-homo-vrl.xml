@@ -7,7 +7,7 @@
 		<integer name="volume_photons" value="100000"/>
 		<float name="volume_lookup_radius_relative" value="0.005"/>
 		<float name="global_lookup_radius_relative" value="0.1"/>
-		<integer name="target_vrls" value="100000"/>
+		<integer name="target_vrls" value="10000"/>
 		<integer name="samples_per_query" value="1"/>
 		<boolean name="use_uniform_sampling" value="false"/>
 		<boolean name="use_light_cut" value="true"/>

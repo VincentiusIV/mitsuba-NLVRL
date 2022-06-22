@@ -43,6 +43,8 @@ public:
         m_albedo                  = props.volume<Volume>("albedo", 0.75f);
         m_sigmat                  = props.volume<Volume>("sigma_t", 1.f);
         m_scale                   = props.float_("scale", 1.0f);
+        topIoR                    = props.float_("topIoR", 0.7f);
+        bottomIoR                 = props.float_("bottomIoR", 1.0f);
         m_max_density             = m_scale * m_sigmat->max();
         m_inv_max_density         = 1.0f / (m_scale * m_sigmat->max());
         m_has_spectral_extinction = props.bool_("has_spectral_extinction", true);
@@ -78,7 +80,7 @@ public:
         // temp
         Point3f relativePosition = position - bbox.min;
         float norm = relativePosition[1] / height;
-        return lerp(1.0f, 0.7f, norm);
+        return lerp(bottomIoR, topIoR, norm);
     }
 
     std::pair<Mask, NLNode> getNode(Point3f position) const { 
@@ -186,7 +188,7 @@ public:
             return nli; 
         Float rayNorm = norm(ray.d);
         if (rayNorm == 0.0f) {
-            //Log(LogLevel::Error, "ray with no direction");
+            Log(LogLevel::Error, "ray with no direction");
             return nli;
         }
         
@@ -206,7 +208,7 @@ public:
         mint = max(ray.mint, mint);
         maxt = min(ray.maxt, maxt);
         
-        if (maxt < math::RayEpsilon<Float>)
+        if (!active || maxt < math::RayEpsilon<Float>)
         {
             nli.is_valid = false;
             return nli;
@@ -246,25 +248,24 @@ public:
         if (norm(nli.wo) == 0.0f || (norm(nli.n) == 0.0f) || validNeighbour && neighbour.aabb == node.aabb) {
             nli.wo = ray.d;
 
-                /*std::ostringstream oss;
-                oss << "Found node for origin[" << std::endl
-                    << "  ray.o  = " << string::indent(ray.o) << std::endl
-                    << "  ray.d  = " << string::indent(ray.d) << std::endl
-                    << "  mint  = " << string::indent(mint) << std::endl
-                    << "  maxt  = " << string::indent(maxt) << std::endl
-                    << "  neighbourOrigin  = " << string::indent(neighbourOrigin) << std::endl
-                    << "  nli.p  = " << string::indent(nli.p) << std::endl
-                    << "  nli.wo  = " << string::indent(nli.wo) << std::endl
-                    << "  nli.n  = " << string::indent(nli.n) << std::endl
-                    << "  node.aabb = " << string::indent(node.aabb) << std::endl
-                    << "  neigh.aabb = " << string::indent(neighbour.aabb) << std::endl
-                    << "  n1  = " << string::indent(nli.n1) << std::endl
-                    << "  n2 = " << string::indent(nli.n2) << std::endl
-                    << "]";
-                Log(LogLevel::Info, oss.str().c_str());
-                Log(LogLevel::Error, "neighbour and node ar ethe same! or normal is 0");*/
+            std::ostringstream oss;
+            oss << "Found node for origin[" << std::endl
+                << "  ray.o  = " << string::indent(ray.o) << std::endl
+                << "  ray.d  = " << string::indent(ray.d) << std::endl
+                << "  mint  = " << string::indent(mint) << std::endl
+                << "  maxt  = " << string::indent(maxt) << std::endl
+                << "  neighbourOrigin  = " << string::indent(neighbourOrigin) << std::endl
+                << "  nli.p  = " << string::indent(nli.p) << std::endl
+                << "  nli.wo  = " << string::indent(nli.wo) << std::endl
+                << "  nli.n  = " << string::indent(nli.n) << std::endl
+                << "  node.aabb = " << string::indent(node.aabb) << std::endl
+                << "  neigh.aabb = " << string::indent(neighbour.aabb) << std::endl
+                << "  n1  = " << string::indent(nli.n1) << std::endl
+                << "  n2 = " << string::indent(nli.n2) << std::endl
+                << "]";
+            Log(LogLevel::Info, oss.str().c_str());
+            Log(LogLevel::Error, "neighbour and node ar ethe same! or normal is 0");
         }
-
 
         return nli; 
     }
@@ -313,6 +314,7 @@ private:
     NLNode *grid;
     int arraySize;
     Vector3f resolution;
+    Float topIoR, bottomIoR;
 
     Point3f cellSize;
 };

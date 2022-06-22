@@ -54,6 +54,7 @@ public:
 
         m_stochasticGather            = props.bool_("stochastic_gather", true);
         m_useNonLinear                = props.bool_("use_non_linear", true);
+        m_useNonLinearCameraRays      = props.bool_("use_non_linear_camera", true);
         m_useFirstPhoton              = props.bool_("use_first_photon", false);
         m_directOnly                  = props.bool_("direct_only", false);
 
@@ -454,25 +455,26 @@ public:
                     int localGatherCount = 0;
                     while (mediumRay.maxt < si.t) {
                         ++localGatherCount;
-                        if (localGatherCount > 100000)
-                            Log(LogLevel::Error, "prob endless loop");
+                        if (localGatherCount > 100000) {
+                            Log(LogLevel::Warn, "prob endless loop");
+                            break;
+                        }
 
-                        /*if (m_useNonLinear && medium->is_nonlinear()) {
-                            nli = medium->sampleNonLinearInteraction(mediumRay, channel, active_medium);
-                            while (nli.t < mediumRay.maxt && nli.is_valid) {
+                        if (m_useNonLinearCameraRays && m_useNonLinear && medium->is_nonlinear()) {
+                            nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
+                            while (nli.t <= mediumRay.maxt && nli.is_valid) {
                                                             
-                                bool valid = medium->handleNonLinearInteraction(scene, sampler, nli, si, mi, mediumRay, throughput, channel, active_medium);
+                                bool valid = medium->handleNonLinearInteraction(scene, sampler, nli, si, mi, ray, throughput, channel, active_medium);
                                 if (!valid)
                                     break;
 
-                                mediumRay.o = nli.p;
-                                mediumRay.d = ray.d;
-                                mediumRay.update();
-                                mediumRay.maxt -= nli.t;
+                                float gatherMaxt = mediumRay.maxt - nli.t;
+                                mediumRay = Ray3f(ray);
+                                mediumRay.maxt = gatherMaxt;
 
                                 nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
                             }
-                        }*/
+                        }
 
                         throughput *= medium->evalTransmittance(mediumRay, sampler, active);
                         Point3f gatherPoint = mediumRay(mediumRay.maxt);
@@ -683,6 +685,7 @@ private:
     int m_globalLookupSize, m_causticLookupSize, m_volumeLookupSize;
 
     bool m_useNonLinear;
+    bool m_useNonLinearCameraRays;
     bool m_useLaser;
     bool m_useFirstPhoton;
     bool m_directOnly;
