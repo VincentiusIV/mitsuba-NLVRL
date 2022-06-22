@@ -385,7 +385,7 @@ public:
         si.t                    = math::Infinity<Float>;
         MediumInteraction3f mi  = zero<MediumInteraction3f>();
         mi.t = math::Infinity<Float>;
-        Medium::NonLinearInteraction nlmi;
+        Medium::NonLinearInteraction nli;
 
         Mask valid_ray = !m_hide_emitters && neq(scene->environment(), nullptr);
 
@@ -433,7 +433,6 @@ public:
             if (any_or<true>(active_medium)) {
 
                 Float radius = m_volumeLookupRadius * enoki::lerp(0.5f, 1.5f, sampler->next_1d());
-                Float t      = 0.0f;
          
                 Ray3f mediumRay(ray);
                 mediumRay.mint = 0.0f;
@@ -453,8 +452,27 @@ public:
                     gatherRay.maxt = si.t;
 
                     int localGatherCount = 0;
-                    while (t < si.t) {
+                    while (mediumRay.maxt < si.t) {
                         ++localGatherCount;
+                        if (localGatherCount > 100000)
+                            Log(LogLevel::Error, "prob endless loop");
+
+                        /*if (m_useNonLinear && medium->is_nonlinear()) {
+                            nli = medium->sampleNonLinearInteraction(mediumRay, channel, active_medium);
+                            while (nli.t < mediumRay.maxt && nli.is_valid) {
+                                                            
+                                bool valid = medium->handleNonLinearInteraction(scene, sampler, nli, si, mi, mediumRay, throughput, channel, active_medium);
+                                if (!valid)
+                                    break;
+
+                                mediumRay.o = nli.p;
+                                mediumRay.d = ray.d;
+                                mediumRay.update();
+                                mediumRay.maxt -= nli.t;
+
+                                nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
+                            }
+                        }*/
 
                         throughput *= medium->evalTransmittance(mediumRay, sampler, active);
                         Point3f gatherPoint = mediumRay(mediumRay.maxt);
@@ -465,7 +483,7 @@ public:
                         MVol += M;
                         volRadiance += estimate;
 
-                        t += mediumRay.maxt;
+                        si.t -= mediumRay.maxt;
                         mediumRay.o = gatherPoint;
                         mediumRay.maxt = radius * 2.0f;
                     }

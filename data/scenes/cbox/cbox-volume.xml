@@ -1,7 +1,7 @@
 <scene version="2.0.0">
     <include filename="fragments/bsdfs-rgb.xml"/>
 	
-	<default name="spp" value="128"/>
+	<default name="spp" value="1"/>
     <default name="res" value="512"/>
     <default name="max_depth" value="10"/>
 	
@@ -45,8 +45,6 @@
         <rgb name="radiance" value="0.1, 255, 255"/>
 		<vector name="radcolor" value="0.1, 255, 255"/>
     </emitter>
-	
-
 	
 	<medium id="medium1" type="homogeneous">
         <float name="scale" value="0.011"/>

@@ -139,18 +139,19 @@ public:
 
     bool handleNonLinearInteraction(const Scene *scene, Sampler* sampler, NonLinearInteraction &nli, SurfaceInteraction3f &si, MediumInteraction3f &mi, Ray3f &ray, Spectrum &throughput, UInt32 channel, Mask active) const override {
         // check intersection
-        Ray3f its_test(ray);
-        its_test.maxt = nli.t;
-        si = scene->ray_intersect(its_test, active);
-        if (si.is_valid())
+        si = scene->ray_intersect(ray, active);
+        if (si.t < nli.t)
             return false;
 
         //throughput *= evalMediumTransmittance(its_test, sampler, active);
 
-        // Move ray to nli.p + Eps
+        // Move ray to nli.p
         ray.o = ray(nli.t + math::RayEpsilon<Float>);
         ray.d = nli.wo;
         ray.update();
+
+        // update si with bent ray.
+        si = scene->ray_intersect(ray, active);
 
         // Update mi
         mi.sh_frame                 = Frame3f(ray.d);
@@ -212,7 +213,7 @@ public:
         }
 
         nli.t = maxt + math::RayEpsilon<Float>;
-        nli.p = ray(maxt);
+        nli.p = ray(nli.t);
 
         // 3. Calculate n
         nli.n    = getNormal(nli.p, node.aabb);
@@ -243,7 +244,9 @@ public:
 
         // Update mi since info should be gathered from a different point
         if (norm(nli.wo) == 0.0f || (norm(nli.n) == 0.0f) || validNeighbour && neighbour.aabb == node.aabb) {
-                std::ostringstream oss;
+            nli.wo = ray.d;
+
+                /*std::ostringstream oss;
                 oss << "Found node for origin[" << std::endl
                     << "  ray.o  = " << string::indent(ray.o) << std::endl
                     << "  ray.d  = " << string::indent(ray.d) << std::endl
@@ -259,7 +262,7 @@ public:
                     << "  n2 = " << string::indent(nli.n2) << std::endl
                     << "]";
                 Log(LogLevel::Info, oss.str().c_str());
-                Log(LogLevel::Error, "neighbour and node ar ethe same! or normal is 0");
+                Log(LogLevel::Error, "neighbour and node ar ethe same! or normal is 0");*/
         }
 
 
