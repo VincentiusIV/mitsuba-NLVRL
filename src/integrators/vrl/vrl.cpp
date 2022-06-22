@@ -525,7 +525,7 @@ public:
                     Ray3f gatherRay(ray);
                     gatherRay.maxt = si.t;
                     Spectrum directIllum(0.0f), indirectIllum(0.0);
-                    int indirectSamples = 1;
+                    Float traveled_t = 0.0;
 
                     int localGatherCount = 0;
                     while (mediumRay.maxt < si.t) {
@@ -544,7 +544,9 @@ public:
                                 if (!valid)
                                     break;
 
-                                gatherRay.maxt                           = nli.t;
+
+                                gatherRay.maxt = nli.t;
+                                traveled_t += gatherRay.maxt;
                                 auto [evaluations, color, intersections] = m_vrlMap->query(gatherRay, scene, sampler, -1, ray.maxt, m_useUniformSampling, m_useDirectIllum, m_volumeLookupRadius, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
                                 indirectIllum += color * throughput;
 
@@ -575,17 +577,17 @@ public:
 
                     // Gather VRLs for indirect
 
-                   /* mi = medium->sample_interaction(ray, sampler->next_1d(active_medium), channel, active_medium);
-                    gatherRay.maxt                               = select(si.t < mi.t, si.t, mi.t);
-                    masked(mi.t, active_medium && (si.t < mi.t)) = math::Infinity<Float>;*/
+                    mi = medium->sample_interaction(ray, sampler->next_1d(active_medium), channel, active_medium);
+                    traveled_t += gatherRay.maxt;
+                    masked(mi.t, active_medium && (traveled_t < mi.t)) = math::Infinity<Float>;
                     
                     auto [evaluations, color, intersections] = m_vrlMap->query(gatherRay, scene, sampler, -1, ray.maxt, m_useUniformSampling, m_useDirectIllum, m_volumeLookupRadius, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
                     indirectIllum += color * throughput;                    
                     
                     radiance += indirectIllum;
                     ++mediumDepth;
-                    /*if (mi.is_valid())
-                        break;*/
+                    if (mi.is_valid())
+                        break;
                     //throughput *= medium->evalTransmittance(gatherRay, sampler, active);
                 }
 
