@@ -73,8 +73,8 @@ public:
         m_kdtree.reserve(photonCount);
     }
 
-    mutable int queryCount = 0;
-    mutable float totalQueryTime;
+    mutable std::atomic<int> queryCount = 0;
+    mutable std::atomic<size_t> totalQueryTime;
     
     inline void clear() { m_kdtree.clear(); }
     /// Resize the kd-tree array
@@ -130,7 +130,7 @@ public:
 
     Spectrum estimateRadiance(const SurfaceInteraction3f &si,
                               float searchRadius, size_t maxPhotons, bool smooth = false) const {
-        ++queryCount;
+        queryCount = queryCount + 1;
         Timer queryTimer;
         queryTimer.reset();
 
@@ -168,12 +168,12 @@ public:
         if (smooth)
             result *= 3;
 
-        totalQueryTime += queryTimer.value();
+        totalQueryTime = totalQueryTime + queryTimer.value();
         return result;
     }
 
     Spectrum estimateCausticRadiance(const SurfaceInteraction3f &si, float searchRadius, size_t maxPhotons) const {
-        ++queryCount;
+        queryCount = queryCount + 1;
         Timer queryTimer;
         queryTimer.reset();
 
@@ -206,7 +206,7 @@ public:
         delete[] results;
         result *= 3.0 * m_scale * INV_PI * invSquaredRadius;
 
-        totalQueryTime += queryTimer.value();
+        totalQueryTime = totalQueryTime + queryTimer.value();
         return result;
     }
 
@@ -259,11 +259,14 @@ public:
     };
 
     Spectrum estimateRadianceVolume(Point3f gatherPoint, Vector3f wo, const Medium *medium, Sampler *sampler, float searchRadius, size_t &M) const {
+        queryCount = queryCount + 1;
+        Timer queryTimer;
 
         RadianceQueryVolume query(gatherPoint, wo, medium, sampler, -1, searchRadius);
         m_kdtree.executeQuery(gatherPoint, searchRadius, query);
         M = query.M;
 
+        totalQueryTime = totalQueryTime + queryTimer.value();
         return query.result;
     }
 

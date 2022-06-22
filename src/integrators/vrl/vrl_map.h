@@ -123,13 +123,12 @@ public:
         m_map = dicedVRL;
     }
 
-    mutable int queryCount = 0;
-    mutable float totalQueryTime;
-    mutable Timer queryTimer;
+    mutable std::atomic<int> queryCount = 0;
+    mutable std::atomic <size_t> totalQueryTime;
 
     // returns nb_evaluation, color, nb_BBIntersection
     std::tuple<size_t, Spectrum, size_t> query(const Ray3f &ray, const Scene *scene, Sampler *sampler, int renderScatterDepth, Float lengthOfRay, bool useUniformSampling, bool useDirectIllum, Float directRadius, const EVRLRussianRoulette strategyRR, Float scaleRR, UInt32 samples, UInt32 channel) const {
-        queryTimer.reset();
+        Timer queryTimer;
         ++queryCount;        
         if (m_map.size() == 0)
         {
@@ -202,7 +201,7 @@ public:
         if (samples > 1)
             Li /= samples;
 
-        totalQueryTime += queryTimer.value();
+        totalQueryTime = totalQueryTime + queryTimer.value();
 
         return { nb_evaluation, Li, nb_BBIntersection };
     }

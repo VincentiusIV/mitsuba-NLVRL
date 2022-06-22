@@ -432,25 +432,22 @@ public:
             }
 
             if (any_or<true>(active_medium)) {
-
-                Float radius = m_volumeLookupRadius * enoki::lerp(0.5f, 1.5f, sampler->next_1d());
-         
-                Ray3f mediumRay(ray);
-                mediumRay.mint = 0.0f;
-                mediumRay.maxt = radius;
-            
-                size_t MVol = 0;
-                size_t M    = 0;
-                Spectrum volRadiance(0.0f);
-
                 // Gather along the entire ray
                 if (si.is_valid()) {
                     Timer volumeQueryTimer;
                     volumeQueryTimer.reset();
 
-                    Spectrum gatherThroughput = throughput;
-                    Ray3f gatherRay(ray);
-                    gatherRay.maxt = si.t;
+                    valid_ray |= true;
+
+                    Float radius = m_volumeLookupRadius * enoki::lerp(0.5f, 1.5f, sampler->next_1d());
+
+                    Ray3f mediumRay(ray);
+                    mediumRay.mint = 0.0f;
+                    mediumRay.maxt = radius;
+
+                    size_t MVol = 0;
+                    size_t M    = 0;
+                    Spectrum volRadiance(0.0f);
 
                     int localGatherCount = 0;
                     while (mediumRay.maxt < si.t) {
@@ -460,6 +457,9 @@ public:
                             break;
                         }
 
+                        throughput *= medium->evalTransmittance(mediumRay, sampler, active);
+
+                        // Handle all non linear events that happen before gather.
                         if (m_useNonLinearCameraRays && m_useNonLinear && medium->is_nonlinear()) {
                             nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
                             while (nli.t <= mediumRay.maxt && nli.is_valid) {
@@ -476,16 +476,15 @@ public:
                             }
                         }
 
-                        throughput *= medium->evalTransmittance(mediumRay, sampler, active);
                         Point3f gatherPoint = mediumRay(mediumRay.maxt);
                         Spectrum estimate = m_volumePhotonMap->estimateRadianceVolume(gatherPoint, mediumRay.d, medium, sampler, radius, M);
 
-                        estimate *= gatherThroughput;
-
-                        MVol += M;
+                        estimate *= throughput;
                         volRadiance += estimate;
+                        MVol += M;
 
                         si.t -= mediumRay.maxt;
+
                         mediumRay.o = gatherPoint;
                         mediumRay.maxt = radius * 2.0f;
                     }
@@ -493,15 +492,13 @@ public:
                     volRadiance *= m_volumePhotonMap->getScaleFactor();
                     radiance += volRadiance;
 
-                    throughput *= medium->evalTransmittance(gatherRay, sampler, active);
-
+                    MVol += M;
                     ++volumeQueryCount;
                     gatherCount += localGatherCount; 
                     volumeQueryTime += volumeQueryTimer.value();
-                   
                 }
 
-                MVol += M;
+               
 
                 // Sample medium interaction to see if we can continue
                 mi = medium->sample_interaction(ray, sampler->next_1d(active_medium), channel, active_medium);
@@ -512,6 +509,8 @@ public:
                 escaped_medium = true;
                 needs_intersection= true;
                 active_surface |= si.is_valid();
+                if (!si.is_valid())
+                    break;
             }
 
             active &= depth < (uint32_t) m_maxDepth;

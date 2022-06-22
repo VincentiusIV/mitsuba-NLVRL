@@ -2,10 +2,10 @@
     <include filename="cbox-volume.xml"/>
 	
 	<integrator type="vrl">
-		<integer name="global_photons" value="50000000"/>
+		<integer name="global_photons" value="1000000"/>
 		<integer name="caustic_photons" value="2500000"/>
-		<integer name="volume_photons" value="5000000"/>
-		<integer name="target_vrls" value="100000"/>
+		<integer name="volume_photons" value="1000000"/>
+		<integer name="target_vrls" value="10000"/>
 		<integer name="samples_per_query" value="1"/>
 		<integer name="lightcut_samples" value="1"/>
 		<float name="volume_lookup_radius_relative" value="0.02"/>
@@ -13,7 +13,7 @@
 		<boolean name="use_uniform_sampling" value="false"/>
 		<boolean name="use_light_cut" value="true"/>
 		<boolean name="stochastic_lightcut" value="false"/>
-		<boolean name="use_direct_illum" value="false"/>
+		<boolean name="use_direct_illum" value="true"/>
     </integrator>
 
 </scene>

@@ -7,6 +7,7 @@
 		<integer name="volume_photons" value="100000"/>
 		<float name="volume_lookup_radius_relative" value="0.005"/>
 		<float name="global_lookup_radius_relative" value="0.1"/>
+		<float name="min_vrl_length" value="50"/>
 		<integer name="target_vrls" value="10000"/>
 		<integer name="samples_per_query" value="1"/>
 		<boolean name="use_uniform_sampling" value="false"/>
@@ -16,9 +17,10 @@
 		<boolean name="use_direct_illum" value="false"/>
 		
 		<boolean name="use_non_linear" value="true"/>
+		<boolean name="use_non_linear_camera" value="true"/>
 		<boolean name="use_laser" value="true"/>
-		<vector name="laser_origin" value="-810, 100, -150"/>
-		<vector name="laser_direction" value="0.9, -0.05, 0.0"/>
+		<vector name="laser_origin" value="-810, 104.9, -149.9"/>
+		<vector name="laser_direction" value="0.9, -0.1, 0.0"/>
     </integrator>
 
 </scene>
