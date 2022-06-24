@@ -45,13 +45,20 @@ public:
         m_scale                   = props.float_("scale", 1.0f);
         topIoR                    = props.float_("topIoR", 0.7f);
         bottomIoR                 = props.float_("bottomIoR", 1.0f);
+        iorMethod                 = props.int_("ior_method", 0);
+        topTemperature            = props.vector3f("top_temp", Vector3f(15, 0.02, 0));
+        bottomTemperature         = props.vector3f("bottom_temp", Vector3f(45, 0, 0));
+        topPressure               = props.vector3f("top_pressure", Vector3f(5474.89, 20, 0));
+        bottomPressure = props.vector3f("bottom_pressure", Vector3f(101325, 0, 0));
         m_max_density             = m_scale * m_sigmat->max();
         m_inv_max_density         = 1.0f / (m_scale * m_sigmat->max());
         m_has_spectral_extinction = props.bool_("has_spectral_extinction", true);
         resolution                = Point3f(props.int_("res_x", 4.0), props.int_("res_y", 4.0), props.int_("res_z", 4.0));
-        //Log(LogLevel::Info, to_string().c_str());
+        
 
     }
+
+
 
     void build(Point3f min, Point3f max) override {
         Medium::build(min, max);
@@ -63,24 +70,74 @@ public:
         grid           = new NLNode[arraySize];
         Log(LogLevel::Info,"[NLHM]: Allocating grid... size = %i", arraySize);
         Log(LogLevel::Info, to_string().c_str());
+
+        Float nmin = 100000000, nmax = -10000000;
+
         for (int x = 0; x < resolution[0]; x++) {
             for (int y = 0; y < resolution[1]; y++) {
                 for (int z = 0; z < resolution[2]; z++) {
                     Point3f min = bbox.min + Point3f(x * cellSize[0], y * cellSize[1], z * cellSize[2]);
                     Point3f max = min + cellSize;
-                    ScalarBoundingBox3f newBox(min, max);                    
-                    NLNode newNode(newBox, calculateIoR(newBox.center()));
+                    ScalarBoundingBox3f newBox(min, max);          
+                    Float ior          = calculateIoR(newBox.center());
+                    NLNode newNode(newBox, ior);
+                    nmin = enoki::min(nmin, ior);
+                    nmax = enoki::max(nmax, ior);
+
                     grid[arrayIndex++] = std::move(newNode);
                 }
             }
-        }   
+        }
+        Log(Info, "[NLHM]: nmin=%i, nmax=%i", nmin, nmax);
+    }
+
+    Float P(Float h) const {
+        if (h < bottomPressure.y())
+            return bottomPressure.x();
+        else if (h >= bottomPressure.y() && h < topPressure.y()) {
+            Float norm = (h - bottomPressure.y()) / (topPressure.y() - bottomPressure.y());
+            return lerp(bottomPressure.x(), topPressure.x(), norm);
+        } else {
+            return topPressure.y();
+        }
+    }
+
+    Float T(Float h) const {
+        if (h < bottomTemperature.y())
+            return bottomTemperature.x();
+        else if (h >= bottomTemperature.y() && h < topTemperature.y()) {
+            Float norm = (h - bottomTemperature.y()) / (topTemperature.y() - bottomTemperature.y());
+            return lerp(bottomTemperature.x(), topTemperature.x(), norm);
+        } else {
+            return topTemperature.y();
+        }
+    }
+
+    Float p(Float h) const {
+        const Float M = 28.93 * 1e-3; // kg/mol
+        const Float R = 8.3145;       // J/mol·K
+        return P(h) * M / R * T(h);
+    }
+
+    Float n(Float h, Float lambda) const { 
+        auto n_l = [](Float lambda) -> Float {
+            const float a = 29.79 * 1e-5;
+            const float b = 5.67 * 1e-5;
+            return a * (1 + b / sqr(lambda)) + 1;
+        };
+
+        return p(h) * (n_l(lambda) - 1) + 1;
     }
 
     float calculateIoR(Point3f position) const {
         // temp
-        Point3f relativePosition = position - bbox.min;
-        float norm = relativePosition[1] / height;
-        return lerp(bottomIoR, topIoR, norm);
+        if (iorMethod == 1) {
+            return n(position.y(), 1.0);
+        } else {
+            Point3f relativePosition = position - bbox.min;
+            float norm               = relativePosition[1] / height;
+            return lerp(bottomIoR, topIoR, norm);
+        }
     }
 
     std::pair<Mask, NLNode> getNode(Point3f position) const { 
@@ -313,9 +370,13 @@ private:
     ref<Volume> m_sigmat, m_albedo;
     NLNode *grid;
     int arraySize;
+    int iorMethod;
     Vector3f resolution;
     Float topIoR, bottomIoR;
-
+    Vector3f bottomTemperature;
+    Vector3f topTemperature;
+    Vector3f bottomPressure;
+    Vector3f topPressure;
     Point3f cellSize;
 };
 

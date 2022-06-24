@@ -279,7 +279,7 @@ template <typename Float, typename Spectrum> struct VRL {
                 Float tCam = (sampling_ray.uHat - u0Hat); 
                 Point3f pCam      = ray.o + ray.d * tCam;
 
-                // TODO: This shouldnt be necessary, but sometimes the value is slightly below/above 0.0/length
+                // TODO: This shouldnt be necessary, but sometimes the value is < 0 or > length
                 tCam = enoki::clamp(tCam, 0.0f, ray.maxt);
                 tVRL = enoki::clamp(tVRL, 0.0f, length);
 

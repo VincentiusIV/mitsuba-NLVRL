@@ -1,0 +1,69 @@
+<scene version="2.0.0">
+    <include filename="fragments/bsdfs-rgb.xml"/>
+	
+	<default name="spp" value="64"/>
+    <default name="res" value="256"/>
+    <default name="max_depth" value="6"/>
+	
+	
+    <sensor type="perspective">
+        <string name="fov_axis" value="smaller"/>
+        <float name="near_clip" value="10"/>
+        <float name="far_clip" value="2800"/>
+        <float name="focus_distance" value="1000"/>
+        <float name="fov" value="40"/>
+        <transform name="to_world">
+            <lookat origin="0, 0.01, -510"
+                    target="0, 0.01, 1"
+                    up    ="  0,   1,    0"/>
+        </transform>
+        <sampler type="independent">  <!-- ldsampler -->
+            <integer name="sample_count" value="$spp"/>
+        </sampler>
+        <film type="hdrfilm">
+            <integer name="width" value="$res"/>
+            <integer name="height" value="$res"/>
+            <rfilter type="box"/>
+            <string name="pixel_format" value="rgb"/>
+        </film>
+    </sensor>
+	
+	<emitter type="envmap">
+		<string name="filename" value="venice_sunset_4k.exr"/>
+		<transform name="to_world">
+			<rotate y="1" angle="50"/>
+		</transform>
+	</emitter>
+	
+	
+	<medium id="medium1" type="nonlinear">
+        <float name="scale" value="0"/>
+        <rgb name="sigma_t" value="0.00001"/>
+        <rgb name="albedo" value="0.3, 0.3, 0.3"/>
+        <phase type="isotropic" />
+        <integer name="ior_method" value="1"/>
+        <integer name="res_x" value="1"/>
+        <integer name="res_y" value="2000"/>
+        <integer name="res_z" value="1"/>
+        <float name="topIoR" value="1.0"/>
+        <float name="bottomIoR" value="0.99"/>
+		<vector name="bottom_temp" value="45, 0, 0"/>
+		<vector name="top_temp" value="15, 0.02, 0"/>
+    </medium>
+
+	
+	<!-- Fog -->
+	<shape type="obj">
+        <string name="filename" value="meshes/unit_cube_centered.obj"/>
+        <bsdf type="null">
+        </bsdf>
+		<transform name="to_world">
+            <scale x="1000" y="80" z="1000"/>
+        </transform>
+        <ref id="medium1" name="interior"/>
+    </shape>
+</scene>
+
+
+
+

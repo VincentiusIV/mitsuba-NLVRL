@@ -388,7 +388,7 @@ public:
         mi.t = math::Infinity<Float>;
         Medium::NonLinearInteraction nli;
 
-        Mask valid_ray = !m_hide_emitters && neq(scene->environment(), nullptr);
+        Mask valid_ray = neq(scene->environment(), nullptr);
 
         float eta(1.0f);
         int nullInteractions = 0;
@@ -448,9 +448,9 @@ public:
                     Spectrum volRadiance(0.0f);
 
                     int localGatherCount = 0;
-                    while (mediumRay.maxt < si.t) {
+                    while (mediumRay.maxt < si.t && si.is_valid()) {
                         ++localGatherCount;
-                        if (localGatherCount > 100000) {
+                        if (localGatherCount > 1000000) {
                             Log(LogLevel::Warn, "prob endless loop");
                             break;
                         }
