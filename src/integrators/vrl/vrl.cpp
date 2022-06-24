@@ -70,7 +70,7 @@ public:
         m_shootCenter         = props.bool_("shoot_center", true);
 
         Log(LogLevel::Info, "Constructing VRL Map...");
-        m_vrlMap           = new VRLMap(m_targetVRLs);
+        m_vrlMap           = new VRLMap(m_targetVRLs, m_stochasticLightcut);
         m_globalPhotonMap  = new PhotonMap(m_globalPhotons);
         m_causticPhotonMap = new PhotonMap(m_causticPhotons);
         m_volumePhotonMap  = new PhotonMap(m_useDirectIllum ? m_volumePhotons : 0);
@@ -414,8 +414,7 @@ public:
             // is this correct?
             m_vrlmap_build_timer.reset();
             m_vrlMap->setScaleFactor(vrlScale);
-            m_vrlMap->build(scene, m_useLightCut ? ELightCutAcceleration : ENoVRLAcceleration, sampler, m_thresholdBetterDist, m_thresholdError, m_useUniformSampling, m_useDirectIllum,
-                            m_stochasticLightcut, m_lightcutSamples);
+            m_vrlMap->build(scene, m_useLightCut ? ELightCutAcceleration : ENoVRLAcceleration, sampler, m_thresholdBetterDist, m_thresholdError, m_useUniformSampling, m_useDirectIllum, m_lightcutSamples);
             Log(Info, "VRL Map Created. (took %s)", util::time_string(m_vrlmap_build_timer.value(), true));
         } else {
             Log(LogLevel::Info, "No VRLs");
@@ -544,7 +543,6 @@ public:
                                 if (!valid)
                                     break;
 
-
                                 gatherRay.maxt = nli.t;
                                 traveled_t += gatherRay.maxt;
                                 auto [evaluations, color, intersections] = m_vrlMap->query(gatherRay, scene, sampler, -1, ray.maxt, m_useUniformSampling, m_useDirectIllum, m_volumeLookupRadius, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
@@ -588,7 +586,6 @@ public:
                     ++mediumDepth;
                     if (mi.is_valid())
                         break;
-                    //throughput *= medium->evalTransmittance(gatherRay, sampler, active);
                 }
 
                 escaped_medium = true;
@@ -630,14 +627,11 @@ public:
                 Mask active_e = active_surface && has_flag(bsdf->flags(), BSDFFlags::Smooth);
 
                 if (likely(any_or<true>(active_e))) {
-                    Timer surfaceQueryTimer;
-                    surfaceQueryTimer.reset();
 
                     radiance[active_surface] += m_causticPhotonMap->estimateCausticRadiance(si, m_causticLookupRadius, m_causticLookupSize) * throughput;
                     radiance[active_surface] += m_globalPhotonMap->estimateRadiance(si, m_globalLookupRadius, m_globalLookupSize) * throughput;
 
-                    ++surfaceQueryCount;
-                    surfaceQueryTime += surfaceQueryTimer.value();                    
+                    ++surfaceQueryCount;            
                     break;
                 }
 
@@ -686,12 +680,11 @@ public:
 
     void postprocess(Scene *scene, Sensor *sensor) override {
 
+
         std::ostringstream stream;
         stream << "Surface Query Count: " << surfaceQueryCount << std::endl
-               << "Surface Query Time: " << util::time_string(surfaceQueryTime) << std::endl
                << "Volume Gather Count: " << m_volumePhotonMap->queryCount << std::endl
                << "VRL Query Count: " << m_vrlMap->queryCount << std::endl
-               << "VRL Query Time: " << util::time_string(m_vrlMap->totalQueryTime) << std::endl
                << "Global Map Size: " << util::mem_string(m_globalPhotonMap->getSize()) << std::endl
                << "Caustic Map Size: " << util::mem_string(m_causticPhotonMap->getSize()) << std::endl
                 << "Volume Map Size: " << util::mem_string(m_volumePhotonMap->getSize()) << std::endl

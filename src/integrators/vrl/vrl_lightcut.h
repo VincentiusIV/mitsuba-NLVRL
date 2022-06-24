@@ -61,6 +61,30 @@ public:
             nodes.push_back(this); // Add itself
         }
 
+        Node *clone() const { 
+            Node *newNode = new Node(*this);
+            if (newNode->children[0])
+                newNode->children[0] = newNode->children[0]->clone();
+            if (newNode->children[1])
+                newNode->children[1] = newNode->children[1]->clone();
+            newNode->nodes.clear();
+            assert(isLeaf == newNode->isLeaf);      
+            if (newNode->isLeaf)
+                newNode->nodes.push_back(newNode);
+            else {
+                for (auto n : newNode->children[0]->nodes) {
+                    newNode->nodes.push_back(n);
+                }
+                for (auto n : newNode->children[1]->nodes) {
+                    newNode->nodes.push_back(n);
+                }
+            }
+            assert(represent == newNode->represent);          
+            assert(addFlux == newNode->addFlux);          
+            assert(represent == newNode->represent);          
+            return newNode;
+        }
+
         ~Node() {
             if (children[0])
                 delete children[0];
@@ -184,6 +208,12 @@ public:
 
             // This strategy is too slow.
          //m_root = buildTreeStable(scene, nodes, sampler);
+    }
+
+    VRLLightCut *clone() { 
+        VRLLightCut *newlc = new VRLLightCut(*this);
+        newlc->m_root = m_root->clone();
+        return newlc;
     }
 
     
@@ -782,10 +812,10 @@ private:
 
 
 protected:
-    Node *m_root              = nullptr;
-    Float m_errorRatio        = 0.1;
+    Node *m_root = nullptr;
+    Float m_errorRatio = 0.1;
     int m_thresholdBetterDist = 8;
-    int m_lightcutSamples     = 100;
+    int m_lightcutSamples = 100;
     bool uniform, directIllum, stochastic;
     mutable size_t nodesSize;
 };

@@ -26,10 +26,10 @@ public:
     typedef VRL<Float, Spectrum> VRL;
     typedef VRLLightCut<Float, Spectrum> VRLLightCut;
 
-    VRLMap(size_t nbVRL) {
+    VRLMap(size_t nbVRL, bool stochasticLightcut) : m_isLCStochastic(stochasticLightcut) {
         m_map.reserve(nbVRL);
         m_maxSize = nbVRL;
-        m_accel = ENoVRLAcceleration;
+        m_accel   = ENoVRLAcceleration;
     }
 
     bool can_add() {
@@ -80,7 +80,7 @@ public:
         file.close();
     }
 
-    void build(const Scene *scene, EVRLAcceleration accel, Sampler *sampler, int thresholdBetterDist, Float thresholdError, bool _uniform, bool _directIllum, bool _stochastic, int lightcutSamples) {
+    void build(const Scene *scene, EVRLAcceleration accel, Sampler *sampler, int thresholdBetterDist, Float thresholdError, bool _uniform, bool _directIllum, int lightcutSamples) {
         m_accel = accel;
         std::ostringstream stream;
         stream << "Building VRL map... Scale factor = " << m_scale;
@@ -90,8 +90,15 @@ public:
             Log(LogLevel::Info, "No VRL acceleration.");
             // Nothing to do
         } else if (m_accel == ELightCutAcceleration) {
-            Log(LogLevel::Info, "Building VRL lightcut acceleration.");
-            m_lc = new VRLLightCut(scene, m_map, sampler, thresholdBetterDist, thresholdError, _uniform, _directIllum, _stochastic, lightcutSamples);
+            Log(LogLevel::Info, "Building VRL lightcut acceleration. Copies=%i", __global_thread_count);
+            m_copyCount = m_isLCStochastic ? __global_thread_count : 1;
+            m_lc = new VRLLightCut*[m_copyCount];
+            m_lc[0]     = new VRLLightCut(scene, m_map, sampler, thresholdBetterDist, thresholdError, _uniform, _directIllum, m_isLCStochastic, lightcutSamples);
+            Log(LogLevel::Info, "Making copies");
+            for (size_t i = 1; i < m_copyCount; i++) {
+                m_lc[i] = m_lc[0]->clone();
+            }
+            Log(LogLevel::Info, "Done");
         } else {
             Log(LogLevel::Error, "build for acceleration is not implemented");
         }
@@ -124,20 +131,20 @@ public:
     }
 
     mutable std::atomic<int> queryCount = 0;
-    mutable std::atomic <size_t> totalQueryTime;
 
     // returns nb_evaluation, color, nb_BBIntersection
     std::tuple<size_t, Spectrum, size_t> query(const Ray3f &ray, const Scene *scene, Sampler *sampler, int renderScatterDepth, Float lengthOfRay, bool useUniformSampling, bool useDirectIllum, Float directRadius, const EVRLRussianRoulette strategyRR, Float scaleRR, UInt32 samples, UInt32 channel) const {
-        Timer queryTimer;
-        ++queryCount;        
         if (m_map.size() == 0)
         {
             return { 0, Spectrum(0.0), 0 };
         }
 
+        ++queryCount;        
+
         Spectrum Li(0.0);
         size_t nb_evaluation     = 0;
         size_t nb_BBIntersection = 0;
+        size_t threadId          = select(m_isLCStochastic, tbb::task_arena::current_thread_index(), 0);
 
         for (size_t i = 0; i < samples; i++) {
             if (m_accel == ENoVRLAcceleration) {
@@ -191,7 +198,7 @@ public:
                 VRLPercentagePruned.incrementBase(m_map.size());*/
             } else if (m_accel == ELightCutAcceleration) {
                 VRLLightCut::LCQuery query{ ray, sampler, 0 };
-                Li += m_lc->query(scene, query, nb_BBIntersection, directRadius, channel) * m_scale;
+                Li += m_lc[threadId]->query(scene, query, nb_BBIntersection, directRadius, channel) * m_scale;
                 nb_evaluation += query.nb_evaluation;
             } else {
                 Log(LogLevel::Error, "query for acceleration is not implemented");
@@ -200,8 +207,6 @@ public:
         
         if (samples > 1)
             Li /= samples;
-
-        totalQueryTime = totalQueryTime + queryTimer.value();
 
         return { nb_evaluation, Li, nb_BBIntersection };
     }
@@ -222,7 +227,11 @@ public:
         total += sizeof(m_maxSize) + sizeof(m_scale);
         total += sizeof(m_map) + sizeof(VRL) * m_map.size();
         if (m_accel == EVRLAcceleration::ELightCutAcceleration)
-            total += m_lc->getSize();
+        {
+            for (size_t i = 0; i < m_copyCount; i++) {
+                total += m_lc[i]->getSize();
+            }
+        }
         return total;
     }
 
@@ -231,8 +240,10 @@ protected:
     Float m_scale = 1;
     size_t m_maxSize;
     EVRLAcceleration m_accel;
+    int m_copyCount;
+    bool m_isLCStochastic;
 
-    VRLLightCut *m_lc;
+    VRLLightCut **m_lc;
 };
 
 NAMESPACE_END(mitsuba)

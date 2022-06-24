@@ -434,8 +434,6 @@ public:
             if (any_or<true>(active_medium)) {
                 // Gather along the entire ray
                 if (si.is_valid()) {
-                    Timer volumeQueryTimer;
-                    volumeQueryTimer.reset();
 
                     valid_ray |= true;
 
@@ -495,10 +493,7 @@ public:
                     MVol += M;
                     ++volumeQueryCount;
                     gatherCount += localGatherCount; 
-                    volumeQueryTime += volumeQueryTimer.value();
                 }
-
-               
 
                 // Sample medium interaction to see if we can continue
                 mi = medium->sample_interaction(ray, sampler->next_1d(active_medium), channel, active_medium);
@@ -546,16 +541,10 @@ public:
                 // && !has_flag(bs.sampled_type, BSDFFlags::Reflection);
                 // Photon Map Sampling
                 if (likely(any_or<true>(active_e))) {
-                    Timer surfaceQueryTimer;
-                    surfaceQueryTimer.reset();
-
                     radiance[active_surface] += m_causticPhotonMap->estimateCausticRadiance(si, m_causticLookupRadius, m_causticLookupSize) * throughput;
                     radiance[active_surface] += m_globalPhotonMap->estimateRadiance(si, m_globalLookupRadius, m_globalLookupSize) * throughput;
-
-                    
-                    ++surfaceQueryCount;
-                    surfaceQueryTime += surfaceQueryTimer.value();
-                    
+                                        
+                    ++surfaceQueryCount;                    
                     break;
                 }
 
@@ -624,10 +613,8 @@ public:
 
         std::ostringstream stream;
         stream << "Surface Query Count: " << surfaceQueryCount << std::endl
-               << "Surface Query Time: " <<  util::time_string(surfaceQueryTime) << std::endl
                << "Volume Query Count: " <<  volumeQueryCount << std::endl
                << "Volume Gather Count: " <<  gatherCount << std::endl
-               << "Volume Query Time: " << util::time_string(volumeQueryTime) << std::endl
                << "Global Map Size: " << util::mem_string(m_globalPhotonMap->getSize()) << std::endl
                << "Caustic Map Size: " << util::mem_string(m_causticPhotonMap->getSize()) << std::endl
                << "Volume Map Size: " << util::mem_string(m_volumePhotonMap->getSize()) << std::endl;

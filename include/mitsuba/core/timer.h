@@ -42,4 +42,26 @@ private:
     std::chrono::system_clock::time_point start;
 };
 
+class TimerHighRes {
+public:
+
+    TimerHighRes() { 
+        t1 = std::chrono::high_resolution_clock::now();
+    }
+
+    void reset() {
+        t1 = std::chrono::high_resolution_clock::now();
+    }
+
+    size_t value() { 
+        auto t2 = std::chrono::high_resolution_clock::now();
+        size_t d = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count();
+        return d;
+    }
+
+private:
+    std::chrono::high_resolution_clock::time_point t1;
+};
+
 NAMESPACE_END(mitsuba)
+
