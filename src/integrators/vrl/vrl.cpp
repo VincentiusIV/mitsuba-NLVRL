@@ -88,7 +88,7 @@ public:
             }
         }
 
-        Sampler *sampler = sensor->sampler();
+        ref<Sampler> sampler = sensor->sampler()->clone();
         sampler->seed(0);
 
         // ------------------- Debug Info -------------------------- //
@@ -575,15 +575,18 @@ public:
 
                     // Gather VRLs for indirect
 
-                    mi = medium->sample_interaction(ray, sampler->next_1d(active_medium), channel, active_medium);
-                    traveled_t += gatherRay.maxt;
-                    masked(mi.t, active_medium && (traveled_t < mi.t)) = math::Infinity<Float>;
-                    
                     auto [evaluations, color, intersections] = m_vrlMap->query(gatherRay, scene, sampler, -1, ray.maxt, m_useUniformSampling, m_useDirectIllum, m_volumeLookupRadius, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
                     indirectIllum += color * throughput;                    
                     
+                    throughput *= medium->evalTransmittance(gatherRay, sampler, active);
+                    
                     radiance += indirectIllum;
                     ++mediumDepth;
+
+                    
+                    mi = medium->sample_interaction(ray, sampler->next_1d(active_medium), channel, active_medium);
+                    traveled_t += gatherRay.maxt;
+                    masked(mi.t, active_medium && (traveled_t < mi.t)) = math::Infinity<Float>;
                     if (mi.is_valid())
                         break;
                 }

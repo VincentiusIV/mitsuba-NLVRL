@@ -118,6 +118,7 @@ MTS_VARIANT bool SamplingIntegrator<Float, Spectrum>::render(Scene *scene, Senso
             [&](const tbb::blocked_range<size_t> &range) {
                 ScopedSetThreadEnvironment set_env(env);
                 ref<Sampler> sampler = sensor->sampler()->clone();
+
                 ref<ImageBlock> block = new ImageBlock(m_block_size, channels.size(),
                                                        film->reconstruction_filter(),
                                                        !has_aovs);

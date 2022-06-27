@@ -76,7 +76,7 @@ public:
             }
         }
 
-        Sampler *sampler = sensor->sampler();
+        ref<Sampler> sampler = sensor->sampler()->clone();
         sampler->seed(0);
 
         // ------------------- Debug Info -------------------------- //
@@ -127,7 +127,7 @@ public:
             if (neq(emitter, nullptr)) {
                 auto rayColorPair = emitter->sample_ray(0.0, sampler->next_1d(), sampler->next_2d(), sampler->next_2d());
                 ray               = rayColorPair.first;
-                flux              = rayColorPair.second * M_PI * 0.5;
+                flux              = rayColorPair.second;
                 medium = emitter->medium();
             }
 
@@ -432,10 +432,10 @@ public:
             }
 
             if (any_or<true>(active_medium)) {
+                valid_ray |= true;
                 // Gather along the entire ray
                 if (si.is_valid()) {
 
-                    valid_ray |= true;
 
                     Float radius = m_volumeLookupRadius * enoki::lerp(0.5f, 1.5f, sampler->next_1d());
 
@@ -492,14 +492,17 @@ public:
 
                     MVol += M;
                     ++volumeQueryCount;
-                    gatherCount += localGatherCount; 
+                    gatherCount += localGatherCount;
+
+                    throughput *= medium->evalTransmittance(mediumRay, sampler, active);
                 }
 
+
                 // Sample medium interaction to see if we can continue
-                mi = medium->sample_interaction(ray, sampler->next_1d(active_medium), channel, active_medium);
+                /*mi = medium->sample_interaction(ray, sampler->next_1d(active_medium), channel, active_medium);
                 masked(mi.t, active_medium && (si.t < mi.t)) = math::Infinity<Float>;
                 if (mi.is_valid())
-                    break;
+                    break;*/
                 
                 escaped_medium = true;
                 needs_intersection= true;

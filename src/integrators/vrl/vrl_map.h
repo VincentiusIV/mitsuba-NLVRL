@@ -90,8 +90,8 @@ public:
             Log(LogLevel::Info, "No VRL acceleration.");
             // Nothing to do
         } else if (m_accel == ELightCutAcceleration) {
-            Log(LogLevel::Info, "Building VRL lightcut acceleration. Copies=%i", __global_thread_count);
             m_copyCount = m_isLCStochastic ? __global_thread_count : 1;
+            Log(LogLevel::Info, "Building VRL lightcut acceleration. Copies=%i", m_copyCount);
             m_lc = new VRLLightCut*[m_copyCount];
             m_lc[0]     = new VRLLightCut(scene, m_map, sampler, thresholdBetterDist, thresholdError, _uniform, _directIllum, m_isLCStochastic, lightcutSamples);
             Log(LogLevel::Info, "Making copies");

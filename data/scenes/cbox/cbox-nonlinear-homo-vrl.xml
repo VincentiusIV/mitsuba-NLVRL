@@ -2,18 +2,18 @@
     <include filename="cbox-nonlinear-homo.xml"/>
 	
 	<integrator type="vrl">
-		<integer name="global_photons" value="100"/>
-		<integer name="caustic_photons" value="100"/>
-		<integer name="volume_photons" value="100000"/>
+		<integer name="global_photons" value="1"/>
+		<integer name="caustic_photons" value="1"/>
+		<integer name="volume_photons" value="1000"/>
 		<float name="volume_lookup_radius_relative" value="0.005"/>
 		<float name="global_lookup_radius_relative" value="0.1"/>
 		<float name="min_vrl_length" value="50"/>
-		<integer name="target_vrls" value="1000"/>
+		<integer name="target_vrls" value="8000"/>
 		<integer name="samples_per_query" value="1"/>
 		<boolean name="use_uniform_sampling" value="false"/>
-		<boolean name="use_light_cut" value="false"/>
-		<integer name="lightcut_samples" value="1"/>
-		<boolean name="stochastic_lightcut" value="true"/>
+		<boolean name="use_light_cut" value="true"/>
+		<integer name="lightcut_samples" value="10"/>
+		<boolean name="stochastic_lightcut" value="false"/>
 		<boolean name="use_direct_illum" value="false"/>
 		
 		<boolean name="use_non_linear" value="true"/>
