@@ -456,7 +456,7 @@ public:
                     int localGatherCount = 0;
                     while (mediumRay.maxt < si.t ) {
                         ++localGatherCount;
-                        if (localGatherCount > 1000000) {
+                        if (localGatherCount > 10000) {
                             Log(LogLevel::Warn, "prob endless loop");
                             break;
                         }

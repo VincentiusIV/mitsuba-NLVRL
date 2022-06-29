@@ -2,8 +2,8 @@
     <include filename="mirage.xml"/>
 	
 	<integrator type="photonmap">
-		<integer name="global_photons" value="0"/>
-		<integer name="caustic_photons" value="10000"/>
+		<integer name="global_photons" value="1"/>
+		<integer name="caustic_photons" value="1"/>
 		<integer name="volume_photons" value="100000"/>
 		<float name="volume_lookup_radius_relative" value="0.005"/>
 		<float name="global_lookup_radius_relative" value="0.1"/>

@@ -141,10 +141,9 @@ public:
             if (neq(emitter, nullptr)) {
                 auto rayColorPair = emitter->sample_ray(0.0, sampler->next_1d(), sampler->next_2d(), sampler->next_2d());
                 ray               = rayColorPair.first;
-                flux              = rayColorPair.second ;
+                flux              = rayColorPair.second;
                 if (neq(emitter->shape(), nullptr))
                     flux *= (M_PI);
-
                 medium = emitter->medium();
             }
 
@@ -710,6 +709,9 @@ public:
                 emitter                 = scene->emitters()[index];
             }
         }
+
+        if (neq(scene->environment(), nullptr))
+            return scene->environment();
 
         return emitter;
     }

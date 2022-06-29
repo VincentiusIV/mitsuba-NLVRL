@@ -1,7 +1,7 @@
 <scene version="2.0.0">
     <include filename="fragments/bsdfs-rgb.xml"/>
 	
-	<default name="spp" value="16"/>
+	<default name="spp" value="1"/>
     <default name="res" value="256"/>
     <default name="max_depth" value="6"/>
 	<default name="earth_radius" value="637"/>
@@ -11,7 +11,7 @@
         <float name="near_clip" value="0.001"/>
         <float name="far_clip" value="2800"/>
         <float name="focus_distance" value="1000"/>
-        <float name="fov" value="50"/>
+        <float name="fov" value="40"/>
         <transform name="to_world">
             <lookat origin="0, 0.01, -500.1"
                     target="0, 0.01, 1"
@@ -21,8 +21,8 @@
             <integer name="sample_count" value="$spp"/>
         </sampler>
         <film type="hdrfilm">
-            <integer name="width" value="$res"/>
-            <integer name="height" value="$res"/>
+            <integer name="width" value="256"/>
+            <integer name="height" value="128"/>
             <rfilter type="box"/>
             <string name="pixel_format" value="rgb"/>
         </film>
@@ -36,8 +36,8 @@
 	</emitter>
 	
 	<medium id="medium1" type="nonlinear">
-        <float name="scale" value="0.00"/>
-        <rgb name="sigma_t" value="0.5"/>
+        <float name="scale" value="0.01"/>
+        <rgb name="sigma_t" value="0.2"/>
         <rgb name="albedo" value="0.3, 0.3, 0.3"/>
         <phase type="isotropic" />
         <integer name="ior_method" value="0"/>
@@ -57,7 +57,7 @@
         <bsdf type="null">
         </bsdf>
 		<transform name="to_world">
-            <scale x="1000" y="100" z="1000"/>
+            <scale x="500" y="100" z="1000"/>
         </transform>
         <ref id="medium1" name="interior"/>
     </shape>

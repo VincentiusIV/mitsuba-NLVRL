@@ -153,10 +153,7 @@ public:
     std::pair<Ray3f, Spectrum> sample_ray(Float time, Float wavelength_sample,
                                           const Point2f &sample2, const Point2f &sample3,
                                           Mask active) const override {
-        // This method leads to mostly samples from sides and causes green/yellow glow at bottom of glass
-        /**/
-
-        Float dist     = 10.0f * m_bsphere.radius;
+        Float dist     = m_bsphere.radius;
 
         Float u      = sample3.x();
         Float v      = sample3.y();
@@ -179,7 +176,7 @@ public:
         it.wavelengths      = zero<Wavelength>();
         auto [ds, radiance] = sample_direction(it, sample2, active);
         Point3f o           = -ds.n * dist;
-        return std::make_pair(Ray3f(o, ds.n, time), radiance);
+        return std::make_pair(Ray3f(o, rand_sphere_dir, time), radiance * 1e+06);
 
         /*SurfaceInteraction3f si;
         si.wavelengths = zero<Wavelength>();

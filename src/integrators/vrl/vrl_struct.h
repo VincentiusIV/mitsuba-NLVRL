@@ -7,6 +7,38 @@ NAMESPACE_BEGIN(mitsuba)
 #define VRL_DEBUG 0
 #define UNIT_SPHERE_VOLUME 4.18879020478639
 
+template <typename Float, typename Spectrum> struct NLRay {
+    MTS_IMPORT_TYPES()
+    MTS_IMPORT_OBJECT_TYPES()
+
+    std::vector<Ray3f> rays;
+    Float maxt;
+
+    NLRay() {
+        
+    }
+
+    void push_back(Ray3f& ray) { 
+        rays.push_back(ray);
+        maxt += ray.maxt;
+    }
+
+    Ray3f first() const { return rays[0]; }
+
+    Point3f at(Float t) {
+        if (t < maxt) {
+            for (size_t i = 0; i < rays.size(); i++) {
+                t -= rays[i].maxt;
+                if (t < rays[i].maxt) {
+                    return rays[i](t);
+                }
+            }
+        }
+        return rays[rays.size() - 1](t);
+    }
+};
+
+
 template <typename Float, typename Spectrum> struct VRL {
     MTS_IMPORT_TYPES(PhaseFunctionContext)
     MTS_IMPORT_OBJECT_TYPES()

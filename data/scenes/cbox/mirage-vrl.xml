@@ -2,13 +2,13 @@
     <include filename="mirage.xml"/>
 	
 	<integrator type="vrl">
-		<integer name="global_photons" value="0"/>
-		<integer name="caustic_photons" value="0"/>
+		<integer name="global_photons" value="1"/>
+		<integer name="caustic_photons" value="1"/>
 		<integer name="volume_photons" value="0"/>
 		<float name="volume_lookup_radius_relative" value="0.005"/>
 		<float name="global_lookup_radius_relative" value="0.1"/>
 		<float name="min_vrl_length" value="50"/>
-		<integer name="target_vrls" value="0"/>
+		<integer name="target_vrls" value="16000"/>
 		<integer name="samples_per_query" value="1"/>
 		<boolean name="use_uniform_sampling" value="false"/>
 		<boolean name="use_light_cut" value="false"/>
