@@ -48,8 +48,8 @@ public:
         iorMethod                 = props.int_("ior_method", 0);
         topTemperature            = props.vector3f("top_temp", Vector3f(15, 0.02, 0));
         bottomTemperature         = props.vector3f("bottom_temp", Vector3f(45, 0, 0));
-        topPressure               = props.vector3f("top_pressure", Vector3f(5474.89, 20, 0));
-        bottomPressure = props.vector3f("bottom_pressure", Vector3f(101325, 0, 0));
+        topPressure               = props.vector3f("top_pressure", Vector3f(100, 20, 0));
+        bottomPressure = props.vector3f("bottom_pressure", Vector3f(1000, 0, 0));
         m_max_density             = m_scale * m_sigmat->max();
         m_inv_max_density         = 1.0f / (m_scale * m_sigmat->max());
         m_has_spectral_extinction = props.bool_("has_spectral_extinction", true);
@@ -119,7 +119,7 @@ public:
 
     Float n(Float h, Float lambda) const { 
         auto n_l = [](Float lambda) -> Float {
-            const float a = 29.79 * 1e-5;
+            const float a = 28.79 * 1e-5;
             const float b = 5.67 * 1e-5;
             return a * (1 + b / sqr(lambda)) + 1;
         };
@@ -130,11 +130,12 @@ public:
     float calculateIoR(Point3f position) const {
         // temp
         Point3f relativePosition = position - bbox.min;
+        Float distance           = norm(position);
         if (iorMethod == 1) {
 
-            return n(select(m_from_bottom, relativePosition.y(), position.y()), 1.0);
+            return n(select(m_from_bottom, relativePosition.y(), position.y()), 3);
         } else {
-            float norm = select(m_from_bottom, relativePosition.y() / height, max(0, position.y() / (height * 0.5)));
+            float norm = select(m_from_bottom, relativePosition.y() / height, max(0, position.y() / (height * 0.5))); // 
             return lerp(bottomIoR, topIoR, norm);
         }
     }
@@ -287,7 +288,7 @@ public:
         }
 
         // 4. Find neighbouring node that was hit, fill in n2.
-        Point3f neighbourOrigin = nli.p + ray.d;
+        Point3f neighbourOrigin = nli.p - nli.n * math::RayEpsilon<Float>;
         auto [validNeighbour, neighbour] = getNode(neighbourOrigin);
 
         if (!validNeighbour) {

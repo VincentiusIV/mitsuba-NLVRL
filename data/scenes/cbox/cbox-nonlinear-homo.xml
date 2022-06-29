@@ -25,8 +25,8 @@
             <integer name="sample_count" value="$spp"/>
         </sampler>
         <film type="hdrfilm">
-            <integer name="width" value="512"/>
-            <integer name="height" value="256"/>
+            <integer name="width" value="256"/>
+            <integer name="height" value="128"/>
             <rfilter type="box"/>
             <string name="pixel_format" value="rgb"/>
         </film>
