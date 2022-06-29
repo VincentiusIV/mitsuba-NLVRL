@@ -97,6 +97,7 @@ bool render(Object *scene_, size_t sensor_i, filesystem::path filename) {
         std::lock_guard<std::mutex> guard(develop_callback_mutex);
         develop_callback = [&]() { film->develop(); };
     }
+    integrator->preprocess(scene, sensor.get());
     bool success = integrator->render(scene, sensor.get());
     /* critical section */ {
         std::lock_guard<std::mutex> guard(develop_callback_mutex);
@@ -106,6 +107,7 @@ bool render(Object *scene_, size_t sensor_i, filesystem::path filename) {
         film->develop();
     else
         Log(Warn, "\U0000274C Rendering failed, result not saved.");
+
     return success;
 }
 

@@ -1,0 +1,25 @@
+<scene version="2.0.0">
+    <include filename="cbox-volume-nl.xml"/>
+	
+	<integrator type="vrl">
+		
+		<integer name="global_photons" value="500000"/>
+		<integer name="caustic_photons" value="50000"/>
+		<integer name="volume_photons" value="500000"/>
+		<float name="global_lookup_radius_relative" value="0.1"/>
+		<float name="volume_lookup_radius_relative" value="0.02"/>
+		
+		<integer name="target_vrls" value="32000"/>
+		<float name="min_vrl_length" value="50"/>
+		<integer name="samples_per_query" value="1"/>
+		<boolean name="use_uniform_sampling" value="false"/>
+		<boolean name="use_light_cut" value="true"/>
+		<integer name="lightcut_samples" value="10"/>
+		<boolean name="stochastic_lightcut" value="false"/>
+		<boolean name="use_direct_illum" value="true"/>
+		
+		<boolean name="use_non_linear" value="false"/>
+		<boolean name="use_non_linear_camera" value="false"/>
+    </integrator>
+
+</scene>

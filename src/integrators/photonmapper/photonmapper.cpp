@@ -128,6 +128,10 @@ public:
                 auto rayColorPair = emitter->sample_ray(0.0, sampler->next_1d(), sampler->next_2d(), sampler->next_2d());
                 ray               = rayColorPair.first;
                 flux              = rayColorPair.second;
+
+                if (neq(emitter->shape(), nullptr))
+                    flux *= (M_PI);
+
                 medium = emitter->medium();
             }
 
@@ -433,10 +437,9 @@ public:
 
             if (any_or<true>(active_medium)) {
                 valid_ray |= true;
+                specular_chain |= true;
                 // Gather along the entire ray
                 if (si.is_valid()) {
-
-
                     Float radius = m_volumeLookupRadius * enoki::lerp(0.5f, 1.5f, sampler->next_1d());
 
                     Ray3f mediumRay(ray);
@@ -455,7 +458,7 @@ public:
                             break;
                         }
 
-                        throughput *= medium->evalTransmittance(mediumRay, sampler, active);
+                        throughput *= medium->evalTransmittance(mediumRay, sampler, active, true);
 
                         // Handle all non linear events that happen before gather.
                         if (m_useNonLinearCameraRays && m_useNonLinear && medium->is_nonlinear()) {
@@ -494,21 +497,15 @@ public:
                     ++volumeQueryCount;
                     gatherCount += localGatherCount;
 
-                    throughput *= medium->evalTransmittance(mediumRay, sampler, active);
+                    throughput *= medium->evalTransmittance(mediumRay, sampler, active, true);
                 }
 
 
-                // Sample medium interaction to see if we can continue
-                /*mi = medium->sample_interaction(ray, sampler->next_1d(active_medium), channel, active_medium);
-                masked(mi.t, active_medium && (si.t < mi.t)) = math::Infinity<Float>;
-                if (mi.is_valid())
-                    break;*/
-                
                 escaped_medium = true;
                 needs_intersection= true;
-                active_surface |= si.is_valid();
-                if (!si.is_valid())
-                    break;
+                active_surface &= si.is_valid();
+                /*if (!si.is_valid())
+                    break;*/
             }
 
             active &= depth < (uint32_t) m_maxDepth;
@@ -526,7 +523,10 @@ public:
                 EmitterPtr emitter            = si.emitter(scene);
                 Mask use_emitter_contribution = active_surface && specular_chain && neq(emitter, nullptr);
                 if (any_or<true>(use_emitter_contribution))
+                {
                     masked(radiance, use_emitter_contribution) += throughput * emitter->eval(si, use_emitter_contribution);
+                    break;
+                }
             }
 
             active_surface &= si.is_valid();

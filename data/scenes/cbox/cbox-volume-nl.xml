@@ -1,0 +1,134 @@
+<scene version="2.0.0">
+    <include filename="fragments/bsdfs-rgb.xml"/>
+	
+	<default name="spp" value="1"/>
+    <default name="res" value="512"/>
+    <default name="max_depth" value="10"/>
+	
+    <default name="cbox_x" value="-275"/>
+    <default name="cbox_y" value="-275"/>
+    <default name="cbox_z" value="-275"/>
+	
+    <sensor type="perspective">
+        <string name="fov_axis" value="smaller"/>
+        <float name="near_clip" value="10"/>
+        <float name="far_clip" value="2800"/>
+        <float name="focus_distance" value="1000"/>
+        <float name="fov" value="39.3077"/>
+        <transform name="to_world">
+            <lookat origin="0, 0, -1000"
+                    target="0, 0, -799"
+                    up    ="  0,   1,    0"/>
+        </transform>
+        <sampler type="independent">  <!-- ldsampler -->
+            <integer name="sample_count" value="$spp"/>
+        </sampler>
+        <film type="hdrfilm">
+            <integer name="width" value="$res"/>
+            <integer name="height" value="$res"/>
+            <rfilter type="box"/>
+            <string name="pixel_format" value="rgb"/>
+        </film>
+    </sensor>
+	
+	<shape type="obj">
+        <string name="filename" value="meshes/cbox_luminaire.obj"/>
+        <transform name="to_world">
+            <scale value="0.24"/>
+            <translate x="-63.72" y="141.99" z="-62.58"/>
+        </transform>
+        <ref id="light"/>
+        <ref id="area-emitter"/>
+    </shape>
+	
+	<emitter type="area" id="area-emitter">
+        <rgb name="radiance" value="0.1, 255, 255"/>
+		<vector name="radcolor" value="0.1, 255, 255"/>
+    </emitter>
+	
+	<medium id="medium1" type="nonlinear">
+        <float name="scale" value="0.011"/>
+        <rgb name="albedo" value="0.7, 0.7, 0.7"/>
+        <rgb name="sigma_t" value="0.5, 0.5, 0.5"/>
+        <phase type="isotropic" />
+        <integer name="res_x" value="1"/>
+        <integer name="res_y" value="545"/>
+        <integer name="res_z" value="1"/>
+        <float name="topIoR" value="0.75"/>
+        <float name="bottomIoR" value="1.0"/>
+    </medium>
+
+	<!-- Fog -->
+	<shape type="obj">
+        <string name="filename" value="meshes/unit_cube_centered.obj"/>
+        <bsdf type="null">
+        </bsdf>
+		<transform name="to_world">
+           <scale x="545" y="545" z="545"/>
+        </transform>
+        <ref id="medium1" name="interior"/>
+    </shape>
+
+<shape type="obj">
+        <string name="filename" value="meshes/cbox_floor.obj"/>
+        <ref id="white"/>
+        <transform name="to_world">
+            <translate x="$cbox_x" y="$cbox_y" z="$cbox_z"/>
+        </transform>
+    </shape>
+	
+	<shape type="rectangle">
+        <ref id="white"/>
+        <transform name="to_world">
+			<rotate x="1" angle="90"/>
+			<scale x="545" y="545" z="545"/>
+            <translate x="0" y="275" z="0"/>
+        </transform>
+    </shape>
+	<shape type="sphere">
+        <transform name="to_world">
+            <scale value="100"/>
+            <translate x="0" y="50" z="0"/>
+            <translate x="50" y="50" z="-50"/>
+		</transform>
+        <bsdf type="dielectric"/>
+    </shape>
+    <shape type="obj">
+        <string name="filename" value="meshes/cbox_back.obj"/>
+        <ref id="white"/>
+        <transform name="to_world">
+            <translate x="$cbox_x" y="$cbox_y" z="$cbox_z"/>
+        </transform>
+    </shape>
+    <shape type="obj">
+        <string name="filename" value="meshes/cbox_greenwall.obj"/>
+        <ref id="green"/>
+        <transform name="to_world">
+            <translate x="$cbox_x" y="$cbox_y" z="$cbox_z"/>
+        </transform>
+    </shape>
+    <shape type="obj">
+        <string name="filename" value="meshes/cbox_redwall.obj"/>
+        <ref id="red"/>
+        <transform name="to_world">
+            <translate x="$cbox_x" y="$cbox_y" z="$cbox_z"/>
+        </transform>
+    </shape>
+    <shape type="obj">
+        <string name="filename" value="meshes/cbox_smallbox.obj"/>
+        <ref id="box"/>
+        <transform name="to_world">
+            <translate x="$cbox_x" y="$cbox_y" z="$cbox_z"/>
+        </transform>
+    </shape>   
+
+</scene>
+
+		
+<shape type="obj">
+	<string name="filename" value="meshes/cbox_largebox.obj"/>
+	<ref id="box"/>
+	<transform name="to_world">
+		<translate x="$cbox_x" y="$cbox_y" z="$cbox_z"/>
+	</transform>
+</shape>

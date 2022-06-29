@@ -53,12 +53,11 @@ public:
         m_max_density             = m_scale * m_sigmat->max();
         m_inv_max_density         = 1.0f / (m_scale * m_sigmat->max());
         m_has_spectral_extinction = props.bool_("has_spectral_extinction", true);
+        m_from_bottom = props.bool_("from_bottom", true);
         resolution                = Point3f(props.int_("res_x", 4.0), props.int_("res_y", 4.0), props.int_("res_z", 4.0));
         
 
     }
-
-
 
     void build(Point3f min, Point3f max) override {
         Medium::build(min, max);
@@ -68,8 +67,7 @@ public:
         arraySize = resolution[0] * resolution[1] * resolution[2];
         int arrayIndex = 0;
         grid           = new NLNode[arraySize];
-        Log(LogLevel::Info,"[NLHM]: Allocating grid... size = %i", arraySize);
-        Log(LogLevel::Info, to_string().c_str());
+        Log(Info,"[NLHM]: Allocating grid... size = %i", arraySize);
 
         Float nmin = 100000000, nmax = -10000000;
 
@@ -131,11 +129,12 @@ public:
 
     float calculateIoR(Point3f position) const {
         // temp
+        Point3f relativePosition = position - bbox.min;
         if (iorMethod == 1) {
-            return n(position.y(), 1.0);
+
+            return n(select(m_from_bottom, relativePosition.y(), position.y()), 1.0);
         } else {
-            Point3f relativePosition = position - bbox.min;
-            float norm               = relativePosition[1] / height;
+            float norm = select(m_from_bottom, relativePosition.y() / height, max(0, position.y() / (height * 0.5)));
             return lerp(bottomIoR, topIoR, norm);
         }
     }
@@ -291,6 +290,10 @@ public:
         Point3f neighbourOrigin = nli.p + ray.d;
         auto [validNeighbour, neighbour] = getNode(neighbourOrigin);
 
+        if (!validNeighbour) {
+            nli.is_valid = false;
+            return nli;
+        }
         
         nli.n2 = select(validNeighbour, neighbour.ior, 1.0f);
 
@@ -320,8 +323,8 @@ public:
                 << "  n1  = " << string::indent(nli.n1) << std::endl
                 << "  n2 = " << string::indent(nli.n2) << std::endl
                 << "]";
-            Log(LogLevel::Info, oss.str().c_str());
-            Log(LogLevel::Error, "neighbour and node ar ethe same! or normal is 0");
+            Log(Info, oss.str().c_str());
+            Log(Warn, "neighbour and node ar ethe same! or normal is 0");
         }
 
         return nli; 
@@ -378,6 +381,7 @@ private:
     Vector3f bottomPressure;
     Vector3f topPressure;
     Point3f cellSize;
+    bool m_from_bottom;
 };
 
 MTS_IMPLEMENT_CLASS_VARIANT(NonLinearMedia, Medium)

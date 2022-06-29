@@ -142,6 +142,8 @@ public:
                 auto rayColorPair = emitter->sample_ray(0.0, sampler->next_1d(), sampler->next_2d(), sampler->next_2d());
                 ray               = rayColorPair.first;
                 flux              = rayColorPair.second ;
+                if (neq(emitter->shape(), nullptr))
+                    flux *= (M_PI);
 
                 medium = emitter->medium();
             }
@@ -526,14 +528,18 @@ public:
                     Spectrum directIllum(0.0f), indirectIllum(0.0);
                     Float traveled_t = 0.0;
 
+                    // Tr is handled through VRL queries, so we gotta be careful we dont apply it multiple times...
+                    Spectrum vrlThroughput = throughput;
+
                     int localGatherCount = 0;
-                    while (mediumRay.maxt < si.t) {
+                    while (mediumRay.maxt < si.t && si.is_valid()) {
                         ++localGatherCount;
                         if (localGatherCount > 100000) {
                             Log(LogLevel::Warn, "prob endless loop");
                             break;
                         }
-                        throughput *= medium->evalTransmittance(mediumRay, sampler, active);
+
+                        throughput *= medium->evalTransmittance(mediumRay, sampler, active, true);
 
                         if (m_useNonLinearCameraRays && m_useNonLinear && medium->is_nonlinear()) {
                             nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
@@ -546,7 +552,8 @@ public:
                                 gatherRay.maxt = nli.t;
                                 traveled_t += gatherRay.maxt;
                                 auto [evaluations, color, intersections] = m_vrlMap->query(gatherRay, scene, sampler, -1, ray.maxt, m_useUniformSampling, m_useDirectIllum, m_volumeLookupRadius, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
-                                indirectIllum += color * throughput;
+                                indirectIllum += color * vrlThroughput;
+                                vrlThroughput *= medium->evalTransmittance(gatherRay, sampler, active, true);
 
                                 gatherRay        = Ray3f(ray);
                                 gatherRay.maxt   = si.t;
@@ -576,19 +583,12 @@ public:
                     // Gather VRLs for indirect
 
                     auto [evaluations, color, intersections] = m_vrlMap->query(gatherRay, scene, sampler, -1, ray.maxt, m_useUniformSampling, m_useDirectIllum, m_volumeLookupRadius, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
-                    indirectIllum += color * throughput;                    
+                    indirectIllum += color * vrlThroughput;
                     
-                    throughput *= medium->evalTransmittance(gatherRay, sampler, active);
+                    throughput *= medium->evalTransmittance(mediumRay, sampler, active, true);
                     
                     radiance += indirectIllum;
                     ++mediumDepth;
-
-                    
-                    mi = medium->sample_interaction(ray, sampler->next_1d(active_medium), channel, active_medium);
-                    traveled_t += gatherRay.maxt;
-                    masked(mi.t, active_medium && (traveled_t < mi.t)) = math::Infinity<Float>;
-                    if (mi.is_valid())
-                        break;
                 }
 
                 escaped_medium = true;

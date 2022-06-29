@@ -1,19 +1,19 @@
 <scene version="2.0.0">
     <include filename="fragments/bsdfs-rgb.xml"/>
 	
-	<default name="spp" value="64"/>
+	<default name="spp" value="1"/>
     <default name="res" value="256"/>
     <default name="max_depth" value="6"/>
-	
+	<default name="earth_radius" value="6371"/>
 	
     <sensor type="perspective">
         <string name="fov_axis" value="smaller"/>
-        <float name="near_clip" value="10"/>
+        <float name="near_clip" value="0.001"/>
         <float name="far_clip" value="2800"/>
         <float name="focus_distance" value="1000"/>
         <float name="fov" value="40"/>
         <transform name="to_world">
-            <lookat origin="0, 0.01, -510"
+            <lookat origin="0, 0.01, -101"
                     target="0, 0.01, 1"
                     up    ="  0,   1,    0"/>
         </transform>
@@ -27,28 +27,48 @@
             <string name="pixel_format" value="rgb"/>
         </film>
     </sensor>
-	
+
 	<emitter type="envmap">
-		<string name="filename" value="venice_sunset_4k.exr"/>
-		<transform name="to_world">
-			<rotate y="1" angle="50"/>
-		</transform>
+	   <string name="filename" value="venice_sunset_4k.exr"/>
+	   <transform name="to_world">
+			   <rotate y="1" angle="50"/>
+        </transform>
 	</emitter>
 	
+	<shape type="sphere">
+        <transform name="to_world">
+            <scale value="$earth_radius"/>
+            <translate x="0" y="-$earth_radius" z="0"/>
+		</transform>
+        <ref id="white"/>
+    </shape>
+	
+	<shape type="ply" id="bunny">
+        <string name="filename" value="meshes/bunny.ply"/>
+
+        <ref id="red"/>
+		<transform name="to_world">
+			<translate x="0" y="-0.05" z="0"/>
+            <scale x="100" y="100" z="100"/>
+        </transform>
+        
+
+    </shape>
 	
 	<medium id="medium1" type="nonlinear">
         <float name="scale" value="0"/>
-        <rgb name="sigma_t" value="0.00001"/>
+        <rgb name="sigma_t" value="0.5"/>
         <rgb name="albedo" value="0.3, 0.3, 0.3"/>
         <phase type="isotropic" />
-        <integer name="ior_method" value="1"/>
+        <integer name="ior_method" value="0"/>
         <integer name="res_x" value="1"/>
         <integer name="res_y" value="2000"/>
         <integer name="res_z" value="1"/>
         <float name="topIoR" value="1.0"/>
-        <float name="bottomIoR" value="0.99"/>
+        <float name="bottomIoR" value="0.995"/>
 		<vector name="bottom_temp" value="45, 0, 0"/>
 		<vector name="top_temp" value="15, 0.02, 0"/>
+		<boolean name="from_bottom" value="false"/>
     </medium>
 
 	
@@ -58,7 +78,7 @@
         <bsdf type="null">
         </bsdf>
 		<transform name="to_world">
-            <scale x="1000" y="80" z="1000"/>
+            <scale x="100" y="40" z="100"/>
         </transform>
         <ref id="medium1" name="interior"/>
     </shape>

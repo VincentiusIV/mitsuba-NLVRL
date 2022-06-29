@@ -1,0 +1,16 @@
+<scene version="2.0.0">
+    <include filename="cbox-volume-nl.xml"/>
+	
+	<integrator type="photonmap">
+		<integer name="global_photons" value="5000000"/>
+		<integer name="caustic_photons" value="500000"/>
+		<integer name="volume_photons" value="5000000"/>
+		<float name="volume_lookup_radius_relative" value="0.02"/>
+		<float name="global_lookup_radius_relative" value="0.1"/>
+		<boolean name="use_first_photon" value="true"/>
+		<boolean name="direct_only" value="false"/>
+		<boolean name="use_non_linear" value="true"/>
+		<boolean name="use_non_linear_camera" value="true"/>
+    </integrator>
+ 
+</scene>

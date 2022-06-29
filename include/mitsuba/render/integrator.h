@@ -38,6 +38,9 @@ class MTS_EXPORT_RENDER Integrator : public Object {
 public:
     MTS_IMPORT_TYPES(Scene, Sensor)
 
+    virtual void preprocess(Scene *scene, Sensor *sensor) { Log(LogLevel::Info, "Dummy pre process..."); }
+    virtual void postprocess(Scene *scene, Sensor *sensor) { Log(LogLevel::Info, "Dummy post process..."); }
+
     /// Perform the main rendering job. Returns \c true upon success
     virtual bool render(Scene *scene, Sensor *sensor) = 0;
 
@@ -132,8 +135,7 @@ public:
     bool render(Scene *scene, Sensor *sensor) override;
     void cancel() override;
 
-    virtual void preprocess(Scene *scene, Sensor *sensor) { Log(LogLevel::Info, "Dummy pre process..."); }
-    virtual void postprocess(Scene *scene, Sensor *sensor) { Log(LogLevel::Info, "Dummy post process..."); }
+
 
     /**
      * Indicates whether \ref cancel() or a timeout have occured. Should be

@@ -1,0 +1,7 @@
+<scene version="2.0.0">
+    <include filename="cbox-volume-nl.xml"/>
+	
+	
+	<integrator type="volpath"/>
+ 
+</scene>

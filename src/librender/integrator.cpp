@@ -50,9 +50,6 @@ MTS_VARIANT std::vector<std::string> SamplingIntegrator<Float, Spectrum>::aov_na
 
 MTS_VARIANT bool SamplingIntegrator<Float, Spectrum>::render(Scene *scene, Sensor *sensor) {
 
-    Log(LogLevel::Info, "Starting pre process...");
-    preprocess(scene, sensor);
-    
     ScopedPhase sp(ProfilerPhase::Render);
     m_stop = false;
 
@@ -187,6 +184,8 @@ MTS_VARIANT bool SamplingIntegrator<Float, Spectrum>::render(Scene *scene, Senso
     return !m_stop;
 }
 
+
+
 MTS_VARIANT void SamplingIntegrator<Float, Spectrum>::render_block(const Scene *scene,
                                                                    const Sensor *sensor,
                                                                    Sampler *sampler,
@@ -248,7 +247,10 @@ SamplingIntegrator<Float, Spectrum>::render_sample(const Scene *scene,
                                                    const Vector2f &pos,
                                                    ScalarFloat diff_scale_factor,
                                                    Mask active) const {
-    Vector2f position_sample = pos + sampler->next_2d(active);
+
+    Vector2f aa_sample = select(sensor->sampler()->sample_count() > 1, sampler->next_2d(active), Vector2f(0.5, 0.5));
+
+    Vector2f position_sample = pos + aa_sample;
 
     Point2f aperture_sample(.5f);
     if (sensor->needs_aperture_sample())

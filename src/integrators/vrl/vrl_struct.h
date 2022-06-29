@@ -478,7 +478,7 @@ template <typename Float, typename Spectrum> struct VRL {
                 Ray3f mediumRay = Ray3f(ray);
                 mediumRay.mint = 0;
                 mediumRay.maxt = std::min(si.t, remaining);
-                transmittance *= medium->evalTransmittance(mediumRay, sampler, active);
+                transmittance *= medium->evalTransmittance(mediumRay, sampler, active, true);
             }
 
             if (!surface || transmittance[0] == 0.0)
@@ -527,7 +527,6 @@ template <typename Float, typename Spectrum> struct VRL {
     Spectrum getContrib(const Scene *scene, const bool uniformSampling, const bool useDirectIllum, Float directRadius, const Ray3f &ray, Float lengthOfRay, Sampler *sampler, UInt32 channel) const {
         auto sampling = samplingVRL(scene, ray, sampler, uniformSampling, channel);
 
-        // Check the visibility of the two sampled points
         Vector3f dir     = sampling.pVRL - sampling.pCam;
         Float lengthPtoP = norm(dir);
         if (lengthPtoP == 0) {
@@ -581,14 +580,14 @@ template <typename Float, typename Spectrum> struct VRL {
         mediumRay.mint = 0;
         mediumRay.maxt = sampling.tCam;
 
-        Spectrum rayTrans = m_medium->evalTransmittance(mediumRay, sampler, active);
+        Spectrum rayTrans = m_medium->evalTransmittance(mediumRay, sampler, active, true);
         if (rayTrans[0] == 0.0f && rayTrans[1] == 0.0f && rayTrans[2] == 0.0f)
             return Spectrum(0.0f);
 
         Ray3f mediumVRL(origin, direction, 0);
         mediumVRL.mint    = 0;
         mediumVRL.maxt    = sampling.tVRL;
-        Spectrum vrlTrans = m_medium->evalTransmittance(mediumVRL, sampler, active);
+        Spectrum vrlTrans = m_medium->evalTransmittance(mediumVRL, sampler, active, true);
         if (vrlTrans[0] == 0.0f && vrlTrans[1] == 0.0f && vrlTrans[2] == 0.0f)
             return Spectrum(0.0f);
 

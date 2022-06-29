@@ -99,7 +99,7 @@ public:
         return m;
     }
 
-    Spectrum evalTransmittance(const Ray3f &_ray, Sampler *sampler, Mask active, bool scaleTr = false) const {
+    Spectrum evalTransmittance(const Ray3f &_ray, Sampler *sampler, Mask active, bool analytic = false) const {
         Ray3f ray(_ray);
         
         Float t    = ray.mint;
@@ -114,15 +114,12 @@ public:
         SurfaceInteraction3f si;
         si.t = _ray.maxt;
 
-        /*if (is_homogeneous()) {
+        if (analytic && is_homogeneous()) {
             float negLength = ray.mint - ray.maxt;
             Float val       = enoki::exp(max_density() * negLength);
-            Spectrum transmittance(max_density() != 0 ? val : (Float) 1.0f);
-            if (scaleTr) {
-                UnpolarizedSpectrum pdf = select(si.t < mi.t, tr, tr * mi.combined_extinction);
-            }
-            return transmittance;
-        }*/
+            Spectrum tr(max_density() != 0 ? val : (Float) 1.0f);
+            return tr;
+        }
 
         Spectrum throughput(1.0f);
         while (t < maxt) {
@@ -132,12 +129,7 @@ public:
 
             masked(mi.t, active && (si.t < mi.t)) = math::Infinity<Float>;
             auto [tr, free_flight_pdf]            = eval_tr_and_pdf(mi, si, active);
-            if (scaleTr) {
-                Float tr_pdf = index_spectrum(free_flight_pdf, channel);
-                throughput *= select(tr_pdf > 0, tr / tr_pdf, 0);
-            } else {
-                throughput *= tr;            
-            }
+            throughput *= tr; 
            
 
             t += mi.t;
