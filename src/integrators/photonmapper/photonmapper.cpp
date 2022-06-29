@@ -607,6 +607,8 @@ public:
             }
         }
 
+        if (neq(scene->environment(), nullptr))
+            return scene->environment();
         return emitter;
     }
 

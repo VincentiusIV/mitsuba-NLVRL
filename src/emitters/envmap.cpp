@@ -170,19 +170,17 @@ public:
         Vector3f rand_sphere_dir(x, y, z);
         Point3f sphere_pos  = rand_sphere_dir * dist;
 
+
         Interaction3f it;
         it.p                = sphere_pos;
         it.time             = time;
         it.wavelengths      = zero<Wavelength>();
         auto [ds, radiance] = sample_direction(it, sample2, active);
         Point3f o           = -ds.n * dist;
-        return std::make_pair(Ray3f(o, rand_sphere_dir, time), radiance * 1e+06);
+        if (dot(rand_sphere_dir, ds.n) < 0)
+            rand_sphere_dir *= -1;
 
-        /*SurfaceInteraction3f si;
-        si.wavelengths = zero<Wavelength>();
-        si.wi          = rand_sphere_dir;
-        si.time        = time;
-        return std::make_pair(Ray3f(sphere_pos, sphere_dir, time), eval(si, active) * math::InvTwoPi<Float>);*/
+        return std::make_pair(Ray3f(o, rand_sphere_dir, time), radiance *sqr(dist));
     }
 
     Vector3f randSphere(const Point2f& sample) const {

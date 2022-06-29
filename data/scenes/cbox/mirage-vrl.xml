@@ -11,7 +11,7 @@
 		<integer name="target_vrls" value="16000"/>
 		<integer name="samples_per_query" value="1"/>
 		<boolean name="use_uniform_sampling" value="false"/>
-		<boolean name="use_light_cut" value="false"/>
+		<boolean name="use_light_cut" value="true"/>
 		<integer name="lightcut_samples" value="1"/>
 		<boolean name="stochastic_lightcut" value="true"/>
 		<boolean name="use_direct_illum" value="false"/>

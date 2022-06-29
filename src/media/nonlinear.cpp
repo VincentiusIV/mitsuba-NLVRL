@@ -68,7 +68,7 @@ public:
         int arrayIndex = 0;
         grid           = new NLNode[arraySize];
         Log(Info,"[NLHM]: Allocating grid... size = %i", arraySize);
-
+        Log(Info, to_string().c_str());
         Float nmin = 100000000, nmax = -10000000;
 
         for (int x = 0; x < resolution[0]; x++) {
@@ -140,16 +140,30 @@ public:
         }
     }
 
-    std::pair<Mask, NLNode> getNode(Point3f position) const { 
+    std::pair<Mask, int> getNode(Point3f position) const { 
         if (!bbox.contains(position))
-            return { false, NLNode() };
+            return { false, 0 };
 
-        for (size_t i = 0; i < arraySize; i++) {
+        for (int i = 0; i < arraySize; i++) {
             if (grid[i].aabb.contains(position))
-                return { true, grid[i] };
+                return { true, i };
         }
 
-        return { false, NLNode() };
+        return { false, 0 };
+    }
+
+    std::pair<Mask, int> getNeighbour(int nodeIdx, Vector3f normal) const {
+        int nbIdx  = nodeIdx;
+        int before = nbIdx;
+        assert(nbIdx == before);
+
+        nbIdx -= int(std::floor(normal.z()));
+        nbIdx -= int(std::floor(normal.y() * resolution[2]));
+        nbIdx -= int(std::floor(normal.x() * resolution[2] * resolution[1]));
+
+        return {
+            nbIdx >= 0 && nbIdx < arraySize, nbIdx
+        };
     }
 
     Vector3f getNormal(Point3f position, ScalarBoundingBox3f aabb) const { 
@@ -250,8 +264,16 @@ public:
         }
         
         // 1. Find AABB that ray.o resides in.
-        auto[validNode, node] = getNode(ray.o);
+        auto[validNode, nodeIdx] = getNode(ray.o);
+        if (!validNode)
+        {
+            nli.is_valid = false;
+            return nli;
+        }
+
+        NLNode &node = grid[nodeIdx];
         nli.is_valid |= validNode;
+        active &= validNode;
 
         nli.n1 = node.ior;
         nli.wi = ray.d;
@@ -288,15 +310,16 @@ public:
         }
 
         // 4. Find neighbouring node that was hit, fill in n2.
-        Point3f neighbourOrigin = nli.p - nli.n * math::RayEpsilon<Float>;
-        auto [validNeighbour, neighbour] = getNode(neighbourOrigin);
+        //Point3f neighbourOrigin = nli.p - nli.n * math::RayEpsilon<Float>;
+        auto [validNeighbour, neighbourIdx] = getNeighbour(nodeIdx, nli.n);
 
         if (!validNeighbour) {
             nli.is_valid = false;
             return nli;
         }
-        
-        nli.n2 = select(validNeighbour, neighbour.ior, 1.0f);
+        NLNode &neighbour = grid[neighbourIdx];
+
+        nli.n2 = neighbour.ior;
 
         // 5. Refract ray using nli info
         nli.wo = refract(nli.wi, nli.n, nli.n1, nli.n2);
@@ -306,7 +329,7 @@ public:
         }
 
         // Update mi since info should be gathered from a different point
-        if (norm(nli.wo) == 0.0f || (norm(nli.n) == 0.0f) || validNeighbour && neighbour.aabb == node.aabb) {
+        if (norm(nli.wo) == 0.0f || (norm(nli.n) == 0.0f) || nodeIdx == neighbourIdx) {
             nli.wo = ray.d;
 
             std::ostringstream oss;
@@ -315,7 +338,8 @@ public:
                 << "  ray.d  = " << string::indent(ray.d) << std::endl
                 << "  mint  = " << string::indent(mint) << std::endl
                 << "  maxt  = " << string::indent(maxt) << std::endl
-                << "  neighbourOrigin  = " << string::indent(neighbourOrigin) << std::endl
+                << "  nodeIdx  = " << string::indent(nodeIdx) << std::endl
+                << "  nbIdx  = " << string::indent(neighbourIdx) << std::endl
                 << "  nli.p  = " << string::indent(nli.p) << std::endl
                 << "  nli.wo  = " << string::indent(nli.wo) << std::endl
                 << "  nli.n  = " << string::indent(nli.n) << std::endl
@@ -364,6 +388,7 @@ public:
             << "  min   = " << string::indent(bbox.min) << std::endl
             << "  max   = " << string::indent(bbox.max) << std::endl
             << "  cellSize = " << string::indent(cellSize) << std::endl
+            << "  resolution = " << string::indent(resolution) << std::endl
             << "]";
         return oss.str();
     }
