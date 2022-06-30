@@ -52,7 +52,7 @@ public:
      * \param normalize
      *    Ensure that splats created via ``ImageBlock::put()`` add a
      *    unit amount of energy? Stratified sampling techniques that
-     *    sample rays in image space should set this to \c false, since
+     *    sample parts in image space should set this to \c false, since
      *    the samples will eventually be divided by the accumulated
      *    sample weight to remove any non-uniformity.
      */

@@ -24,6 +24,7 @@ public:
     MTS_IMPORT_OBJECT_TYPES()
 
     typedef VRL<Float, Spectrum> VRL;
+    typedef NLRay<Float, Spectrum> NLRay;
     typedef VRLLightCut<Float, Spectrum> VRLLightCut;
 
     VRLMap(size_t nbVRL, bool stochasticLightcut) : m_isLCStochastic(stochasticLightcut) {
@@ -133,11 +134,13 @@ public:
     mutable std::atomic<int> queryCount = 0;
 
     // returns nb_evaluation, color, nb_BBIntersection
-    std::tuple<size_t, Spectrum, size_t> query(const Ray3f &ray, const Scene *scene, Sampler *sampler, int renderScatterDepth, Float lengthOfRay, bool useUniformSampling, bool useDirectIllum, Float directRadius, const EVRLRussianRoulette strategyRR, Float scaleRR, UInt32 samples, UInt32 channel) const {
+    std::tuple<size_t, Spectrum, size_t> query(const NLRay &nlray, const Scene *scene, Sampler *sampler, int renderScatterDepth, Float lengthOfRay, bool useUniformSampling, bool useDirectIllum, Float directRadius, const EVRLRussianRoulette strategyRR, Float scaleRR, UInt32 samples, UInt32 channel) const {
         if (m_map.size() == 0)
         {
             return { 0, Spectrum(0.0), 0 };
         }
+
+        Ray3f ray = nlray.first();
 
         ++queryCount;        
 
@@ -158,7 +161,7 @@ public:
                         }
                     }
                     if (strategyRR == ENoRussianRoulette) {
-                        Spectrum contrib = vrl.getContrib(scene, useUniformSampling, useDirectIllum, directRadius, ray, lengthOfRay, sampler, channel) * m_scale;
+                        Spectrum contrib = vrl.getContrib(scene, useUniformSampling, useDirectIllum, directRadius, nlray, lengthOfRay, sampler, channel) * m_scale;
 
                         if (std::isnan(contrib[0]) || std::isnan(contrib[1]) || std::isnan(contrib[2]) || std::isinf(contrib[0]) || std::isinf(contrib[1]) || std::isinf(contrib[2])) {
                             continue;
@@ -179,7 +182,7 @@ public:
                         Float min_distance_sqr = sqrt(computeMinRayToRayDistance());
                         Float rrWeight         = min(1 / (min_distance_sqr * scaleRR), 1.0);
                         if (rrWeight > sampler->next_1d()) {
-                            Spectrum contrib = (vrl.getContrib(scene, useUniformSampling, useDirectIllum, directRadius, ray, lengthOfRay, sampler, channel) / rrWeight) * m_scale;
+                            Spectrum contrib = (vrl.getContrib(scene, useUniformSampling, useDirectIllum, directRadius, nlray, lengthOfRay, sampler, channel) / rrWeight) * m_scale;
                             if (std::isnan(contrib[0]) || std::isnan(contrib[1]) || std::isnan(contrib[2]) || std::isinf(contrib[0]) || std::isinf(contrib[1]) || std::isinf(contrib[2])) {
                                 continue;
                             }
@@ -197,7 +200,7 @@ public:
                 /*VRLPercentagePruned += nbVRLPruned;
                 VRLPercentagePruned.incrementBase(m_map.size());*/
             } else if (m_accel == ELightCutAcceleration) {
-                VRLLightCut::LCQuery query{ ray, sampler, 0 };
+                VRLLightCut::LCQuery query{ nlray, sampler, 0 };
                 Li += m_lc[threadId]->query(scene, query, nb_BBIntersection, directRadius, channel) * m_scale;
                 nb_evaluation += query.nb_evaluation;
             } else {

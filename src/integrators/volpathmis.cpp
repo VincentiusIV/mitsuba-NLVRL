@@ -94,7 +94,7 @@ public:
             Throw("This integrator currently does not support polarized mode!");
         }
 
-        // If there is an environment emitter and emitters are visible: all rays will be valid
+        // If there is an environment emitter and emitters are visible: all parts will be valid
         // Otherwise, it will depend on whether a valid interaction is sampled
         Mask valid_ray = !m_hide_emitters && neq(scene->environment(), nullptr);
 

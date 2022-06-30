@@ -24,6 +24,7 @@ public:
     MTS_IMPORT_OBJECT_TYPES()
 
     typedef VRL<Float, Spectrum> VRL;
+    typedef NLRay<Float, Spectrum> NLRay;
     typedef VRLMap<Float, Spectrum> VRLMap;
     typedef PhotonMap<Float, Spectrum> PhotonMap;
     typedef typename PhotonMap::PhotonData PhotonData;
@@ -56,6 +57,7 @@ public:
         m_diceVRL             = props.int_("dice_vrl", 1);
         m_longVRL             = props.bool_("long_vrl", false);
         m_useUniformSampling  = props.bool_("use_uniform_sampling", false);
+        m_useNLAtomicQuery  = props.bool_("use_nl_atomic_query", false);
         minVRLLength      = props.float_("min_vrl_length", 5);
 
         m_useNonLinear           = props.bool_("use_non_linear", true);
@@ -525,7 +527,8 @@ public:
                     Ray3f gatherRay(ray);
                     gatherRay.maxt = si.t;
                     Spectrum directIllum(0.0f), indirectIllum(0.0);
-                    Float traveled_t = 0.0;
+
+                    NLRay nlray;
 
                     // Tr is handled through VRL queries, so we gotta be careful we dont apply it multiple times...
                     Spectrum vrlThroughput = throughput;
@@ -549,10 +552,14 @@ public:
                                     break;
 
                                 gatherRay.maxt = nli.t;
-                                traveled_t += gatherRay.maxt;
-                                auto [evaluations, color, intersections] = m_vrlMap->query(gatherRay, scene, sampler, -1, ray.maxt, m_useUniformSampling, m_useDirectIllum, m_volumeLookupRadius, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
+
+                                //nlray.clear();
+                                nlray.push_back(std::move(gatherRay));
+
+                                /*auto [evaluations, color, intersections] = m_vrlMap->query(nlray, scene, sampler, -1, ray.maxt, m_useUniformSampling, m_useDirectIllum, m_volumeLookupRadius,
+                                                                                           m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
                                 indirectIllum += color * vrlThroughput;
-                                vrlThroughput *= medium->evalTransmittance(gatherRay, sampler, active, true);
+                                vrlThroughput *= medium->evalTransmittance(gatherRay, sampler, active, true);*/
 
                                 gatherRay        = Ray3f(ray);
                                 gatherRay.maxt   = si.t;
@@ -581,7 +588,8 @@ public:
 
                     // Gather VRLs for indirect
 
-                    auto [evaluations, color, intersections] = m_vrlMap->query(gatherRay, scene, sampler, -1, ray.maxt, m_useUniformSampling, m_useDirectIllum, m_volumeLookupRadius, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
+                    nlray.push_back(std::move(gatherRay));
+                    auto [evaluations, color, intersections] = m_vrlMap->query(nlray, scene, sampler, -1, nlray.maxt, m_useUniformSampling, m_useDirectIllum, m_volumeLookupRadius, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
                     indirectIllum += color * vrlThroughput;
                     
                     throughput *= medium->evalTransmittance(mediumRay, sampler, active, true);
@@ -762,6 +770,7 @@ private:
     int m_lightcutSamples;
     bool m_useNonLinear;
     bool m_useNonLinearCameraRays;
+    bool m_useNLAtomicQuery;
     bool m_useLaser;
     bool m_RRVRL;
     Float m_scaleRR;

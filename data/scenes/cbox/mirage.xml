@@ -1,7 +1,7 @@
 <scene version="2.0.0">
     <include filename="fragments/bsdfs-rgb.xml"/>
 	
-	<default name="spp" value="1"/>
+	<default name="spp" value="16"/>
     <default name="res" value="256"/>
     <default name="max_depth" value="6"/>
 	<default name="earth_radius" value="637"/>
@@ -21,8 +21,8 @@
             <integer name="sample_count" value="$spp"/>
         </sampler>
         <film type="hdrfilm">
-            <integer name="width" value="256"/>
-            <integer name="height" value="128"/>
+            <integer name="width" value="512"/>
+            <integer name="height" value="256"/>
             <rfilter type="box"/>
             <string name="pixel_format" value="rgb"/>
         </film>
@@ -30,6 +30,7 @@
 
 	<emitter type="envmap">
 	   <string name="filename" value="venice_sunset_4k.exr"/>
+	   <float name="scale" value="0.25"/>
 	   <transform name="to_world">
 			   <rotate y="1" angle="50"/>
         </transform>
@@ -38,7 +39,7 @@
 	<medium id="medium1" type="nonlinear">
         <float name="scale" value="0.01"/>
         <rgb name="sigma_t" value="0.3"/>
-        <rgb name="albedo" value="0.3, 0.3, 0.3"/>
+        <rgb name="albedo" value="0.5, 0.5, 0.5"/>
         <phase type="isotropic" />
         <integer name="ior_method" value="0"/>
         <integer name="res_x" value="1"/>

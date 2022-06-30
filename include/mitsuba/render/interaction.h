@@ -218,7 +218,7 @@ struct SurfaceInteraction : Interaction<Float_, Spectrum_> {
         if (!ray.has_differentials)
             return;
 
-        // Compute interaction with the two offset rays
+        // Compute interaction with the two offset parts
         Float d   = dot(n, p),
               t_x = (d - dot(n, ray.o_x)) / dot(n, ray.d_x),
               t_y = (d - dot(n, ray.o_y)) / dot(n, ray.d_y);

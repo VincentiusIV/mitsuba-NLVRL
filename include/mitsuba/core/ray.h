@@ -82,7 +82,7 @@ template <typename Point_, typename Spectrum_> struct Ray {
 
 /**
  * \brief Ray differential -- enhances the basic ray class with
- * offset rays for two adjacent pixels on the view plane
+ * offset parts for two adjacent pixels on the view plane
  */
 template <typename Point_, typename Spectrum_>
 struct RayDifferential : Ray<Point_, Spectrum_> {

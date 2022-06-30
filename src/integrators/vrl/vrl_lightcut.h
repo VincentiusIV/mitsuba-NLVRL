@@ -29,6 +29,7 @@ public:
     MTS_IMPORT_OBJECT_TYPES()
 
     typedef VRL<Float, Spectrum> VRL;
+    typedef NLRay<Float, Spectrum> NLRay;
 
     // Node structure
     struct Node {
@@ -149,8 +150,8 @@ public:
             isSame[1 - index] = false;
         }
 
-        Float shuffleRepresentativeLight(const Ray3f ray, Sampler *sampler) const {
-            if (children[0] == nullptr || children[1] == nullptr)
+        Float shuffleRepresentativeLight(const NLRay &ray, Sampler *sampler) const {
+            if (isLeaf || children[0] == nullptr || children[1] == nullptr)
                 return 1.0;
 
             const Float alpha = 1.0; // scaling coefficient
@@ -159,8 +160,8 @@ public:
             Float I2 = (hmax(children[1]->represent.flux) * children[1]->represent.length);
 
             // F(x, w) = G(x)M(x, w)
-            auto F = [](const Ray3f ray, const VRL vrl) -> Float {
-
+            auto F = [](const NLRay &ray, const VRL vrl) -> Float {
+                // TODO: Importance based on geometry G and material M terms.
 
                 return 1.0f;
             };
@@ -170,7 +171,7 @@ public:
             };
 
             Float w1 = F(ray, children[0]->represent) * I1 ;
-            Float w2 = F(ray, children[0]->represent) * I2;
+            Float w2 = F(ray, children[1]->represent) * I2;
 
             Float p1 = w1 / (w1 + w2);
             Float p2 = 1.0f - p1;
@@ -234,7 +235,7 @@ public:
 
     /// Compute the beam radiance estimate for the given ray segment and medium
     struct LCQuery {
-        const Ray3f ray;
+        const NLRay ray;
         Sampler *sampler;
         size_t nb_evaluation;
     };
@@ -326,7 +327,6 @@ public:
                         estimate = child_cluster->represent.getContrib(scene, uniform, directIllum, directRadius, query.ray, query.ray.maxt, query.sampler, channel);
                     }
                     if (std::isnan(estimate[0]) || std::isnan(estimate[1]) || std::isnan(estimate[2])) {
-                        Log(LogLevel::Warn, "Invalid sample!");
                         std::ostringstream stream;
                         stream << "Invalid sample = [child_cluster->represent.flux:" << child_cluster->represent.flux << ", current_element.estimate:" << current_element.estimate
                                << ", current_cluster->represent.flux:" << current_cluster->represent.flux;
@@ -406,8 +406,17 @@ private:
         }
     };
 
+    inline Float getMinDistanceSqr(const BoundingBox<Point3f> &aabb, const NLRay &ray) const {
+        Float minDistance = math::Max<Float>;
+        for (auto j = 0; j < ray.parts.size(); j++) {
+            Float dist  = aabb.getMinDistanceSqr(ray.parts[j]);
+            minDistance = min(minDistance, dist);
+        }
+        return minDistance;
+    }
+
     // Method to get the upper bound for a given cluster
-    Float getClusterUpperBound(const Scene *scene, Sampler *sampler, const Node &cluster, const Ray3f &r, UInt32 channel, size_t &BBIntersection) const {
+    Float getClusterUpperBound(const Scene *scene, Sampler *sampler, const Node &cluster, const NLRay &r, UInt32 channel, size_t &BBIntersection) const {
         const Medium *medium = cluster.represent.getMedium();
 
         // Find closest distance between camera ray and the cluster
@@ -415,7 +424,7 @@ private:
         Float min_length       = 0.0;
         Point3f min_aabb_point = Point3f(0.0);
         if (cluster.nodes.size() > m_thresholdBetterDist) {
-            min_length = cluster.aabb.getMinDistanceSqr(r);
+            min_length = getMinDistanceSqr(cluster.aabb, r);
             min_length = safe_sqrt(min_length);
 
             // increment number of bounding volume intersection counter
@@ -445,25 +454,25 @@ private:
         Mask active = true;
 
         // TODO: This part of the code should be adapted/checked in case of heterogenous participating media rendering
-        Vector3f dir = r.d;
+        //Vector3f dir = r.d;
         Spectrum transmittance(1.0);
         Spectrum material = Spectrum(1.f);
         if (medium->is_homogeneous()) {
             // TODO: For example, the direction does not matter when homogenous media is used.
-            Ray3f rayOtoPonCluster(r.o, r.d, 0);
+            Ray3f rayOtoPonCluster(r.o(), r.d(), 0);
             rayOtoPonCluster.mint = 0;
             rayOtoPonCluster.maxt = min_length;
 
             transmittance = medium->evalTransmittance(rayOtoPonCluster, sampler, active);
 
             MediumInteraction3f ray_mi;
-            ray_mi.p                         = r.o;
+            ray_mi.p                         = r.o();
             auto [sigma_s, sigma_n, sigma_t] = medium->get_scattering_coefficients(ray_mi, active);
             material *= sigma_s;
             material *= sigma_s;
 
         } else {
-            Log(LogLevel::Error, "Heterogeneous Lightcut not implemented");
+            Log(Error, "Heterogeneous Lightcut not implemented");
         }
 
         // TODO: This is a very loose upper bound for the moment
@@ -486,7 +495,7 @@ private:
         Spectrum tmpLi = invPdf * cluster.represent.flux * material * transmittance;
         Float mag      = squared_norm(tmpLi);
         if (std::isnan(mag) || mag < 0.0) {
-            Log(LogLevel::Info, "ERROR!");
+            Log(Info, "ERROR! mag: %i, r.maxt=%i, invPdf=%i, flux=%i, material=%i, transmittance=%i", r.maxt, invPdf, mag, cluster.represent.flux, material, transmittance);
         }
 
         return hmax(tmpLi);
@@ -740,6 +749,14 @@ private:
         Log(LogLevel::Info, "Light tree built!");
 
         return clusterList[numNodes - 1];
+    }
+
+    inline Float sqrDistanceVRL(const NLRay& r, const VRL& beam) const { 
+        Float minDist = math::Max<Float>;
+        for (size_t i = 0; i < r.parts.size(); i++) {
+            minDist = min(minDist, sqrDistanceVRL(r.parts[i], beam));
+        }
+        return minDist;
     }
 
     inline Float sqrDistanceVRL(const Ray3f &r, const VRL &beam) const {

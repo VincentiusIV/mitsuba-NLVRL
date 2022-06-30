@@ -40,7 +40,7 @@ Thin dielectric material (:monosp:`thindielectric`)
 
 This plugin models a **thin** dielectric material that is embedded inside another
 dielectric---for instance, glass surrounded by air. The interior of the material
-is assumed to be so thin that its effect on transmitted rays is negligible,
+is assumed to be so thin that its effect on transmitted parts is negligible,
 Hence, light exits such a material without any form of angular deflection
 (though there is still specular reflection).
 This model should be used for things like glass windows that were modeled using only a

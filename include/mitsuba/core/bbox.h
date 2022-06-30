@@ -331,6 +331,7 @@ template <typename Point_> struct BoundingBox {
         return { c, norm(c - max) };
     }
 
+
     template <typename Ray> MTS_INLINE auto getMinDistanceSqr(const Ray &ray) const {
         using Float  = typename Ray::Float;
         using Vector = typename Ray::Vector;

@@ -10,14 +10,15 @@
 		<float name="min_vrl_length" value="50"/>
 		<integer name="target_vrls" value="8000"/>
 		<integer name="samples_per_query" value="1"/>
-		<boolean name="use_uniform_sampling" value="false"/>
-		<boolean name="use_light_cut" value="true"/>
+		<boolean name="use_uniform_sampling" value="true"/>
+		<boolean name="use_light_cut" value="false"/>
 		<integer name="lightcut_samples" value="1"/>
 		<boolean name="stochastic_lightcut" value="false"/>
 		<boolean name="use_direct_illum" value="false"/>
 		
 		<boolean name="use_non_linear" value="true"/>
 		<boolean name="use_non_linear_camera" value="true"/>
+		<boolean name="use_nl_atomic_query" value="true"/>
 		
 		<boolean name="use_laser" value="true"/>
 		<vector name="laser_origin" value="-810, 104.9, -149.9"/>

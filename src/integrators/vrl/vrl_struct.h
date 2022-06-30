@@ -11,30 +11,48 @@ template <typename Float, typename Spectrum> struct NLRay {
     MTS_IMPORT_TYPES()
     MTS_IMPORT_OBJECT_TYPES()
 
-    std::vector<Ray3f> rays;
+    std::vector<Ray3f> parts;
+
+    mutable Vector3f wi;
     Float maxt;
 
-    NLRay() {
-        
+    NLRay() { 
+        clear();
     }
 
     void push_back(Ray3f& ray) { 
-        rays.push_back(ray);
+        parts.push_back(ray);
         maxt += ray.maxt;
     }
 
-    Ray3f first() const { return rays[0]; }
+    void clear() {
+        parts.clear();
+        maxt = 0.0f;
+    }
 
-    Point3f at(Float t) {
-        if (t < maxt) {
-            for (size_t i = 0; i < rays.size(); i++) {
-                t -= rays[i].maxt;
-                if (t < rays[i].maxt) {
-                    return rays[i](t);
+    Point3f o() const { 
+        return first().o;
+    }
+    Vector3f d() const{ 
+        return first().d;
+    }
+
+    Ray3f first() const { 
+        return parts[0];
+    }
+
+    Point3f at(const Float t) const {
+        Float dist = t;        
+        if (dist < maxt) {
+            for (size_t i = 0; i < parts.size(); i++) {
+                if (dist < parts[i].maxt) {
+                    wi = -parts[i].d;
+                    return parts[i].o + parts[i].d * dist;
                 }
+                dist -= parts[i].maxt;
             }
         }
-        return rays[rays.size() - 1](t);
+        return parts[parts.size() - 1](t);
     }
 };
 
@@ -42,6 +60,8 @@ template <typename Float, typename Spectrum> struct NLRay {
 template <typename Float, typename Spectrum> struct VRL {
     MTS_IMPORT_TYPES(PhaseFunctionContext)
     MTS_IMPORT_OBJECT_TYPES()
+
+    typedef NLRay<Float, Spectrum> NLRay;
 
     VRL() {
         // set VRL as invalid (assume system has quiet NaN)
@@ -216,18 +236,23 @@ template <typename Float, typename Spectrum> struct VRL {
         static SamplingInfo invalid() { return SamplingInfo{ Point3f(0.0), 0, Point3f(0.0), 0, 0 }; }
     };
 
-    SamplingInfo sampleMC(const Ray3f &ray, Sampler *sampler) const {
+    SamplingInfo sampleMC(const NLRay &ray, Sampler *sampler) const {
         Float tCam = sampler->next_1d() * ray.maxt;
         Float tVRL = sampler->next_1d() * length;
-        return SamplingInfo{ ray.o + ray.d * tCam, tCam, origin + direction * tVRL, tVRL, length * ray.maxt };
+        return SamplingInfo{ ray.at(tCam), tCam, origin + direction * tVRL, tVRL, length * ray.maxt };
     }
 
 #define USE_PEAK_SAMPLING 0
 #define USE_ANISOTROPIC_SAMPLING 1
-    SamplingInfo samplingVRL(const Scene* scene, const Ray3f &ray, Sampler *sampler, bool uniformSampling, UInt32 channel) const {
+    SamplingInfo samplingVRL(const Scene* scene, const NLRay &nlray, Sampler *sampler, bool uniformSampling, UInt32 channel) const {
+        return sampleMC(nlray, sampler);
         if (uniformSampling) {
-            return sampleMC(ray, sampler);
-        } else {
+        } else { 
+
+            // NOTE: Importance sampling not supported for non-linear query rays!
+
+            Ray3f ray          = nlray.first();
+
             auto closest_point = findClosetPoint(ray);
             auto h             = [&closest_point, this, &ray]() -> Float {
                 Point3f vh = origin + direction * closest_point.tVRL;
@@ -556,7 +581,7 @@ template <typename Float, typename Spectrum> struct VRL {
         return m;
     }
 
-    Spectrum getContrib(const Scene *scene, const bool uniformSampling, const bool useDirectIllum, Float directRadius, const Ray3f &ray, Float lengthOfRay, Sampler *sampler, UInt32 channel) const {
+    Spectrum getContrib(const Scene *scene, const bool uniformSampling, const bool useDirectIllum, Float directRadius, const NLRay &ray, Float lengthOfRay, Sampler *sampler, UInt32 channel) const {
         auto sampling = samplingVRL(scene, ray, sampler, uniformSampling, channel);
 
         Vector3f dir     = sampling.pVRL - sampling.pCam;
@@ -583,7 +608,7 @@ template <typename Float, typename Spectrum> struct VRL {
         Mask is_spectral        = m_medium->has_spectral_extinction();
         Mask not_spectral       = !is_spectral;
 
-        mi1.wi      = -ray.d;
+        mi1.wi      = ray.wi;//-ray.d;
         mi1.p       = sampling.pCam;
         Float rayPF = pf->eval(phase_ctx, mi1, dir);
         if (rayPF == 0)
@@ -608,7 +633,8 @@ template <typename Float, typename Spectrum> struct VRL {
         if (vrlToRayTrans[0] == 0.0f && vrlToRayTrans[1] == 0.0f && vrlToRayTrans[2] == 0.0f)
             return Spectrum(0.0f);
 
-        Ray3f mediumRay(ray.o, ray.d, 0);
+        // Direction doesnt matter when sampling Tr in homogeneous media.
+        Ray3f mediumRay(ray.first().o, ray.first().d, 0);
         mediumRay.mint = 0;
         mediumRay.maxt = sampling.tCam;
 
@@ -631,45 +657,6 @@ template <typename Float, typename Spectrum> struct VRL {
                   * rayTrans                                   // = 0
                   * vrlToRayTrans                              // = 0
                   * sigmaSRay * sigmaSVRL * sampling.invPDF; // = nan
-//#if VRL_DEBUG
-//        if (true)
-//#else
-//        if (std::isnan(result[0]) || std::isnan(result[1]) || std::isnan(result[2]) || std::isinf(result[0]) || std::isinf(result[1]) || std::isinf(result[2]))
-//#endif
-//        {
-//            std::ostringstream stream;
-//            stream << "Contrib VRL = [ray:" << ray << ", flux:" << flux << ", fallOff:" << fallOff << ", vrlTrans:" << vrlTrans << ", vrlPF:" << vrlPF << ", rayPF:" << rayPF << ", rayTrans:" << rayTrans << ", vrlToRayTrans:" << vrlToRayTrans << ", sigmaSRay:" << sigmaSRay << ", sigmaSVRL:" << sigmaSVRL << ", invPDF:" << sampling.invPDF
-//                   << ", result = " << result;
-//            std::string str = stream.str();
-//            Log(LogLevel::Info, str.c_str());
-//        }
-//
-//        if (useDirectIllum && is_direct) {
-//            if (lengthPtoP < directRadius) {
-//                mi1.wi = direction;
-//                Float photonPF  = pf->eval(phase_ctx, mi1, -ray.d);
-//                mi1.combined_extinction = m_medium->get_combined_extinction(mi1, true);
-//                Spectrum throughput(1.0);
-//
-//                SurfaceInteraction3f si;
-//                si.t = math::Infinity<Float>;
-//                Mask is_spectral = m_medium->has_spectral_extinction();
-//
-//                auto [tr, free_flight_pdf] = m_medium->eval_tr_and_pdf(mi1, si, is_spectral);
-//                Float tr_pdf               = index_spectrum(free_flight_pdf, channel);
-//                throughput *= select(tr_pdf > 0.f, tr / tr_pdf, 0.f);
-//                
-//                 if (any_or<true>(is_spectral))
-//                    throughput *= sigmaSVRL * index_spectrum(mi1.combined_extinction, channel) / index_spectrum(sigmaTVRL, channel);
-//                else
-//                    throughput *= sigmaSVRL / sigmaTVRL;
-//
-//                Float invSinTheta = 1.0f / sqrt(max(0.0f, 1.0f - sqr(dot(ray.d, direction))));
-//                Spectrum direct = flux * throughput * photonPF / (UNIT_SPHERE_VOLUME * enoki::pow(directRadius, 3));
-//                //Spectrum direct = sigmaTRay * invSinTheta / (2.0f * directRadius) * photonPF * tr * flux;
-//                result += direct;
-//            }
-//        } 
 
         return result;
     }

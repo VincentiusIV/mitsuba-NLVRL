@@ -43,7 +43,7 @@ std::tuple<Float, Float, Float, Float> fresnel(Float cos_theta_i, Float eta) {
     Float cos_theta_t_sqr =
         fnmadd(fnmadd(cos_theta_i, cos_theta_i, 1.f), eta_ti * eta_ti, 1.f);
 
-    /* Find the absolute cosines of the incident/transmitted rays */
+    /* Find the absolute cosines of the incident/transmitted parts */
     Float cos_theta_i_abs = abs(cos_theta_i);
     Float cos_theta_t_abs = safe_sqrt(cos_theta_t_sqr);
 
@@ -158,7 +158,7 @@ fresnel_polarized(Float cos_theta_i, Float eta) {
     Float cos_theta_t_sqr =
         fnmadd(fnmadd(cos_theta_i, cos_theta_i, 1.f), eta_ti * eta_ti, 1.f);
 
-    /* Find the cosines of the incident/transmitted rays */
+    /* Find the cosines of the incident/transmitted parts */
     Float cos_theta_i_abs = abs(cos_theta_i);
     Complex<Float> cos_theta_t = sqrtz(cos_theta_t_sqr);
 
@@ -240,7 +240,7 @@ fresnel_polarized(Float cos_theta_i, Complex<Float> eta) {
     Complex<Float> cos_theta_t_sqr =
         1.f - sqr(eta_ti) * fnmadd(cos_theta_i, cos_theta_i, 1.f);
 
-    /* Find the cosines of the incident/transmitted rays */
+    /* Find the cosines of the incident/transmitted parts */
     Float cos_theta_i_abs = abs(cos_theta_i);
     Complex<Float> cos_theta_t = sqrt(cos_theta_t_sqr);
 

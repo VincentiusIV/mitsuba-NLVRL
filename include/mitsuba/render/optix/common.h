@@ -61,9 +61,9 @@ struct OptixParams {
     OptixTraversableHandle handle;
 
 #ifdef __CUDACC__
-    /// Return whether the current kernel is tracing test rays
+    /// Return whether the current kernel is tracing test parts
     __device__ bool is_ray_test() { return out_hit; }
-    /// Return whether the current kernel is tracing preliminary rays
+    /// Return whether the current kernel is tracing preliminary parts
     __device__ bool is_ray_intersect_preliminary() { return out_prim_uv[0]; }
 
     /// Various helper methods to check whether an output field was requested by the host

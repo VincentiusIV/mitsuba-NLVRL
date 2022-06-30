@@ -172,7 +172,7 @@ public:
             SurfaceInteraction si_bsdf =
                 scene->ray_intersect(si.spawn_ray(si.to_world(bs.wo)), active_b);
 
-            // Retain only rays that hit an emitter
+            // Retain only parts that hit an emitter
             EmitterPtr emitter = si_bsdf.emitter(scene, active_b);
             active_b &= neq(emitter, nullptr);
 

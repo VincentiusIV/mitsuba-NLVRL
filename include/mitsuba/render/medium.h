@@ -101,7 +101,14 @@ public:
 
     Spectrum evalTransmittance(const Ray3f &_ray, Sampler *sampler, Mask active, bool analytic = false) const {
         Ray3f ray(_ray);
-        
+
+        if (analytic && is_homogeneous()) {
+            float negLength = ray.mint - ray.maxt;
+            Float val       = enoki::exp(max_density() * negLength);
+            Spectrum tr(max_density() != 0 ? val : (Float) 1.0f);
+            return tr;
+        }
+
         Float t    = ray.mint;
         Float maxt = ray.maxt;
         MediumInteraction3f mi;
@@ -114,12 +121,7 @@ public:
         SurfaceInteraction3f si;
         si.t = _ray.maxt;
 
-        if (analytic && is_homogeneous()) {
-            float negLength = ray.mint - ray.maxt;
-            Float val       = enoki::exp(max_density() * negLength);
-            Spectrum tr(max_density() != 0 ? val : (Float) 1.0f);
-            return tr;
-        }
+
 
         Spectrum throughput(1.0f);
         while (t < maxt) {

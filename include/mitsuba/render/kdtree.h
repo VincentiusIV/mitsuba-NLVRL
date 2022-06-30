@@ -2104,7 +2104,7 @@ public:
                 const Float split   = node->split();
                 const uint32_t axis = node->axis();
 
-                /* Compute parametric distance along the rays to the split plane */
+                /* Compute parametric distance along the parts to the split plane */
                 Float t_plane = (split - ray.o[axis]) * ray.d_rcp[axis];
 
                 bool left_first  = (ray.o[axis] < split) ||
@@ -2207,7 +2207,7 @@ public:
                     const scalar_t<Float> split = node->split();
                     const uint32_t axis = node->axis();
 
-                    // Compute parametric distance along the rays to the split plane
+                    // Compute parametric distance along the parts to the split plane
                     Float t_plane          = (split - ray.o[axis]) * ray.d_rcp[axis];
                     Mask left_first        = (ray.o[axis] < split) ||
                                               (eq(ray.o[axis], split) && ray.d[axis] >= 0.f),
