@@ -18,8 +18,9 @@
 		<boolean name="stochastic_lightcut" value="false"/>
 		<boolean name="use_direct_illum" value="true"/>
 		
-		<boolean name="use_non_linear" value="false"/>
-		<boolean name="use_non_linear_camera" value="false"/>
+		<boolean name="use_non_linear" value="true"/>
+		<boolean name="use_non_linear_camera" value="true"/>
+		<boolean name="use_nl_atomic_query" value="true"/>
     </integrator>
 
 </scene>

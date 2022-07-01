@@ -155,31 +155,21 @@ public:
                                           Mask active) const override {
         Float dist     = m_bsphere.radius;
 
-        Float u      = sample3.x();
-        Float v      = sample3.y();
-        Float theta  = u * 2.0 * math::Pi<Float>;
-        Float phi    = acos(2.0 * v - 1.0);
-        Float r      = enoki::cbrt(wavelength_sample);
-        Float sinTheta = sin(theta);
-        Float cosTheta = cos(theta);
-        Float sinPhi   = sin(phi);
-        Float cosPhi   = cos(phi);
-        Float x        = r * sinPhi * cosTheta;
-        Float y        = r * sinPhi * sinTheta;
-        Float z        = r * cosPhi;
-        Vector3f rand_sphere_dir(x, y, z);
-        Point3f sphere_pos  = rand_sphere_dir * dist;
+        Vector3f randSpherePos = randSphere(sample2);
 
-        Interaction3f it;
-        it.p                = sphere_pos;
-        it.time             = time;
-        it.wavelengths      = zero<Wavelength>();
-        auto [ds, radiance] = sample_direction(it, sample2, active);
-        Point3f o           = -ds.n * dist;
-        if (dot(rand_sphere_dir, ds.n) < 0)
-            rand_sphere_dir *= -1;
+        SurfaceInteraction3f si;
+        si.wavelengths      = zero<Wavelength>();
+        si.time = time;
+        si.wi = -randSpherePos;
+        si.sh_frame   = Frame3f(si.wi);
+        Spectrum radiance   = eval(si, active) * 4 * math::Pi<Float> * sqr(dist);
 
-        return std::make_pair(Ray3f(o, rand_sphere_dir, time), radiance );
+        Vector3f local = warp::square_to_cosine_hemisphere(sample3);
+        Vector3f hemisphere = si.to_world(local);
+
+        Ray3f ray(randSpherePos * dist, hemisphere, time);
+
+        return std::make_pair(ray, radiance );
     }
 
     Vector3f randSphere(const Point2f& sample) const {

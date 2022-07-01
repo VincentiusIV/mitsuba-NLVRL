@@ -553,13 +553,16 @@ public:
 
                                 gatherRay.maxt = nli.t;
 
-                                //nlray.clear();
-                                nlray.push_back(std::move(gatherRay));
+                                if (m_useNLAtomicQuery) {
+                                    nlray.push_back(std::move(gatherRay));
 
-                                /*auto [evaluations, color, intersections] = m_vrlMap->query(nlray, scene, sampler, -1, ray.maxt, m_useUniformSampling, m_useDirectIllum, m_volumeLookupRadius,
-                                                                                           m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
-                                indirectIllum += color * vrlThroughput;
-                                vrlThroughput *= medium->evalTransmittance(gatherRay, sampler, active, true);*/
+                                } else {
+                                    nlray.clear();
+                                    nlray.push_back(std::move(gatherRay));
+                                    auto [evaluations, color, intersections] = m_vrlMap->query(nlray, scene, sampler, -1, ray.maxt, m_useUniformSampling, m_useDirectIllum, m_volumeLookupRadius, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
+                                    indirectIllum += color * vrlThroughput;
+                                    vrlThroughput *= medium->evalTransmittance(gatherRay, sampler, active, true);
+                                }
 
                                 gatherRay        = Ray3f(ray);
                                 gatherRay.maxt   = si.t;

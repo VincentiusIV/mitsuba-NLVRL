@@ -7,8 +7,8 @@
 		<integer name="volume_photons" value="0"/>
 		<float name="volume_lookup_radius_relative" value="0.005"/>
 		<float name="global_lookup_radius_relative" value="0.1"/>
-		<float name="min_vrl_length" value="50"/>
-		<integer name="target_vrls" value="16000"/>
+		<float name="min_vrl_length" value="0"/>
+		<integer name="target_vrls" value="64000"/>
 		<integer name="samples_per_query" value="1"/>
 		<boolean name="use_uniform_sampling" value="false"/>
 		<boolean name="use_light_cut" value="true"/>
@@ -18,6 +18,7 @@
 		
 		<boolean name="use_non_linear" value="true"/>
 		<boolean name="use_non_linear_camera" value="true"/>
+		<boolean name="use_nl_atomic_query" value="true"/>
     </integrator>
 
 </scene>
