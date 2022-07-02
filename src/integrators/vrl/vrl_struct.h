@@ -245,8 +245,8 @@ template <typename Float, typename Spectrum> struct VRL {
 #define USE_PEAK_SAMPLING 0
 #define USE_ANISOTROPIC_SAMPLING 1
     SamplingInfo samplingVRL(const Scene* scene, const NLRay &nlray, Sampler *sampler, bool uniformSampling, UInt32 channel) const {
-        return sampleMC(nlray, sampler);
         if (uniformSampling) {
+            return sampleMC(nlray, sampler);
         } else { 
 
             // NOTE: Importance sampling not supported for non-linear query rays!
@@ -581,7 +581,7 @@ template <typename Float, typename Spectrum> struct VRL {
         return m;
     }
 
-    Spectrum getContrib(const Scene *scene, const bool uniformSampling, const bool useDirectIllum, Float directRadius, const NLRay &ray, Float lengthOfRay, Sampler *sampler, UInt32 channel) const {
+    Spectrum getContrib(const Scene *scene, const bool uniformSampling, const NLRay &ray, Sampler *sampler, UInt32 channel) const {
         auto sampling = samplingVRL(scene, ray, sampler, uniformSampling, channel);
 
         Vector3f dir     = sampling.pVRL - sampling.pCam;
@@ -629,7 +629,7 @@ template <typename Float, typename Spectrum> struct VRL {
 
         int interactions = -1;
 
-        Spectrum vrlToRayTrans = evalTransmittance(scene, sampling.pCam, false, sampling.pVRL, false, m_medium, interactions, sampler, channel, active);
+        Spectrum vrlToRayTrans = m_medium->evalTransmittance(mediumPtoP, sampler, active, true); // evalTransmittance(scene, sampling.pCam, false, sampling.pVRL, false, m_medium, interactions, sampler, channel, active);
         if (vrlToRayTrans[0] == 0.0f && vrlToRayTrans[1] == 0.0f && vrlToRayTrans[2] == 0.0f)
             return Spectrum(0.0f);
 

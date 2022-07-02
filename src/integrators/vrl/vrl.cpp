@@ -50,18 +50,19 @@ public:
 
         m_useLaser        = props.bool_("use_laser", false);
         laserOrigin = props.vector3f("laser_origin", Vector3f());
-        laserDirection = props.vector3f("laser_direction", Vector3f());
+        laserDirection           = props.vector3f("laser_direction", Vector3f());
+        m_useNonLinear           = props.bool_("use_non_linear", true);
+        m_useNonLinearCameraRays = props.bool_("use_non_linear_camera", true);
+        m_useNLAtomicQuery  = props.bool_("use_nl_atomic_query", false);
 
         m_useDirectIllum = props.bool_("use_direct_illum", true);
         // VRL Options
         m_diceVRL             = props.int_("dice_vrl", 1);
         m_longVRL             = props.bool_("long_vrl", false);
-        m_useUniformSampling  = props.bool_("use_uniform_sampling", false);
-        m_useNLAtomicQuery  = props.bool_("use_nl_atomic_query", false);
+        m_useUniformSampling  = props.bool_("use_uniform_sampling", false) || m_useNLAtomicQuery && m_useNonLinearCameraRays;
+        Log(Info, "Use NL Camera: %i, NL Atomic: %i, Uniform Sampling: %i", m_useNonLinearCameraRays, m_useNLAtomicQuery, m_useUniformSampling);
         minVRLLength      = props.float_("min_vrl_length", 5);
 
-        m_useNonLinear           = props.bool_("use_non_linear", true);
-        m_useNonLinearCameraRays = props.bool_("use_non_linear_camera", true);
         m_useLightCut = props.bool_("use_light_cut", false);
         m_stochasticLightcut  = props.bool_("stochastic_lightcut", false);
         m_lightcutSamples = props.int_("lightcut_samples", 1);
@@ -450,7 +451,6 @@ public:
             lookupString = "- Scene Radius: " + std::to_string(sceneRadius);
             Log(LogLevel::Info, lookupString.c_str());
         }
-
         Ray3f ray(_ray);
         MediumPtr medium(_medium);
         Spectrum radiance(0.0f), throughput(1.0f);
@@ -476,7 +476,6 @@ public:
         }
 
         for (int bounce = 0;; ++bounce) {
-            
             active &= any(neq(depolarize(throughput), 0.f));
 
             Mask exceeded_max_depth = depth >= (uint32_t) m_maxDepth;
@@ -498,7 +497,7 @@ public:
                        << "active_surface: " << active_surface << std::endl
                        << "ray: " << ray << std::endl;
                 std::string str = stream.str();
-                Log(LogLevel::Error, str.c_str());
+                Log(Error, str.c_str());
             }
 
 #pragma region RTE
@@ -510,9 +509,9 @@ public:
             }
 
             if (any_or<true>(active_medium)) {
+                valid_ray |= true;
                 if (si.is_valid()) {
-                    valid_ray |= true;
-                    
+
                     // Gather VPM for direct+caustic
                     Float radius = m_volumeLookupRadius * enoki::lerp(0.5f, 1.5f, sampler->next_1d());
 
@@ -534,7 +533,7 @@ public:
                     Spectrum vrlThroughput = throughput;
 
                     int localGatherCount = 0;
-                    while (mediumRay.maxt < si.t && si.is_valid()) {
+                    while (mediumRay.maxt < si.t) {
                         ++localGatherCount;
                         if (localGatherCount > 100000) {
                             Log(LogLevel::Warn, "prob endless loop");
@@ -553,15 +552,12 @@ public:
 
                                 gatherRay.maxt = nli.t;
 
-                                if (m_useNLAtomicQuery) {
-                                    nlray.push_back(std::move(gatherRay));
-
-                                } else {
-                                    nlray.clear();
-                                    nlray.push_back(std::move(gatherRay));
-                                    auto [evaluations, color, intersections] = m_vrlMap->query(nlray, scene, sampler, -1, ray.maxt, m_useUniformSampling, m_useDirectIllum, m_volumeLookupRadius, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
+                                nlray.push_back(std::move(gatherRay));
+                                if (!m_useNLAtomicQuery){
+                                    auto [evaluations, color, intersections] = m_vrlMap->query(nlray, scene, sampler, -1, m_useUniformSampling, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
                                     indirectIllum += color * vrlThroughput;
                                     vrlThroughput *= medium->evalTransmittance(gatherRay, sampler, active, true);
+                                    nlray.clear();
                                 }
 
                                 gatherRay        = Ray3f(ray);
@@ -592,12 +588,12 @@ public:
                     // Gather VRLs for indirect
 
                     nlray.push_back(std::move(gatherRay));
-                    auto [evaluations, color, intersections] = m_vrlMap->query(nlray, scene, sampler, -1, nlray.maxt, m_useUniformSampling, m_useDirectIllum, m_volumeLookupRadius, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
+                    auto [evaluations, color, intersections] = m_vrlMap->query(nlray, scene, sampler, -1, m_useUniformSampling, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
                     indirectIllum += color * vrlThroughput;
                     
                     throughput *= medium->evalTransmittance(mediumRay, sampler, active, true);
                     
-                    radiance += indirectIllum;
+                    radiance += indirectIllum; // for mirage scene, this needs to be scaled up by about 7*PI pr
                     ++mediumDepth;
                 }
 

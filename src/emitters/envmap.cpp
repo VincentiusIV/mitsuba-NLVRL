@@ -169,7 +169,10 @@ public:
 
         Ray3f ray(randSpherePos * dist, hemisphere, time);
 
-        return std::make_pair(ray, radiance );
+        Float inv_sin_theta = safe_rsqrt(max(sqr(ray.d.x()) + sqr(ray.d.z()), sqr(math::Epsilon<Float>)));
+        Float pdf           = inv_sin_theta * (1.f / (2.f * sqr(math::Pi<Float>)));
+
+        return std::make_pair(ray, radiance / pdf);
     }
 
     Vector3f randSphere(const Point2f& sample) const {

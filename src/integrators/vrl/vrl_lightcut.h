@@ -240,7 +240,7 @@ public:
         size_t nb_evaluation;
     };
 
-    Spectrum query(const Scene *scene, LCQuery &query, size_t &nb_BBIntersection, Float directRadius, UInt32 channel) const {
+    Spectrum query(const Scene *scene, LCQuery &query, size_t &nb_BBIntersection, UInt32 channel) const {
         if (m_root == nullptr)
             return Spectrum(0.f);
 
@@ -263,8 +263,7 @@ public:
         // TODO: This might be not necessary if we only use the query to accumulate the values...
         // TODO: However, it might be too complex to do it
         // Get the root node and put it inside the queue
-        refiningCut.emplace(CutCluster{ m_root, getClusterUpperBound(scene, query.sampler, *m_root, query.ray, channel, nb_BBIntersection),
-                                        m_root->represent.getContrib(scene, uniform, directIllum, directRadius, query.ray, query.ray.maxt, query.sampler, channel) });
+        refiningCut.emplace(CutCluster{ m_root, getClusterUpperBound(scene, query.sampler, *m_root, query.ray, channel, nb_BBIntersection), m_root->represent.getContrib(scene, uniform, query.ray, query.sampler, channel) });
         Spectrum Li = refiningCut.top().estimate;
 
 #if DEBUG_VRL_LC
@@ -324,7 +323,7 @@ public:
                         estimate *= current_element.estimate;
                     } else {
                         query.nb_evaluation += 1;
-                        estimate = child_cluster->represent.getContrib(scene, uniform, directIllum, directRadius, query.ray, query.ray.maxt, query.sampler, channel);
+                        estimate = child_cluster->represent.getContrib(scene, uniform, query.ray, query.sampler, channel);
                     }
                     if (std::isnan(estimate[0]) || std::isnan(estimate[1]) || std::isnan(estimate[2])) {
                         std::ostringstream stream;
