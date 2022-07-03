@@ -23,11 +23,13 @@ public:
         float n1, n2;
         Point3f p;
         float t;
+        Float eta;
 
         inline NonLinearInteraction()
         {
             is_valid = false;
             n1 = n2 = 1.0f;
+            eta = 1.0f;
             t = math::Infinity<Float>;
         }
     };

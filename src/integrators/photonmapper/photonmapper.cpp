@@ -453,6 +453,9 @@ public:
                     size_t M    = 0;
                     Spectrum volRadiance(0.0f);
 
+                    Float traveled_t     = 0;
+                    Float tr_t           = 0;
+
                     int localGatherCount = 0;
                     while (mediumRay.maxt < si.t ) {
                         ++localGatherCount;
@@ -461,7 +464,11 @@ public:
                             break;
                         }
 
+                        Float diff = mediumRay.maxt - mediumRay.mint;
+                        tr_t += diff;
                         throughput *= medium->evalTransmittance(mediumRay, sampler, active, true);
+                        si.t -= diff;
+                        traveled_t += diff;
 
                         if (m_useNonLinearCameraRays && m_useNonLinear && medium->is_nonlinear()) {
                             nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
@@ -473,6 +480,7 @@ public:
 
                                 float gatherMaxt = mediumRay.maxt - nli.t;
                                 mediumRay        = Ray3f(ray);
+                                mediumRay.mint   = 0.0f;
                                 mediumRay.maxt   = gatherMaxt;
 
                                 nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
@@ -486,7 +494,6 @@ public:
 
                         MVol += M;
 
-                        si.t -= mediumRay.maxt;
                         mediumRay.o    = gatherPoint;
                         mediumRay.maxt = radius * 2.0f;
                     }
@@ -498,7 +505,10 @@ public:
                     gatherCount += localGatherCount;
 
                     throughput *= medium->evalTransmittance(mediumRay, sampler, active, true);
-                    //++mediumDepth;
+
+                    if (traveled_t != tr_t) {
+                        Log(Warn, "Incorrect Tr for curved path, traveled: %i, tr: %i", traveled_t, tr_t);
+                    }
                 }
 
                 escaped_medium     = true;

@@ -55,8 +55,6 @@ public:
         m_has_spectral_extinction = props.bool_("has_spectral_extinction", true);
         m_from_bottom = props.bool_("from_bottom", true);
         resolution                = Point3f(props.int_("res_x", 4.0), props.int_("res_y", 4.0), props.int_("res_z", 4.0));
-        
-
     }
 
     void build(Point3f min, Point3f max) override {
@@ -68,7 +66,6 @@ public:
         int arrayIndex = 0;
         grid           = new NLNode[arraySize];
         Log(Info,"[NLHM]: Allocating grid... size = %i", arraySize);
-        Log(Info, to_string().c_str());
         Float nmin = 100000000, nmax = -10000000;
 
         for (int x = 0; x < resolution[0]; x++) {
@@ -135,7 +132,7 @@ public:
 
             return n(select(m_from_bottom, relativePosition.y(), position.y()), 3);
         } else {
-            float norm = select(m_from_bottom, relativePosition.y() / height, max(0, position.y() / (height * 0.5))); // 
+            float norm = select(m_from_bottom, relativePosition.x() / height, max(0, position.x() / (height * 0.5))); // 
             return lerp(bottomIoR, topIoR, norm);
         }
     }
@@ -148,7 +145,7 @@ public:
             if (grid[i].aabb.contains(position))
                 return { true, i };
         }
-
+        Log(Warn, "Unable to find node for position %i which is inside the bbox?", position);
         return { false, 0 };
     }
 
@@ -217,9 +214,12 @@ public:
             return false;
 
         //throughput *= evalMediumTransmittance(its_test, sampler, active);
+        
+        throughput *= nli.eta;
 
         // Move ray to nli.p
-        ray.o = ray(nli.t + math::RayEpsilon<Float>);
+        ray.o = nli.p;
+        ray.mint = 0.0f;
         ray.d = nli.wo;
         ray.update();
 
@@ -235,7 +235,7 @@ public:
         mint = max(ray.mint, mint);
         maxt = min(ray.maxt, maxt);
 
-        auto combined_extinction = get_combined_extinction(mi, active);
+        auto combined_extinction = get_combined_extinction(mi, active); 
         Float m                  = combined_extinction[0];
         if constexpr (is_rgb_v<Spectrum>) { // Handle RGB rendering
             masked(m, eq(channel, 1u)) = combined_extinction[1];
@@ -301,17 +301,19 @@ public:
         Float nDot = dot(nli.n, ray.d);
         if (nDot > 0)
         {
-            if (abs(nli.n[0]) == 1.0f)
+            nli.n *= -1.0f;
+            /*if (abs(nli.n[0]) == 1.0f)
                 nli.n[0] *= -1.0f;
             if (abs(nli.n[1]) == 1.0f)
                 nli.n[1] *= -1.0f;
             if (abs(nli.n[2]) == 1.0f)
-                nli.n[2] *= -1.0f;
+                nli.n[2] *= -1.0f;*/
         }
 
         // 4. Find neighbouring node that was hit, fill in n2.
         //Point3f neighbourOrigin = nli.p - nli.n * math::RayEpsilon<Float>;
         auto [validNeighbour, neighbourIdx] = getNeighbour(nodeIdx, nli.n);
+        //auto [validNeighbour, neighbourIdx] = getNode()
 
         if (!validNeighbour) {
             nli.is_valid = false;
@@ -326,7 +328,14 @@ public:
         if (norm(nli.wo) == 0.0f)
         {
             nli.wo = reflect(nli.wi, nli.n);
+        } else {
+            Float cos_theta_i = Frame3f::cos_theta(-nli.wi);
+            auto outside_mask = cos_theta_i >= 0.f;
+            Float eta         = nli.n1 / nli.n2;
+            Float rcp_eta = rcp(eta);
+            nli.eta = select(outside_mask, eta, rcp_eta);
         }
+
 
         // Update mi since info should be gathered from a different point
         if (norm(nli.wo) == 0.0f || (norm(nli.n) == 0.0f) || nodeIdx == neighbourIdx) {

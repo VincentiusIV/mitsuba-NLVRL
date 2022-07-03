@@ -50,24 +50,17 @@ MTS_VARIANT std::vector<std::string> SamplingIntegrator<Float, Spectrum>::aov_na
 
 MTS_VARIANT bool SamplingIntegrator<Float, Spectrum>::render(Scene *scene, Sensor *sensor) {
 
-    Log(Info, "starting render");
-
     ScopedPhase sp(ProfilerPhase::Render);
     m_stop = false;
-
-    Log(Info, "1..."); 
 
     ref<Film> film = sensor->film();
     ScalarVector2i film_size = film->crop_size();
 
-    Log(Info, "2..."); 
     size_t total_spp = sensor->sampler()->sample_count();
-    Log(Info, "3... spp = %i, total_spp = %i", m_samples_per_pass, total_spp); 
     size_t samples_per_pass = (m_samples_per_pass == (size_t) -1) ? total_spp : std::min((size_t) m_samples_per_pass, total_spp);
     if ((total_spp % samples_per_pass) != 0)
         Throw("sample_count (%d) must be a multiple of samples_per_pass (%d).", total_spp, samples_per_pass);
 
-    Log(Info, "4..."); 
     size_t n_passes = (total_spp + samples_per_pass - 1) / samples_per_pass;
 
     std::vector<std::string> channels = aov_names();

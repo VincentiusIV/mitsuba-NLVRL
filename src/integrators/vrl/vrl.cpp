@@ -512,8 +512,10 @@ public:
                 valid_ray |= true;
                 if (si.is_valid()) {
 
+                    int nli_it = 0;
+
                     // Gather VPM for direct+caustic
-                    Float radius = m_volumeLookupRadius * enoki::lerp(0.5f, 1.5f, sampler->next_1d());
+                    Float radius = m_volumeLookupRadius;;// * enoki::lerp(0.5f, 1.5f, sampler->next_1d());
 
                     Ray3f mediumRay(ray);
                     mediumRay.mint = 0.0f;
@@ -532,6 +534,9 @@ public:
                     // Tr is handled through VRL queries, so we gotta be careful we dont apply it multiple times...
                     Spectrum vrlThroughput = throughput;
 
+                    Float traveled_t = 0;
+                    Float tr_t = 0;
+
                     int localGatherCount = 0;
                     while (mediumRay.maxt < si.t) {
                         ++localGatherCount;
@@ -540,7 +545,11 @@ public:
                             break;
                         }
 
-                        throughput *= medium->evalTransmittance(mediumRay, sampler, active, true);
+                        Float diff = mediumRay.maxt - mediumRay.mint;
+                        tr_t += diff;
+                        //throughput *= medium->evalTransmittance(mediumRay, sampler, active, true);
+                        si.t -= diff;
+                        traveled_t += diff;
 
                         if (m_useNonLinearCameraRays && m_useNonLinear && medium->is_nonlinear()) {
                             nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
@@ -549,7 +558,7 @@ public:
                                 bool valid = medium->handleNonLinearInteraction(scene, sampler, nli, si, mi, ray, throughput, channel, active_medium);
                                 if (!valid)
                                     break;
-
+                                ++nli_it;
                                 gatherRay.maxt = nli.t;
 
                                 nlray.push_back(std::move(gatherRay));
@@ -560,11 +569,13 @@ public:
                                     nlray.clear();
                                 }
 
-                                gatherRay        = Ray3f(ray);
+                                gatherRay      = Ray3f(ray);
+                                gatherRay.mint = 0.0f;
                                 gatherRay.maxt   = si.t;
 
                                 float gatherMaxt = mediumRay.maxt - nli.t;
                                 mediumRay        = Ray3f(ray);
+                                mediumRay.mint = 0.0f;
                                 mediumRay.maxt   = gatherMaxt;
 
                                 nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
@@ -578,10 +589,43 @@ public:
 
                         MVol += M;
 
-                        si.t -= mediumRay.maxt;
+
                         mediumRay.o    = gatherPoint;
                         mediumRay.maxt = radius * 2.0f;
                     }
+
+                    if (m_useNonLinearCameraRays && m_useNonLinear && medium->is_nonlinear()) {
+                        nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
+                        while (nli.t < si.t && nli.is_valid) {
+
+                            bool valid = medium->handleNonLinearInteraction(scene, sampler, nli, si, mi, ray, throughput, channel, active_medium);
+                            if (!valid)
+                                break;
+
+                            gatherRay.maxt = nli.t;
+
+                            nlray.push_back(std::move(gatherRay));
+                            if (!m_useNLAtomicQuery) {
+                                auto [evaluations, color, intersections] =
+                                    m_vrlMap->query(nlray, scene, sampler, -1, m_useUniformSampling, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
+                                indirectIllum += color * vrlThroughput;
+                                vrlThroughput *= medium->evalTransmittance(gatherRay, sampler, active, true);
+                                nlray.clear();
+                            }
+
+                            gatherRay      = Ray3f(ray);
+                            gatherRay.mint = 0.0f;
+                            gatherRay.maxt = si.t;
+
+                            float gatherMaxt = mediumRay.maxt - nli.t;
+                            mediumRay        = Ray3f(ray);
+                            mediumRay.mint   = 0.0f;
+                            mediumRay.maxt   = gatherMaxt;
+
+                            nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
+                        }
+                    }
+
                     directIllum *= m_volumePhotonMap->getScaleFactor();
                     radiance += directIllum;
 
@@ -591,9 +635,19 @@ public:
                     auto [evaluations, color, intersections] = m_vrlMap->query(nlray, scene, sampler, -1, m_useUniformSampling, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
                     indirectIllum += color * vrlThroughput;
                     
+                    if (si.t > radius * 2) {
+                        Log(Warn, "si is further than gather radius, but we are still at end of loop? si.t = %i, radius = %i, mediumRay.maxt = %i", si.t, radius, mediumRay.maxt);
+                    }
+
+                    mediumRay.maxt = si.t;
                     throughput *= medium->evalTransmittance(mediumRay, sampler, active, true);
-                    
-                    radiance += indirectIllum; // for mirage scene, this needs to be scaled up by about 7*PI pr
+
+                    if (traveled_t != tr_t) {
+                        Log(Warn, "Incorrect Tr for curved path, traveled: %i, tr: %i", traveled_t, tr_t);
+                    }
+
+
+                    radiance += indirectIllum;
                     ++mediumDepth;
                 }
 
