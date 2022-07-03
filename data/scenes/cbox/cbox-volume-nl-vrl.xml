@@ -5,22 +5,22 @@
 		
 		<integer name="global_photons" value="100000"/>
 		<integer name="caustic_photons" value="50000"/>
-		<integer name="volume_photons" value="100000"/>
+		<integer name="volume_photons" value="10000"/>
 		<float name="global_lookup_radius_relative" value="0.1"/>
-		<float name="volume_lookup_radius_relative" value="0.02"/>
+		<float name="volume_lookup_radius_relative" value="0.5"/>
 		
-		<integer name="target_vrls" value="32000"/>
+		<integer name="target_vrls" value="16000"/>
 		<float name="min_vrl_length" value="50"/>
 		<integer name="samples_per_query" value="1"/>
 		<boolean name="use_uniform_sampling" value="true"/>
 		<boolean name="use_light_cut" value="true"/>
 		<integer name="lightcut_samples" value="10"/>
 		<boolean name="stochastic_lightcut" value="false"/>
-		<boolean name="use_direct_illum" value="true"/>
+		<boolean name="use_direct_illum" value="false"/>
 		
 		<boolean name="use_non_linear" value="true"/>
 		<boolean name="use_non_linear_camera" value="true"/>
-		<boolean name="use_nl_atomic_query" value="false"/>
+		<boolean name="use_nl_atomic_query" value="true"/>
     </integrator>
 
 </scene>

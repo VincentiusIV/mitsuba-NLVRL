@@ -23,6 +23,7 @@ public:
         float n1, n2;
         Point3f p;
         float t;
+        float eta;
 
         inline NonLinearInteraction()
         {

@@ -513,7 +513,7 @@ public:
                 if (si.is_valid()) {
 
                     // Gather VPM for direct+caustic
-                    Float radius = m_volumeLookupRadius * enoki::lerp(0.5f, 1.5f, sampler->next_1d());
+                    Float radius = m_volumeLookupRadius;// * enoki::lerp(0.5f, 1.5f, sampler->next_1d());
 
                     Ray3f mediumRay(ray);
                     mediumRay.mint = 0.0f;

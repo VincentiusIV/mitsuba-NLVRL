@@ -157,31 +157,41 @@ public:
         int before = nbIdx;
         assert(nbIdx == before);
 
-        nbIdx -= int(std::floor(normal.z()));
-        nbIdx -= int(std::floor(normal.y() * resolution[2]));
-        nbIdx -= int(std::floor(normal.x() * resolution[2] * resolution[1]));
+        int nz = int(std::floor(normal.z())), ny = int(std::floor(normal.y())), nx = int(std::floor(normal.x()));
+        if (abs(nz) == 1.0 && int(resolution.z()) == 1)
+            return { false, -1 };
 
-        return {
-            nbIdx >= 0 && nbIdx < arraySize, nbIdx
-        };
+        nbIdx -= nz;
+
+        if (abs(ny) == 1.0 && int(resolution.y()) == 1)
+            return { false, -1 };
+
+        nbIdx -= int(ny * resolution[2]);
+
+        if (abs(nx) == 1.0 && int(resolution.x()) == 1)
+            return { false, -1 };
+
+        nbIdx -= int(nx * resolution[2] * resolution[1]);
+
+        return { nbIdx >= 0 && nbIdx < arraySize, nbIdx };
     }
 
     Vector3f getNormal(Point3f position, ScalarBoundingBox3f aabb) const { 
         Vector3f minDiff = position - aabb.min;
         Vector3f maxDiff = position - aabb.max;
 
-        Float eps = 0.01f;
-        if (abs(minDiff[0]) < eps)
+        Float eps = math::RayEpsilon<Float>;
+        if (abs(minDiff[0]) <= eps)
             return Vector3f(-1.0, 0.0f, 0.0f);
-        if (abs(minDiff[1]) < eps)
+        if (abs(minDiff[1]) <= eps)
             return Vector3f(0.0f, -1.0f, 0.0f);
-        if (abs(minDiff[2]) < eps)
+        if (abs(minDiff[2]) <= eps)
             return Vector3f(0.0f, 0.0f, -1.0f);
-        if (abs(maxDiff[0]) < eps)
+        if (abs(maxDiff[0]) <= eps)
             return Vector3f(1.0f, 0.0f, 0.0f);
-        if (abs(maxDiff[1]) < eps)
+        if (abs(maxDiff[1]) <= eps)
             return Vector3f(0.0f, 1.0f, 0.0f);
-        if (abs(maxDiff[2]) < eps)
+        if (abs(maxDiff[2]) <= eps)
             return Vector3f(0.0f, 0.0f, 1.0f);
         std::ostringstream oss;
         oss << "Couldnt find normal for [" << std::endl
@@ -217,6 +227,7 @@ public:
             return false;
 
         //throughput *= evalMediumTransmittance(its_test, sampler, active);
+        throughput *= nli.eta;
 
         // Move ray to nli.p
         ray.o = ray(nli.t + math::RayEpsilon<Float>);
@@ -255,8 +266,7 @@ public:
     NonLinearInteraction sampleNonLinearInteraction(const Ray3f &ray, UInt32 channel, Mask active) const override { 
         NonLinearInteraction nli;
         nli.is_valid = false;
-        if (!bbox.contains(ray.o))
-            return nli; 
+
         Float rayNorm = norm(ray.d);
         if (rayNorm == 0.0f) {
             Log(LogLevel::Error, "ray with no direction");
@@ -264,7 +274,7 @@ public:
         }
         
         // 1. Find AABB that ray.o resides in.
-        auto[validNode, nodeIdx] = getNode(ray.o);
+        auto[validNode, nodeIdx] = getNode(ray(ray.mint));
         if (!validNode)
         {
             nli.is_valid = false;
@@ -297,7 +307,7 @@ public:
         nli.p = ray(nli.t);
 
         // 3. Calculate n
-        nli.n    = getNormal(nli.p, node.aabb);
+        nli.n      = getNormal(ray(maxt), node.aabb);
         Float nDot = dot(nli.n, ray.d);
         if (nDot > 0)
         {
@@ -323,9 +333,18 @@ public:
 
         // 5. Refract ray using nli info
         nli.wo = refract(nli.wi, nli.n, nli.n1, nli.n2);
-        if (norm(nli.wo) == 0.0f)
-        {
+        if (norm(nli.wo) == 0.0f) {
+            nli.eta = 1.0f;
+            nli.t   = maxt;
+            nli.p   = ray(nli.t);
             nli.wo = reflect(nli.wi, nli.n);
+            //nli.wo = ray.d;
+        } else {
+            Float cos_theta_i = Frame3f::cos_theta(-nli.wi);
+            auto outside_mask = cos_theta_i >= 0.f;
+            Float eta         = nli.n1 / nli.n2;
+            Float rcp_eta     = rcp(eta);
+            nli.eta           = select(outside_mask, eta, rcp_eta);
         }
 
         // Update mi since info should be gathered from a different point
