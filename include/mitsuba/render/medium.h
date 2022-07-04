@@ -100,6 +100,12 @@ public:
         return m;
     }
 
+    Spectrum homoEvalTransmittance(Float length) const {
+        Float val       = enoki::exp(max_density() * -length);
+        Spectrum tr(max_density() != 0 ? val : (Float) 1.0f);
+        return tr;
+    }
+
     Spectrum evalTransmittance(const Ray3f &_ray, Sampler *sampler, Mask active, bool analytic = false) const {
         Ray3f ray(_ray);
 

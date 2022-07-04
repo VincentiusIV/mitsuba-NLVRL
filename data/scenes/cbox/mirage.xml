@@ -21,8 +21,8 @@
             <integer name="sample_count" value="$spp"/>
         </sampler>
         <film type="hdrfilm">
-            <integer name="width" value="512"/>
-            <integer name="height" value="256"/>
+            <integer name="width" value="256"/>
+            <integer name="height" value="128"/>
             <rfilter type="box"/>
             <string name="pixel_format" value="rgb"/>
         </film>
@@ -37,7 +37,7 @@
 	</emitter>
 	
 	<medium id="medium1" type="nonlinear">
-        <float name="scale" value="0.01"/>
+        <float name="scale" value="0.01"/>	
         <rgb name="sigma_t" value="0.15"/>
         <rgb name="albedo" value="0.5, 0.5, 0.5"/>
         <phase type="isotropic" />
@@ -45,8 +45,8 @@
         <integer name="res_x" value="1"/>
         <integer name="res_y" value="300"/>
         <integer name="res_z" value="1"/>
-        <float name="topIoR" value="1.15"/>
-        <float name="bottomIoR" value="1.0"/>
+        <float name="topIoR" value="1.001"/>
+        <float name="bottomIoR" value="1.00"/>
 		<vector name="bottom_temp" value="45, 0, 0"/>
 		<vector name="top_temp" value="15, 0.02, 0"/>
 		<boolean name="from_bottom" value="false"/>

@@ -177,22 +177,31 @@ public:
     }
 
     Vector3f getNormal(Point3f position, ScalarBoundingBox3f aabb) const { 
-        Vector3f minDiff = position - aabb.min;
-        Vector3f maxDiff = position - aabb.max;
+        Vector3f minDiff = enoki::abs(position - aabb.min);
+        Vector3f maxDiff = enoki::abs(position - aabb.max);
 
-        Float eps = math::RayEpsilon<Float>;
-        if (abs(minDiff[0]) <= eps)
-            return Vector3f(-1.0, 0.0f, 0.0f);
-        if (abs(minDiff[1]) <= eps)
-            return Vector3f(0.0f, -1.0f, 0.0f);
-        if (abs(minDiff[2]) <= eps)
-            return Vector3f(0.0f, 0.0f, -1.0f);
-        if (abs(maxDiff[0]) <= eps)
-            return Vector3f(1.0f, 0.0f, 0.0f);
-        if (abs(maxDiff[1]) <= eps)
-            return Vector3f(0.0f, 1.0f, 0.0f);
-        if (abs(maxDiff[2]) <= eps)
-            return Vector3f(0.0f, 0.0f, 1.0f);
+        Float minDiffExt = hmin(minDiff);
+        Float maxDiffExt = hmin(maxDiff);
+
+        Float eps = 1e-03;
+        if (minDiffExt < maxDiffExt)
+        {
+            if (minDiff[0] <= eps && minDiff[0] == minDiffExt)
+                return Vector3f(-1.0, 0.0f, 0.0f);
+            if (minDiff[1] <= eps && minDiff[1] == minDiffExt)
+                return Vector3f(0.0f, -1.0f, 0.0f);
+            if (minDiff[2] <= eps && minDiff[2] == minDiffExt)
+                return Vector3f(0.0f, 0.0f, -1.0f);
+        } else {
+            if (maxDiff[0] <= eps && maxDiff[0] == maxDiffExt)
+                return Vector3f(1.0f, 0.0f, 0.0f);
+            if (maxDiff[1] <= eps && maxDiff[1] == maxDiffExt)
+                return Vector3f(0.0f, 1.0f, 0.0f);
+            if (maxDiff[2] <= eps && maxDiff[2] == maxDiffExt)
+                return Vector3f(0.0f, 0.0f, 1.0f);
+        }
+
+
         std::ostringstream oss;
         oss << "Couldnt find normal for [" << std::endl
             << "  position  = " << string::indent(position) << std::endl
@@ -223,11 +232,10 @@ public:
     bool handleNonLinearInteraction(const Scene *scene, Sampler* sampler, NonLinearInteraction &nli, SurfaceInteraction3f &si, MediumInteraction3f &mi, Ray3f &ray, Spectrum &throughput, UInt32 channel, Mask active) const override {
         // check intersection
         si = scene->ray_intersect(ray, active);
-        if (si.t < nli.t)
+        if (si.t < nli.t || !nli.is_valid)
             return false;
 
-        //throughput *= evalMediumTransmittance(its_test, sampler, active);
-        throughput *= nli.eta;
+        //throughput *= nli.eta; // this works and should be used for correct result, but doesnt work with VRL lightcut sometimes...
 
         // Move ray to nli.p
         ray.o = ray(nli.t + math::RayEpsilon<Float>);

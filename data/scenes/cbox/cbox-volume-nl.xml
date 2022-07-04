@@ -47,7 +47,7 @@
     </emitter>
 	
 	<medium id="medium1" type="nonlinear">
-        <float name="scale" value="0.00011"/>
+        <float name="scale" value="0.011"/>
         <rgb name="albedo" value="0.7, 0.7, 0.7"/>
         <rgb name="sigma_t" value="0.5, 0.5, 0.5"/>
         <phase type="isotropic" />
