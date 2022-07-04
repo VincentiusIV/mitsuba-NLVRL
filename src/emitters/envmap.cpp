@@ -16,7 +16,7 @@ NAMESPACE_BEGIN(mitsuba)
 
 Environment emitter (:monosp:`envmap`)
 --------------------------------------
-
+    
 .. pluginparameters::
 
  * - filename

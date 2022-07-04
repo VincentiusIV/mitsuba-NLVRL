@@ -629,7 +629,7 @@ template <typename Float, typename Spectrum> struct VRL {
 
         int interactions = -1;
 
-        Spectrum vrlToRayTrans = m_medium->evalTransmittance(mediumPtoP, sampler, active, true); // evalTransmittance(scene, sampling.pCam, false, sampling.pVRL, false, m_medium, interactions, sampler, channel, active);
+        Spectrum vrlToRayTrans = evalTransmittance(scene, sampling.pCam, false, sampling.pVRL, false, m_medium, interactions, sampler, channel, active);
         if (vrlToRayTrans[0] == 0.0f && vrlToRayTrans[1] == 0.0f && vrlToRayTrans[2] == 0.0f)
             return Spectrum(0.0f);
 

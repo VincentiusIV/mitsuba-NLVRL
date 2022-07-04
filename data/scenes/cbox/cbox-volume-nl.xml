@@ -54,8 +54,8 @@
         <integer name="res_x" value="1"/>
         <integer name="res_y" value="320"/>
         <integer name="res_z" value="1"/>
-        <float name="topIoR" value="0.75"/>
-        <float name="bottomIoR" value="1.0"/>
+        <float name="top_ior" value="0.75"/>
+        <float name="bottom_ior" value="1.0"/>
     </medium>
 
 	<!-- Fog -->
@@ -76,6 +76,8 @@
             <translate x="$cbox_x" y="$cbox_y" z="$cbox_z"/>
         </transform>
     </shape>
+	
+
 	
 	<shape type="rectangle">
         <ref id="white"/>

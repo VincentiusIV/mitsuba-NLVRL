@@ -43,8 +43,8 @@ public:
         m_albedo                  = props.volume<Volume>("albedo", 0.75f);
         m_sigmat                  = props.volume<Volume>("sigma_t", 1.f);
         m_scale                   = props.float_("scale", 1.0f);
-        topIoR                    = props.float_("topIoR", 0.7f);
-        bottomIoR                 = props.float_("bottomIoR", 1.0f);
+        topIoR                    = props.float_("top_ior", 0.7f);
+        bottomIoR                 = props.float_("bottom_ior", 1.0f);
         iorMethod                 = props.int_("ior_method", 0);
         topTemperature            = props.vector3f("top_temp", Vector3f(15, 0.02, 0));
         bottomTemperature         = props.vector3f("bottom_temp", Vector3f(45, 0, 0));
@@ -134,7 +134,20 @@ public:
         if (iorMethod == 1) {
 
             return n(select(m_from_bottom, relativePosition.y(), position.y()), 3);
-        } else {
+        } else if (iorMethod == 2) {
+            float topY    = topTemperature.y();
+            float bottomY = bottomTemperature.y();
+            if (position.y() <= bottomY)
+                return bottomIoR;
+            else if (position.y() >= topY)
+                return topY;
+            else {
+                float norm = (position.y() - bottomY) / (topY - bottomY);
+                return lerp(bottomY, topIoR, norm);
+            }
+        }
+        else {
+            
             float norm = select(m_from_bottom, relativePosition.y() / height, max(0, position.y() / (height * 0.5))); // 
             return lerp(bottomIoR, topIoR, norm);
         }
@@ -357,7 +370,6 @@ public:
             nli.t   = maxt;
             nli.p   = ray(nli.t);
             nli.wo = reflect(nli.wi, nli.n);
-            //nli.wo = ray.d;
         } else {
             Float cos_theta_i = Frame3f::cos_theta(-nli.wi);
             auto outside_mask = cos_theta_i >= 0.f;

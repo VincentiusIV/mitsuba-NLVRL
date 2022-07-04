@@ -21,7 +21,7 @@
 		<boolean name="use_nl_atomic_query" value="true"/>
 		
 		<boolean name="use_laser" value="true"/>
-		<vector name="laser_origin" value="-810, 104.9, -149.9"/>
+		<vector name="laser_origin" value="-810, 154.9, -149.9"/>
 		<vector name="laser_direction" value="0.9, -0.1, 0.0"/>
     </integrator>
 

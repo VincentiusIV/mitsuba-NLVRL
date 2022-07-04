@@ -66,6 +66,10 @@ public:
 
         minNLIcount                   = math::Max<int>;
         maxNLIcount                   = math::Min<int>;
+        maxGatherPoint = math::Min<size_t>;
+
+        directPhotons = 0;
+        indirectPhotons = 0;
     }
 
     void preprocess(Scene* scene, Sensor* sensor) override {
@@ -106,7 +110,7 @@ public:
                 oss << "photons[global=" << string::indent(m_globalPhotonMap->size()) << ", caustic= " << m_causticPhotonMap->size() << ", volume=" << m_volumePhotonMap->size() << "]";
                 Log(LogLevel::Info, oss.str().c_str());
             }
-            bool surfacePath = false, volumePath = false;
+            bool surfacePath = !m_globalPhotonMap->is_full(), volumePath = !m_volumePhotonMap->is_full();
 
             if (m_globalPhotonMap->is_full() && m_volumePhotonMap->size() == 0)
                 break; // stop, no volume in this scene.
@@ -248,6 +252,12 @@ public:
                     PhaseFunctionContext phase_ctx(sampler);
                     auto phase = mi.medium->phase_function();
                     if (!fromLight || m_useFirstPhoton || m_directOnly && mediumDepth == 0) {
+
+                        if (mediumDepth == 0)
+                            ++directPhotons;
+                        else
+                            ++indirectPhotons;
+
                         volumePath |= handleMediumInteraction(depth - nullInteractions, wasTransmitted, mi.p, medium, -ray.d, flux * throughput);
                     }
                     fromLight = false;
@@ -450,7 +460,7 @@ public:
                 valid_ray    = true;
                 int nliCount = 0;
                     // Gather VPM for direct+caustic
-                    Float radius   = m_volumeLookupRadius; // * enoki::lerp(0.5f, 1.5f, sampler->next_1d());
+                    Float radius   = m_volumeLookupRadius;//* enoki::lerp(0.75f, 1.25f, sampler->next_1d());
                     Float stepSize = radius, leftOver = 0.0;
                     Float gather_t = 0;
 
@@ -475,7 +485,7 @@ public:
                     if (m_useNonLinearCameraRays && m_useNonLinear && medium->is_nonlinear()) {
                         nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
 
-                        while (nli.t < si.t && nli.is_valid) {
+                        while (nli.t < si.t && si.is_valid() && nli.is_valid) {
 
                             bool valid = medium->handleNonLinearInteraction(scene, sampler, nli, si, mi, ray, throughput, channel, active_medium);
                             if (!valid)
@@ -515,6 +525,9 @@ public:
                         gatherPoints.push_back(gatherRay(gather_t));
                         stepSize = radius * 2;
                     }
+
+                    maxGatherPoint = max(gatherPoints.size(), maxGatherPoint);
+                    maxNLIlength   = max(nlray.maxt, maxNLIlength);
 
                     nlray.push_back(std::move(gatherRay));
 
@@ -655,6 +668,10 @@ public:
         stream << "Surface Query Count: " << surfaceQueryCount << std::endl
                << "Volume Query Count: " <<  volumeQueryCount << std::endl
                << "Volume Gather Count: " <<  gatherCount << std::endl
+               << "max gather point: " << maxGatherPoint << std::endl
+               << "maxNLIlength: " << maxNLIlength << std::endl
+               << "direct photons: " << directPhotons << std::endl
+               << "indirect photons: " << indirectPhotons << std::endl
                << "Global Map Size: " << util::mem_string(m_globalPhotonMap->getSize()) << std::endl
                << "Caustic Map Size: " << util::mem_string(m_causticPhotonMap->getSize()) << std::endl
                << "Volume Map Size: " << util::mem_string(m_volumePhotonMap->getSize()) << std::endl;
@@ -718,7 +735,10 @@ private:
     bool m_stochasticGather;
 
     mutable std::atomic<int> surfaceQueryCount, volumeQueryCount, gatherCount, nliCount, minNLIcount, maxNLIcount;
-    mutable std::atomic<size_t> surfaceQueryTime, volumeQueryTime;
+    mutable std::atomic<float> maxNLIlength;
+    mutable std::atomic<size_t> surfaceQueryTime, volumeQueryTime, maxGatherPoint;
+
+    int directPhotons, indirectPhotons;
 
     Timer m_preprocessTimer, volumePreprocessTimer;
 };

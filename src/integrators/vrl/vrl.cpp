@@ -121,7 +121,7 @@ public:
                     << ", vrls=" << m_vrlMap->size() << "]";
                 Log(LogLevel::Info, oss.str().c_str());
             }
-            bool surfacePath = false, volumePath = false, directVolumePath = false;
+            bool surfacePath = !m_globalPhotonMap->is_full(), volumePath = !m_vrlMap->is_full(), directVolumePath = !m_volumePhotonMap->is_full();
 
             if (m_globalPhotonMap->is_full() && (m_vrlMap->size() == 0 && m_volumePhotonMap->size() == 0))
                 break; // stop, no volume in this scene.
@@ -522,7 +522,7 @@ public:
                 valid_ray = true;
                 nliCount = 0;
                 // Gather VPM for direct+caustic
-                Float radius   = m_volumeLookupRadius; // * enoki::lerp(0.5f, 1.5f, sampler->next_1d());
+                Float radius   = m_volumeLookupRadius;// * enoki::lerp(0.75f, 1.25f, sampler->next_1d());
                 Float stepSize = radius, leftOver = 0.0;
                 Float gather_t = 0;
 
@@ -541,8 +541,6 @@ public:
                 NLRay nlray;
                 std::vector<Point3f> gatherPoints;
 
-                Spectrum vrlThroughput = throughput;
-
                 if (!si.is_valid()) {
                     Log(Warn, "si invalid before nli");
                 }
@@ -550,7 +548,7 @@ public:
                 if (m_useNonLinearCameraRays && m_useNonLinear && medium->is_nonlinear()) {
                     nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
 
-                    while (nli.t < si.t && nli.is_valid) {
+                    while (nli.t < si.t && si.is_valid() && nli.is_valid) {
 
                         bool valid = medium->handleNonLinearInteraction(scene, sampler, nli, si, mi, ray, throughput, channel, active_medium);
                         if (!valid)
@@ -569,14 +567,7 @@ public:
                         leftOver += nli.t - gather_t;
 
                         nlray.push_back(std::move(gatherRay));
-                        if (!m_useNLAtomicQuery) {
-                            auto [evaluations, color, intersections] =
-                                m_vrlMap->query(nlray, scene, sampler, -1, m_useUniformSampling, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
-                            indirectIllum += color * vrlThroughput;
-                            vrlThroughput *= medium->evalTransmittance(gatherRay, sampler, active, true);
-                            nlray.clear();
-                        }
-
+                        
                         gatherRay      = Ray3f(ray);
                         gatherRay.maxt = si.t;
 
@@ -587,7 +578,7 @@ public:
                 int debugCount = 0;
                 // Add gather points from origin until end of (last) gatherRay
                 gather_t = 0;
-                while (si.is_valid() && gather_t <= (gatherRay.maxt - (stepSize - leftOver))) {
+                while (gather_t <= (gatherRay.maxt - (stepSize - leftOver))) {
                     if (++debugCount > 100000) {
                         Log(Warn, "prob endless loop in gather point calc?");
                         break;
@@ -617,11 +608,28 @@ public:
                 directIllum *= m_volumePhotonMap->getScaleFactor();
                 radiance += directIllum;
 
-                // Gather VRLs for Indirect
-                auto [evaluations, color, intersections] =
-                    m_vrlMap->query(nlray, scene, sampler, -1, m_useUniformSampling, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
-                indirectIllum += color * vrlThroughput;
+                if (m_useNLAtomicQuery) {
+                    // Gather VRLs for Indirect
+                    auto [evaluations, color, intersections] =
+                        m_vrlMap->query(nlray, scene, sampler, -1, m_useUniformSampling, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
+                    indirectIllum += color * throughput;
+                } else {
+                    NLRay temp;
+                    Spectrum vrlThroughput = throughput;
+                    for (size_t i = 0; i < nlray.parts.size(); i++) {
+                        temp.clear();
+                        temp.push_back(nlray.parts[i]);
+                        auto [evaluations, color, intersections] =
+                            m_vrlMap->query(temp, scene, sampler, -1, m_useUniformSampling, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
+                        indirectIllum += color * vrlThroughput;
+                        vrlThroughput *= medium->homoEvalTransmittance(nlray.parts[i].maxt);
+                    }
+
+                    
+                }
+
                 throughput *= medium->homoEvalTransmittance(nlray.maxt);
+
                 radiance += indirectIllum;
 
                 ++mediumDepth;
@@ -712,12 +720,12 @@ public:
         }
 
         //valid_ray = true;
-        if (norm(radiance) == 0) {
+        /*if (norm(radiance) == 0) {
             Log(Warn, "black rad. ray: %i, nliCount: %i, tr: %i, wrm: %i, am: %i, as: %i, si: %i", ray, nliCount, throughput, wentThruMedium, active_medium, active_surface, si);
         }
         if (!valid_ray) {
             Log(Warn, "invalid ray. ray: %i, tr: %i, wrm: %i, am: %i, as: %i, si: %i", ray, throughput, wentThruMedium, active_medium, active_surface, si);
-        }
+        }*/
 
 
         return { radiance, valid_ray };
