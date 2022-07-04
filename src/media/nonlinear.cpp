@@ -231,20 +231,31 @@ public:
 
     bool handleNonLinearInteraction(const Scene *scene, Sampler* sampler, NonLinearInteraction &nli, SurfaceInteraction3f &si, MediumInteraction3f &mi, Ray3f &ray, Spectrum &throughput, UInt32 channel, Mask active) const override {
         // check intersection
-        si = scene->ray_intersect(ray, active);
-        if (si.t < nli.t || !nli.is_valid)
+        if (!nli.is_valid)
             return false;
+        si = scene->ray_intersect(ray, active);
+        if (si.t < nli.t )
+            return false;
+
+        if (!si.is_valid())
+            Log(Warn, "nli 1: si became invalid ");
 
         //throughput *= nli.eta; // this works and should be used for correct result, but doesnt work with VRL lightcut sometimes...
 
         // Move ray to nli.p
-        ray.o = ray(nli.t + math::RayEpsilon<Float>);
+        ray.o = nli.p;
+        ray.mint = 0.0f;
         ray.d = nli.wo;
         ray.update();
 
         // update si with bent ray.
         si = scene->ray_intersect(ray, active);
 
+        if (!si.is_valid())
+        {
+            Log(Warn, "nli 2: si became invalid. ray.o in bbox: %i ", bbox.contains(ray.o));
+
+        }
         // Update mi
         mi.sh_frame                 = Frame3f(ray.d);
         mi.wi                       = -ray.d;
@@ -264,7 +275,7 @@ public:
         }
 
         Mask valid_mi = active && (mi.t <= maxt);
-        mi.t -= (nli.t + math::RayEpsilon<Float>);
+        mi.t -= nli.t;
         mi.p                                         = ray(mi.t);
         std::tie(mi.sigma_s, mi.sigma_n, mi.sigma_t) = get_scattering_coefficients(mi, valid_mi);
         mi.combined_extinction                       = combined_extinction;

@@ -4,8 +4,8 @@
 	<integrator type="photonmap">
 		<integer name="global_photons" value="50000"/>
 		<integer name="caustic_photons" value="500000"/>
-		<integer name="volume_photons" value="50000"/>
-		<float name="volume_lookup_radius_relative" value="0.02"/>
+		<integer name="volume_photons" value="100000"/>
+		<float name="volume_lookup_radius_relative" value="0.01"/>
 		<float name="global_lookup_radius_relative" value="0.1"/>
 		<boolean name="use_first_photon" value="true"/>
 		<boolean name="direct_only" value="false"/>

@@ -477,6 +477,10 @@ public:
             uint32_t n_channels = (uint32_t) array_size_v<Spectrum>;
             channel             = (UInt32) min(sampler->next_1d(active) * n_channels, n_channels - 1);
         }
+        Mask active_medium, active_surface;
+        bool wentThruMedium = false;
+
+        int nliCount = 0;
 
         for (int bounce = 0;; ++bounce) {
             active &= any(neq(depolarize(throughput), 0.f));
@@ -486,10 +490,11 @@ public:
                 break;
             }
 
+
             // -------------------- RTE ----------------- //
 
-            Mask active_medium  = active && neq(medium, nullptr);
-            Mask active_surface = active && !active_medium;
+            active_medium       = active && neq(medium, nullptr);
+            active_surface      = active && !active_medium;
             Mask escaped_medium = false;
 
             if (bounce > 100000) {
@@ -500,7 +505,8 @@ public:
                        << "active_surface: " << active_surface << std::endl
                        << "ray: " << ray << std::endl;
                 std::string str = stream.str();
-                Log(Error, str.c_str());
+                Log(Warn, str.c_str());
+                break;
             }
 
 #pragma region RTE
@@ -512,10 +518,12 @@ public:
             }
 
             if (any_or<true>(active_medium)) {
+                wentThruMedium = true;
                 valid_ray = true;
-                int nliCount = 0;
+                nliCount = 0;
                 // Gather VPM for direct+caustic
-                Float radius = m_volumeLookupRadius;// * enoki::lerp(0.5f, 1.5f, sampler->next_1d());
+                Float radius   = m_volumeLookupRadius; // * enoki::lerp(0.5f, 1.5f, sampler->next_1d());
+                Float stepSize = radius, leftOver = 0.0;
                 Float gather_t = 0;
 
                 Ray3f mediumRay(ray);
@@ -531,11 +539,13 @@ public:
                 Spectrum directIllum(0.0f), indirectIllum(0.0);
 
                 NLRay nlray;
-
                 std::vector<Point3f> gatherPoints;
 
-                // Tr is handled through VRL queries, so we gotta be careful we dont apply it multiple times...
                 Spectrum vrlThroughput = throughput;
+
+                if (!si.is_valid()) {
+                    Log(Warn, "si invalid before nli");
+                }
 
                 if (m_useNonLinearCameraRays && m_useNonLinear && medium->is_nonlinear()) {
                     nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
@@ -547,6 +557,16 @@ public:
                             break;
                         ++nliCount;
                         gatherRay.maxt = nli.t;
+
+                        // Add gather points from origin until nli.t
+                        gather_t = 0;
+                        while (gather_t <= (nli.t - (stepSize - leftOver))) {
+                            gather_t += (stepSize - leftOver);
+                            leftOver = 0.0f;
+                            gatherPoints.push_back(gatherRay(gather_t));
+                            stepSize = radius * 2;
+                        }
+                        leftOver += nli.t - gather_t;
 
                         nlray.push_back(std::move(gatherRay));
                         if (!m_useNLAtomicQuery) {
@@ -560,58 +580,54 @@ public:
                         gatherRay      = Ray3f(ray);
                         gatherRay.maxt = si.t;
 
-                        /*float gatherMaxt = mediumRay.maxt - nli.t;
-                        mediumRay        = Ray3f(ray);
-                        mediumRay.maxt   = gatherMaxt;*/
-
                         nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
-
-                        
                     }
                 }
+
+                int debugCount = 0;
+                // Add gather points from origin until end of (last) gatherRay
+                gather_t = 0;
+                while (si.is_valid() && gather_t <= (gatherRay.maxt - (stepSize - leftOver))) {
+                    if (++debugCount > 100000) {
+                        Log(Warn, "prob endless loop in gather point calc?");
+                        break;
+                    }
+
+                    gather_t += (stepSize - leftOver);
+                    leftOver = 0.0f;
+                    gatherPoints.push_back(gatherRay(gather_t));
+                    stepSize = radius * 2;
+                }
+
+                nlray.push_back(std::move(gatherRay));
 
                 maxNLIcount = max(maxNLIcount, nliCount);
                 minNLIcount = min(minNLIcount, nliCount);
 
-                //int localGatherCount = 0;
-                //while (mediumRay.maxt < si.t) {
-                //    ++localGatherCount;
-                //    if (localGatherCount > 100000) {
-                //        Log(LogLevel::Warn, "prob endless loop");
-                //        break;
-                //    }
-                //    throughput *= medium->evalTransmittance(mediumRay, sampler, active, true);
-                //    
-                //    Point3f gatherPoint = mediumRay(mediumRay.maxt);
-                //    Spectrum estimate   = m_volumePhotonMap->estimateRadianceVolume(gatherPoint, mediumRay.d, medium, sampler, radius, M);
-                //    estimate *= throughput;
-                //    directIllum += estimate;
-                //    MVol += M;
-                //    si.t -= mediumRay.maxt;
-                //    mediumRay.o    = gatherPoint;
-                //    mediumRay.maxt = radius * 2.0f;
-                //}
-                //directIllum *= m_volumePhotonMap->getScaleFactor();
-                //radiance += directIllum;
+                // Gather Photons for Direct
+                Point3f lastGatherPoint = nlray.o();
+                Spectrum tr             = throughput;
+                for (size_t i = 0; i < gatherPoints.size(); i++) {
+                    Point3f gatherPoint = gatherPoints[i];
+                    tr *= medium->homoEvalTransmittance(norm(gatherPoint - lastGatherPoint));
+                    Spectrum estimate = m_volumePhotonMap->estimateRadianceVolume(gatherPoint, mediumRay.d, medium, sampler, radius, M);
+                    directIllum += tr * estimate;
+                    lastGatherPoint = gatherPoint;
+                }
+                directIllum *= m_volumePhotonMap->getScaleFactor();
+                radiance += directIllum;
 
-                // Gather VRLs for indirect
-                nlray.push_back(std::move(gatherRay));
-
-                auto [evaluations, color, intersections] = m_vrlMap->query(nlray, scene, sampler, -1, m_useUniformSampling, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
+                // Gather VRLs for Indirect
+                auto [evaluations, color, intersections] =
+                    m_vrlMap->query(nlray, scene, sampler, -1, m_useUniformSampling, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
                 indirectIllum += color * vrlThroughput;
-
                 throughput *= medium->homoEvalTransmittance(nlray.maxt);
-
                 radiance += indirectIllum;
+
                 ++mediumDepth;
+                
 
                 active_surface |= true;
-                //needs_intersection = true;
-                /* escaped_medium = true;
-                 needs_intersection = true;
-
-                 if (!si.is_valid())
-                     return { radiance, false };*/
             }
 
             active &= depth < (uint32_t)m_maxDepth;
@@ -695,9 +711,14 @@ public:
             active &= (active_surface | active_medium);
         }
 
-        if (norm(radiance) == 0){
-            Log(Warn, "black rad. si: %i", si );
+        //valid_ray = true;
+        if (norm(radiance) == 0) {
+            Log(Warn, "black rad. ray: %i, nliCount: %i, tr: %i, wrm: %i, am: %i, as: %i, si: %i", ray, nliCount, throughput, wentThruMedium, active_medium, active_surface, si);
         }
+        if (!valid_ray) {
+            Log(Warn, "invalid ray. ray: %i, tr: %i, wrm: %i, am: %i, as: %i, si: %i", ray, throughput, wentThruMedium, active_medium, active_surface, si);
+        }
+
 
         return { radiance, valid_ray };
     }

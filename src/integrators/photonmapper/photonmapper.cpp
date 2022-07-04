@@ -18,6 +18,7 @@
 #include <mitsuba/core/timer.h>
 #include <random>
 #include "photonmap.h"
+#include "../vrl/vrl_struct.h"
 
 NAMESPACE_BEGIN(mitsuba)
 
@@ -31,6 +32,7 @@ public:
     MTS_IMPORT_TYPES(PhaseFunctionContext)
     MTS_IMPORT_OBJECT_TYPES()
 
+    typedef NLRay<Float, Spectrum> NLRay;
     typedef PhotonMap<Float, Spectrum> PhotonMap;
     typedef typename PhotonMap::PhotonData PhotonData;
 
@@ -61,6 +63,9 @@ public:
         m_useLaser                    = props.bool_("use_laser", false);
         laserOrigin                   = props.vector3f("laser_origin", Vector3f());
         laserDirection                = props.vector3f("laser_direction", Vector3f());
+
+        minNLIcount                   = math::Max<int>;
+        maxNLIcount                   = math::Min<int>;
     }
 
     void preprocess(Scene* scene, Sensor* sensor) override {
@@ -380,8 +385,7 @@ public:
             lookupString = "- Scene Radius: " + std::to_string(sceneRadius);
             Log(LogLevel::Info, lookupString.c_str());
         }
-
-         Ray3f ray(_ray);
+        Ray3f ray(_ray);
         MediumPtr medium(_medium);
         Spectrum radiance(0.0f), throughput(1.0f);
 
@@ -404,7 +408,8 @@ public:
             uint32_t n_channels = (uint32_t) array_size_v<Spectrum>;
             channel             = (UInt32) min(sampler->next_1d(active) * n_channels, n_channels - 1);
         }
-
+        Mask active_medium, active_surface;
+        bool wentThruMedium = false;
 
         for (int bounce = 0;; ++bounce) {
             active &= any(neq(depolarize(throughput), 0.f));
@@ -416,8 +421,8 @@ public:
 
             // -------------------- RTE ----------------- //
 
-            Mask active_medium  = active && neq(medium, nullptr);
-            Mask active_surface = active && !active_medium;
+            active_medium  = active && neq(medium, nullptr);
+            active_surface = active && !active_medium;
             Mask escaped_medium = false;
 
             if (bounce > 100000) {
@@ -428,7 +433,8 @@ public:
                        << "active_surface: " << active_surface << std::endl
                        << "ray: " << ray << std::endl;
                 std::string str = stream.str();
-                Log(LogLevel::Error, str.c_str());
+                Log(Warn, str.c_str());
+                break;
             }
 
 #pragma region RTE
@@ -440,10 +446,13 @@ public:
             }
 
             if (any_or<true>(active_medium)) {
-                valid_ray |= true;
-                // Gather along the entire ray
-                if (si.is_valid()) {
-                    Float radius = m_volumeLookupRadius * enoki::lerp(0.5f, 1.5f, sampler->next_1d());
+                wentThruMedium = true;
+                valid_ray    = true;
+                int nliCount = 0;
+                    // Gather VPM for direct+caustic
+                    Float radius   = m_volumeLookupRadius; // * enoki::lerp(0.5f, 1.5f, sampler->next_1d());
+                    Float stepSize = radius, leftOver = 0.0;
+                    Float gather_t = 0;
 
                     Ray3f mediumRay(ray);
                     mediumRay.mint = 0.0f;
@@ -453,59 +462,86 @@ public:
                     size_t M    = 0;
                     Spectrum volRadiance(0.0f);
 
-                    int localGatherCount = 0;
-                    while (mediumRay.maxt < si.t ) {
-                        ++localGatherCount;
-                        if (localGatherCount > 10000) {
-                            Log(LogLevel::Warn, "prob endless loop");
+                    Ray3f gatherRay(ray);
+                    gatherRay.maxt = si.t;
+                    Spectrum directIllum(0.0f), indirectIllum(0.0);
+
+                    NLRay nlray;
+                    std::vector<Point3f> gatherPoints;
+
+                    // Tr is handled through VRL queries, so we gotta be careful we dont apply it multiple times...
+                    Spectrum vrlThroughput = throughput;
+
+                    if (m_useNonLinearCameraRays && m_useNonLinear && medium->is_nonlinear()) {
+                        nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
+
+                        while (nli.t < si.t && nli.is_valid) {
+
+                            bool valid = medium->handleNonLinearInteraction(scene, sampler, nli, si, mi, ray, throughput, channel, active_medium);
+                            if (!valid)
+                                break;
+                            ++nliCount;
+                            gatherRay.maxt = nli.t;
+
+                            // Add gather points from origin until nli.t
+                            gather_t = 0;
+                            while (gather_t <= (nli.t - (stepSize - leftOver))) {
+                                gather_t += (stepSize - leftOver);
+                                leftOver = 0.0f;
+                                gatherPoints.push_back(gatherRay(gather_t));
+                                stepSize = radius * 2;
+                            }
+                            leftOver += nli.t - gather_t;
+
+                            nlray.push_back(std::move(gatherRay));
+
+                            gatherRay      = Ray3f(ray);
+                            gatherRay.maxt = si.t;
+
+                            nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
+                        }
+                    }
+                    int debugCount = 0;
+                    // Add gather points from origin until end of (last) gatherRay
+                    gather_t = 0;
+                    while (gather_t <= (gatherRay.maxt - (stepSize - leftOver))) {
+                        if (++debugCount > 100000) {
+                            Log(Warn, "prob endless loop in gather point calc?");
                             break;
                         }
 
-                        throughput *= medium->evalTransmittance(mediumRay, sampler, active, true);
-
-                        if (m_useNonLinearCameraRays && m_useNonLinear && medium->is_nonlinear()) {
-                            nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
-                            while (nli.t <= mediumRay.maxt && nli.is_valid) {
-
-                                bool valid = medium->handleNonLinearInteraction(scene, sampler, nli, si, mi, ray, throughput, channel, active_medium);
-                                if (!valid)
-                                    break;
-
-                                float gatherMaxt = mediumRay.maxt - nli.t;
-                                mediumRay        = Ray3f(ray);
-                                mediumRay.maxt   = gatherMaxt;
-
-                                nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
-                            }
-                        }
-
-                        Point3f gatherPoint = mediumRay(mediumRay.maxt);
-                        Spectrum estimate   = m_volumePhotonMap->estimateRadianceVolume(gatherPoint, mediumRay.d, medium, sampler, radius, M);
-                        estimate *= throughput;
-                        volRadiance += estimate;
-
-                        MVol += M;
-
-                        si.t -= mediumRay.maxt;
-                        mediumRay.o    = gatherPoint;
-                        mediumRay.maxt = radius * 2.0f;
+                        gather_t += (stepSize - leftOver);
+                        leftOver = 0.0f;
+                        gatherPoints.push_back(gatherRay(gather_t));
+                        stepSize = radius * 2;
                     }
 
-                    volRadiance *= m_volumePhotonMap->getScaleFactor();
-                    radiance += volRadiance;
+                    nlray.push_back(std::move(gatherRay));
 
-                    ++volumeQueryCount;
-                    gatherCount += localGatherCount;
+                    maxNLIcount = max(maxNLIcount, nliCount);
+                    minNLIcount = min(minNLIcount, nliCount);
 
-                    throughput *= medium->evalTransmittance(mediumRay, sampler, active, true);
-                    //++mediumDepth;
-                }
+                    // Gather Photons for Direct
+                    Point3f lastGatherPoint = nlray.o();
+                    Spectrum tr             = throughput;
+                    for (size_t i = 0; i < gatherPoints.size(); i++) {
+                        Point3f gatherPoint = gatherPoints[i];
+                        tr *= medium->homoEvalTransmittance(norm(gatherPoint - lastGatherPoint));
+                        Spectrum estimate = m_volumePhotonMap->estimateRadianceVolume(gatherPoint, mediumRay.d, medium, sampler, radius, M);
+                        directIllum += tr * estimate;
+                        lastGatherPoint = gatherPoint;
+                    }
+                    directIllum *= m_volumePhotonMap->getScaleFactor();
+                    radiance += directIllum;
 
-                escaped_medium     = true;
-                needs_intersection = true;
-                active_surface |= si.is_valid();
-                if (!si.is_valid())
-                    break;
+                    // Gather VRLs for Indirect
+        
+                    throughput *= medium->homoEvalTransmittance(nlray.maxt);
+
+                    ++mediumDepth;
+                
+
+                active_surface |= true;
             }
 
             active &= depth < (uint32_t) m_maxDepth;
@@ -530,10 +566,10 @@ public:
 
             // -------------------- End RTE ----------------- //
 
-            
             if (any_or<true>(active_surface)) {
                 if (si.shape->is_emitter())
                     break;
+                valid_ray = true;
 
                 BSDFContext bCtx;
                 BSDFPtr bsdf = si.bsdf(ray);
@@ -589,6 +625,7 @@ public:
             active &= (active_surface | active_medium);
         }
 
+        
         return { radiance, valid_ray };
     }
 
@@ -680,7 +717,7 @@ private:
     bool m_directOnly;
     bool m_stochasticGather;
 
-    mutable std::atomic<int> surfaceQueryCount, volumeQueryCount, gatherCount, nliCount;
+    mutable std::atomic<int> surfaceQueryCount, volumeQueryCount, gatherCount, nliCount, minNLIcount, maxNLIcount;
     mutable std::atomic<size_t> surfaceQueryTime, volumeQueryTime;
 
     Timer m_preprocessTimer, volumePreprocessTimer;
