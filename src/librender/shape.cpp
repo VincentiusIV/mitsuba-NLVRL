@@ -56,7 +56,6 @@ MTS_VARIANT Shape<Float, Spectrum>::Shape(const Properties &props) : m_id(props.
                 Throw("Only a single BSDF child object can be specified per shape.");
             m_bsdf = bsdf;
         } else if (medium) {
-            Log(LogLevel::Info, "ya boi has a medium");
             if (name == "interior") {
                 if (m_interior_medium)
                     Throw("Only a single interior medium can be specified per shape.");

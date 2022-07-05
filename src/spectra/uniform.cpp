@@ -21,7 +21,6 @@ public:
     MTS_IMPORT_TYPES(Texture)
 
     UniformSpectrum(const Properties &props) : Texture(props) {
-        Log(LogLevel::Info, "Uniform spectrum");
         m_value = props.float_("value");
     }
 

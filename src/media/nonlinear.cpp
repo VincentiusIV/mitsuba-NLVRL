@@ -68,7 +68,6 @@ public:
         int arrayIndex = 0;
         grid           = new NLNode[arraySize];
         Log(Info,"[NLHM]: Allocating grid... size = %i", arraySize);
-        Log(Info, to_string().c_str());
         Float nmin = 100000000, nmax = -10000000;
 
         for (int x = 0; x < resolution[0]; x++) {
