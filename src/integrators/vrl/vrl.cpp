@@ -519,123 +519,123 @@ public:
 
             if (any_or<true>(active_medium)) {
                 wentThruMedium = true;
-                valid_ray = true;
-                nliCount = 0;
-                // Gather VPM for direct+caustic
-                Float radius   = m_volumeLookupRadius;// * enoki::lerp(0.75f, 1.25f, sampler->next_1d());
-                Float stepSize = radius, leftOver = 0.0;
-                Float gather_t = 0;
 
-                Ray3f mediumRay(ray);
-                mediumRay.mint = 0.0f;
-                mediumRay.maxt = radius;
+                if (si.is_valid()) {
+                    valid_ray = true;
+                    nliCount  = 0;
+                    // Gather VPM for direct+caustic
+                    Float radius   = m_volumeLookupRadius * enoki::lerp(0.75f, 1.25f, sampler->next_1d());
+                    Float stepSize = radius, leftOver = 0.0;
+                    Float gather_t = 0;
 
-                size_t MVol = 0;
-                size_t M    = 0;
-                Spectrum volRadiance(0.0f);
+                    Ray3f mediumRay(ray);
+                    mediumRay.mint = 0.0f;
+                    mediumRay.maxt = radius;
 
-                Ray3f gatherRay(ray);
-                gatherRay.maxt = si.t;
-                Spectrum directIllum(0.0f), indirectIllum(0.0);
+                    size_t MVol = 0;
+                    size_t M    = 0;
+                    Spectrum volRadiance(0.0f);
 
-                NLRay nlray;
-                std::vector<Point3f> gatherPoints;
+                    Ray3f gatherRay(ray);
+                    gatherRay.maxt = si.t;
+                    Spectrum directIllum(0.0f), indirectIllum(0.0);
 
-                if (!si.is_valid()) {
-                    Log(Warn, "si invalid before nli");
-                }
+                    NLRay nlray;
+                    std::vector<Point3f> gatherPoints;
 
-                if (m_useNonLinearCameraRays && m_useNonLinear && medium->is_nonlinear()) {
-                    nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
+                    if (!si.is_valid()) {
+                        Log(Warn, "si invalid before nli");
+                    }
 
-                    while (nli.t < si.t && si.is_valid() && nli.is_valid) {
-
-                        bool valid = medium->handleNonLinearInteraction(scene, sampler, nli, si, mi, ray, throughput, channel, active_medium);
-                        if (!valid)
-                            break;
-                        ++nliCount;
-                        gatherRay.maxt = nli.t;
-
-                        // Add gather points from origin until nli.t
-                        gather_t = 0;
-                        while (gather_t <= (nli.t - (stepSize - leftOver))) {
-                            gather_t += (stepSize - leftOver);
-                            leftOver = 0.0f;
-                            gatherPoints.push_back(gatherRay(gather_t));
-                            stepSize = radius * 2;
-                        }
-                        leftOver += nli.t - gather_t;
-
-                        nlray.push_back(std::move(gatherRay));
-                        
-                        gatherRay      = Ray3f(ray);
-                        gatherRay.maxt = si.t;
-
+                    if (m_useNonLinearCameraRays && m_useNonLinear && medium->is_nonlinear()) {
                         nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
+
+                        while (nli.t < si.t && si.is_valid() && nli.is_valid) {
+
+                            bool valid = medium->handleNonLinearInteraction(scene, sampler, nli, si, mi, ray, throughput, channel, active_medium);
+                            if (!valid)
+                                break;
+                            ++nliCount;
+                            gatherRay.maxt = nli.t;
+
+                            // Add gather points from origin until nli.t
+                            gather_t = 0;
+                            while (gather_t <= (nli.t - (stepSize - leftOver))) {
+                                gather_t += (stepSize - leftOver);
+                                leftOver = 0.0f;
+                                gatherPoints.push_back(gatherRay(gather_t));
+                                stepSize = radius * 2;
+                            }
+                            leftOver += nli.t - gather_t;
+
+                            nlray.push_back(std::move(gatherRay));
+
+                            gatherRay      = Ray3f(ray);
+                            gatherRay.maxt = si.t;
+
+                            nli = medium->sampleNonLinearInteraction(ray, channel, active_medium);
+                        }
                     }
-                }
 
-                int debugCount = 0;
-                // Add gather points from origin until end of (last) gatherRay
-                gather_t = 0;
-                while (gather_t <= (gatherRay.maxt - (stepSize - leftOver))) {
-                    if (++debugCount > 100000) {
-                        Log(Warn, "prob endless loop in gather point calc?");
-                        break;
+                    int debugCount = 0;
+                    // Add gather points from origin until end of (last) gatherRay
+                    gather_t = 0;
+                    while (gather_t <= (gatherRay.maxt - (stepSize - leftOver))) {
+                        if (++debugCount > 10000000) {
+                            Log(Warn, "prob endless loop in gather point calc?");
+                            break;
+                        }
+
+                        gather_t += (stepSize - leftOver);
+                        leftOver = 0.0f;
+                        gatherPoints.push_back(gatherRay(gather_t));
+                        stepSize = radius * 2;
                     }
 
-                    gather_t += (stepSize - leftOver);
-                    leftOver = 0.0f;
-                    gatherPoints.push_back(gatherRay(gather_t));
-                    stepSize = radius * 2;
-                }
+                    nlray.push_back(std::move(gatherRay));
 
-                nlray.push_back(std::move(gatherRay));
+                    maxNLIcount = max(maxNLIcount, nliCount);
+                    minNLIcount = min(minNLIcount, nliCount);
 
-                maxNLIcount = max(maxNLIcount, nliCount);
-                minNLIcount = min(minNLIcount, nliCount);
+                    // Gather Photons for Direct
+                    Point3f lastGatherPoint = nlray.o();
+                    Spectrum tr             = throughput;
+                    for (size_t i = 0; i < gatherPoints.size(); i++) {
+                        Point3f gatherPoint = gatherPoints[i];
+                        tr *= medium->homoEvalTransmittance(norm(gatherPoint - lastGatherPoint));
+                        Spectrum estimate = m_volumePhotonMap->estimateRadianceVolume(gatherPoint, mediumRay.d, medium, sampler, radius, M);
+                        directIllum += tr * estimate;
+                        lastGatherPoint = gatherPoint;
+                    }
+                    directIllum *= m_volumePhotonMap->getScaleFactor();
+                    radiance += directIllum;
 
-                // Gather Photons for Direct
-                Point3f lastGatherPoint = nlray.o();
-                Spectrum tr             = throughput;
-                for (size_t i = 0; i < gatherPoints.size(); i++) {
-                    Point3f gatherPoint = gatherPoints[i];
-                    tr *= medium->homoEvalTransmittance(norm(gatherPoint - lastGatherPoint));
-                    Spectrum estimate = m_volumePhotonMap->estimateRadianceVolume(gatherPoint, mediumRay.d, medium, sampler, radius, M);
-                    directIllum += tr * estimate;
-                    lastGatherPoint = gatherPoint;
-                }
-                directIllum *= m_volumePhotonMap->getScaleFactor();
-                radiance += directIllum;
-
-                if (m_useNLAtomicQuery) {
-                    // Gather VRLs for Indirect
-                    auto [evaluations, color, intersections] =
-                        m_vrlMap->query(nlray, scene, sampler, -1, m_useUniformSampling, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
-                    indirectIllum += color * throughput;
-                } else {
-                    NLRay temp;
-                    Spectrum vrlThroughput = throughput;
-                    for (size_t i = 0; i < nlray.parts.size(); i++) {
-                        temp.clear();
-                        temp.push_back(nlray.parts[i]);
+                    if (m_useNLAtomicQuery) {
+                        // Gather VRLs for Indirect
                         auto [evaluations, color, intersections] =
-                            m_vrlMap->query(temp, scene, sampler, -1, m_useUniformSampling, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
-                        indirectIllum += color * vrlThroughput;
-                        vrlThroughput *= medium->homoEvalTransmittance(nlray.parts[i].maxt);
+                            m_vrlMap->query(nlray, scene, sampler, -1, m_useUniformSampling, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
+                        indirectIllum += color * throughput;
+                    } else {
+                        NLRay temp;
+                        Spectrum vrlThroughput = throughput;
+                        for (size_t i = 0; i < nlray.parts.size(); i++) {
+                            temp.clear();
+                            temp.push_back(nlray.parts[i]);
+                            auto [evaluations, color, intersections] =
+                                m_vrlMap->query(temp, scene, sampler, -1, m_useUniformSampling, m_RRVRL ? EDistanceRoulette : ENoRussianRoulette, m_scaleRR, m_samplesPerQuery, channel);
+                            indirectIllum += color * vrlThroughput;
+                            vrlThroughput *= medium->homoEvalTransmittance(nlray.parts[i].maxt);
+                        }
                     }
 
-                    
+                    throughput *= medium->homoEvalTransmittance(nlray.maxt);
+
+                    radiance += indirectIllum;
+
+                    ++mediumDepth;
+
+                    active_surface |= true;
                 }
-
-                throughput *= medium->homoEvalTransmittance(nlray.maxt);
-
-                radiance += indirectIllum;
-
-                ++mediumDepth;
-                
-
-                active_surface |= true;
             }
 
             active &= depth < (uint32_t)m_maxDepth;

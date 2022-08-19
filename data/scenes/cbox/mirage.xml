@@ -2,7 +2,7 @@
     <include filename="fragments/bsdfs-rgb.xml"/>
 	
 	<default name="spp" value="1"/>
-    <default name="res" value="256"/>
+    <default name="res" value="512"/>
     <default name="max_depth" value="6"/>
 	<default name="earth_radius" value="637"/>
 	
@@ -21,8 +21,8 @@
             <integer name="sample_count" value="$spp"/>
         </sampler>
         <film type="hdrfilm">
-            <integer name="width" value="256"/>
-            <integer name="height" value="128"/>
+            <integer name="width" value="1024"/>
+            <integer name="height" value="512"/>
             <rfilter type="box"/>
             <string name="pixel_format" value="rgb"/>
         </film>
@@ -44,7 +44,7 @@
         <phase type="isotropic" />
         <integer name="ior_method" value="0"/>
         <integer name="res_x" value="1"/>
-        <integer name="res_y" value="300"/>
+        <integer name="res_y" value="2400"/>
         <integer name="res_z" value="1"/>
         <float name="top_ior" value="1.0"/>
         <float name="bottom_ior" value="1.03"/>

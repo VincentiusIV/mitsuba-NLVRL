@@ -153,26 +153,54 @@ public:
     std::pair<Ray3f, Spectrum> sample_ray(Float time, Float wavelength_sample,
                                           const Point2f &sample2, const Point2f &sample3,
                                           Mask active) const override {
-        Float dist     = m_bsphere.radius;
+        if (true) {
+            // IS sample texture for position
+            auto [uv, pdf] = m_warp.sample(sample2);
+            Float theta = uv.y() * math::Pi<Float>, phi = uv.x() * (2.f * math::Pi<Float>);
+            Vector3f d = math::sphdir(theta, phi);
+            d          = Vector3f(d.y(), d.z(), -d.x());
+            Float dist = m_bsphere.radius;
+            Float inv_sin_theta = safe_rsqrt(max(sqr(d.x()) + sqr(d.z()), sqr(math::Epsilon<Float>)));
+            d = m_world_transform->eval(time, active).transform_affine(d);
+            pdf *= inv_sin_theta * (1.f / (2.f * sqr(math::Pi<Float>)));
 
-        Vector3f randSpherePos = randSphere(sample2);
+            SurfaceInteraction3f si;
+            si.wavelengths = zero<Wavelength>();
+            si.time        = time;
+            si.wi          = -d;
+            si.sh_frame    = Frame3f(si.wi);
+            // random dir on hemisphere
+            Vector3f local      = warp::square_to_cosine_hemisphere(sample3);
+            Vector3f hemisphere = si.to_world(local);
 
-        SurfaceInteraction3f si;
-        si.wavelengths      = zero<Wavelength>();
-        si.time = time;
-        si.wi = -randSpherePos;
-        si.sh_frame   = Frame3f(si.wi);
-        Spectrum radiance   = eval(si, active) * 4 * math::Pi<Float> * sqr(dist);
+            Ray3f ray(d * dist, hemisphere, time);
+            Spectrum radiance = unpolarized<Spectrum>(eval_spectrum(uv, zero<Wavelength>(), active)) / pdf * 4 * math::Pi<Float> * sqr(dist);
+            return std::make_pair(ray, radiance);
+        }
+        else {
 
-        Vector3f local = warp::square_to_cosine_hemisphere(sample3);
-        Vector3f hemisphere = si.to_world(local);
+            // Uniform sample sphere
+            Float dist = m_bsphere.radius;
 
-        Ray3f ray(randSpherePos * dist, hemisphere, time);
+            Vector3f randSpherePos = randSphere(sample2);
 
-        Float inv_sin_theta = safe_rsqrt(max(sqr(ray.d.x()) + sqr(ray.d.z()), sqr(math::Epsilon<Float>)));
-        Float pdf           = inv_sin_theta * (1.f / (2.f * sqr(math::Pi<Float>)));
+            SurfaceInteraction3f si;
+            si.wavelengths    = zero<Wavelength>();
+            si.time           = time;
+            si.wi             = -randSpherePos;
+            si.sh_frame       = Frame3f(si.wi);
+            Spectrum radiance = eval(si, active) * 4 * math::Pi<Float> * sqr(dist);
 
-        return std::make_pair(ray, radiance / pdf);
+            Vector3f local      = warp::square_to_cosine_hemisphere(sample3);
+            Vector3f hemisphere = si.to_world(local);
+
+            Ray3f ray(randSpherePos * dist, hemisphere, time);
+
+            Float inv_sin_theta = safe_rsqrt(max(sqr(ray.d.x()) + sqr(ray.d.z()), sqr(math::Epsilon<Float>)));
+            Float pdf           = inv_sin_theta * (1.f / (2.f * sqr(math::Pi<Float>)));
+
+            return std::make_pair(ray, radiance / pdf);
+        }
     }
 
     Vector3f randSphere(const Point2f& sample) const {

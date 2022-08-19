@@ -319,20 +319,31 @@ public:
 
                     Spectrum estimate = child_cluster->represent.flux;
                     if (current_cluster->isSame[i]) {
-                        estimate /= current_cluster->represent.flux;
+                        Spectrum divisor = current_cluster->represent.flux;
+                        if (divisor[0] > 0.0)
+                            estimate[0] /= divisor[0];
+                        if (divisor[1] > 0.0)
+                            estimate[1] /= divisor[1];
+                        if (divisor[2] > 0.0)
+                            estimate[2] /= divisor[2];
+
                         estimate *= current_element.estimate;
+
+                        if (std::isnan(estimate[0]) || std::isnan(estimate[1]) || std::isnan(estimate[2])) {
+                            std::ostringstream stream;
+                            stream << "Invalid sample = [child_cluster->represent.flux:" << child_cluster->represent.flux << ", current_element.estimate:" << current_element.estimate
+                                   << ", current_cluster->represent.flux:" << current_cluster->represent.flux << ", estimate: " << estimate;
+                            std::string str = stream.str();
+                            Log(LogLevel::Warn, str.c_str());
+                            estimate = Spectrum(0.f);
+                        }
                     } else {
                         query.nb_evaluation += 1;
                         estimate = child_cluster->represent.getContrib(scene, uniform, query.ray, query.sampler, channel);
+
+                        
                     }
-                    if (std::isnan(estimate[0]) || std::isnan(estimate[1]) || std::isnan(estimate[2])) {
-                        std::ostringstream stream;
-                        stream << "Invalid sample = [child_cluster->represent.flux:" << child_cluster->represent.flux << ", current_element.estimate:" << current_element.estimate
-                               << ", current_cluster->represent.flux:" << current_cluster->represent.flux;
-                        std::string str = stream.str();
-                        Log(LogLevel::Warn, str.c_str());
-                        estimate = Spectrum(0.f);
-                    }
+                    
                     childrenEstimates += estimate;
                     Li += estimate;
                     if (!child_cluster->isLeaf) {

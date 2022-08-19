@@ -460,7 +460,7 @@ public:
                 valid_ray    = true;
                 int nliCount = 0;
                     // Gather VPM for direct+caustic
-                    Float radius   = m_volumeLookupRadius;//* enoki::lerp(0.75f, 1.25f, sampler->next_1d());
+                    Float radius   = m_volumeLookupRadius * enoki::lerp(0.75f, 1.25f, sampler->next_1d());
                     Float stepSize = radius, leftOver = 0.0;
                     Float gather_t = 0;
 

@@ -1,7 +1,7 @@
 <scene version="2.0.0">
     <include filename="fragments/bsdfs-rgb.xml"/>
 	
-	<default name="spp" value="1"/>
+	<default name="spp" value="16"/>
     <default name="res" value="256"/>
     <default name="max_depth" value="6"/>
 	
@@ -25,8 +25,8 @@
             <integer name="sample_count" value="$spp"/>
         </sampler>
         <film type="hdrfilm">
-            <integer name="width" value="256"/>
-            <integer name="height" value="128"/>
+            <integer name="width" value="512"/>
+            <integer name="height" value="256"/>
             <rfilter type="box"/>
             <string name="pixel_format" value="rgb"/>
         </film>
@@ -69,7 +69,7 @@
         <rgb name="albedo" value="0.25, 0.25, 0.25"/>
         <phase type="isotropic" />
         <integer name="res_x" value="1"/>
-        <integer name="res_y" value="100"/>
+        <integer name="res_y" value="640"/>
         <integer name="res_z" value="1"/>
         <float name="top_ior" value="0.95"/>
         <float name="bottom_ior" value="1.0"/>
