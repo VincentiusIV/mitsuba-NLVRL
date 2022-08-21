@@ -314,6 +314,12 @@ public:
         return 0.f;
     }
 
+    Spectrum evalImpl(const BSDFContext &ctx, const SurfaceInteraction3f &si,
+                  const Vector3f &wi, const Vector3f &wo,
+                  Mask active) const override { 
+        return 0.f;
+    }
+
     Float pdf(const BSDFContext & /* ctx */, const SurfaceInteraction3f & /* si */,
               const Vector3f & /* wo */, Mask /* active */) const override {
         return 0.f;

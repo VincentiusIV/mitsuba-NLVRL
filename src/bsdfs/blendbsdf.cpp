@@ -126,20 +126,28 @@ public:
     Spectrum eval(const BSDFContext &ctx, const SurfaceInteraction3f &si,
                   const Vector3f &wo, Mask active) const override {
         MTS_MASKED_FUNCTION(ProfilerPhase::BSDFEvaluate, active);
+        return evalImpl(ctx, si, si.wi, wo, active);
+    }
 
+    Spectrum evalImpl(const BSDFContext &ctx, const SurfaceInteraction3f &si,
+                    const Vector3f &wi, const Vector3f &wo,
+                    Mask active) const override {
         Float weight = eval_weight(si, active);
         if (unlikely(ctx.component != (uint32_t) -1)) {
-            bool sample_first = ctx.component < m_nested_bsdf[0]->component_count();
+            bool sample_first =
+                ctx.component < m_nested_bsdf[0]->component_count();
             BSDFContext ctx2(ctx);
             if (!sample_first)
-                ctx2.component -= (uint32_t) m_nested_bsdf[0]->component_count();
+                ctx2.component -=
+                    (uint32_t) m_nested_bsdf[0]->component_count();
             else
                 weight = 1.f - weight;
-            return weight * m_nested_bsdf[sample_first ? 0 : 1]->eval(ctx2, si, wo, active);
+            return weight * m_nested_bsdf[sample_first ? 0 : 1]->evalImpl(
+                                ctx2, si, wi, wo, active);
         }
 
-        return m_nested_bsdf[0]->eval(ctx, si, wo, active) * (1 - weight) +
-               m_nested_bsdf[1]->eval(ctx, si, wo, active) * weight;
+        return m_nested_bsdf[0]->evalImpl(ctx, si, wi, wo, active) * (1 - weight) +
+               m_nested_bsdf[1]->evalImpl(ctx, si, wi, wo, active) * weight;
     }
 
     Float pdf(const BSDFContext &ctx, const SurfaceInteraction3f &si,

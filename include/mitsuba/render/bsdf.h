@@ -362,7 +362,6 @@ public:
                           const Vector3f &wo,
                           Mask active = true) const = 0;
 
-
     /**
      * \brief Compute the probability per unit solid angle of sampling a
      * given direction
@@ -432,6 +431,11 @@ public:
     size_t component_count(Mask /*active*/ = true) const {
         return m_components.size();
     }
+
+    virtual Spectrum evalImpl(const BSDFContext &ctx,
+                              const SurfaceInteraction3f &si,
+                              const Vector3f &wi, const Vector3f &wo,
+                              Mask active = true) const { return 0.f; }
 
     /// Return a string identifier
     std::string id() const override;

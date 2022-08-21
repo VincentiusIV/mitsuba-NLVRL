@@ -481,7 +481,7 @@ public:
         }
     }
 
-    // returns MIS'd throughput/pdf of two full paths represented by p_over_f1 and p_over_f2
+    // returns MIS'd bsdf_absIdotN/pdf of two full paths represented by p_over_f1 and p_over_f2
     UnpolarizedSpectrum mis_weight(const WeightMatrix& p_over_f1, const WeightMatrix& p_over_f2) const {
         UnpolarizedSpectrum weight(0.0f);
         if constexpr (SpectralMis) {
